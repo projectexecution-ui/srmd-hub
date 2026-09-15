@@ -521,14 +521,12 @@ export interface OrderOption {
   projectName: string | null
   date: string | null
   value: number | null
-  /** Approved, and something still to come. */
+  /** Something still to come on it. */
   open: boolean
-  /** IN4's status when it is anything but a plain approved order — a draft or
-   *  a cancelled one must still be FINDABLE, or the storekeeper concludes the
-   *  order does not exist. */
-  status: string | null
   /** Lines not yet fully received. */
   linesDue: number
+  /** This order's supplier is the name Security wrote at the gate. */
+  fromGateParty: boolean
 }
 
 /**
@@ -552,27 +550,57 @@ export interface OrderOption {
  * is the 89 that are open, because that is the honest answer to "what could
  * be arriving now".
  */
-export async function searchOrders(query: string, limit = 40): Promise<OrderOption[]> {
+export async function searchOrders(
+  query: string,
+  opts: { partyHint?: string | null; limit?: number } = {},
+): Promise<OrderOption[]> {
   const supabase = await createClient()
   const q = query.trim()
+  const limit = opts.limit ?? 40
 
-  let poQ = supabase
+  // Approved orders only. Aksha, 15 Sep 2026: "Dont show Draft and unapporved
+  // one" — 180 of the 1,451 are draft, cancelled, terminated or mid-approval,
+  // and an order nobody has approved is not something to book material against.
+  const APPROVED = 'Approved'
+
+  // A storekeeper says the shop's name far more readily than the order number,
+  // so the name is searched too. Two queries rather than one PostgREST `.or()`
+  // string: the query is typed by a person and would have to be escaped into
+  // that filter syntax, and a comma in a shop's name would quietly break it.
+  const supplierIds = q ? await supplierIdsMatching(supabase, q) : []
+
+  const base = () => supabase
     .from('in4_purchase_orders')
     .select('po_id, po_no, po_dt, supplier_id, project_id, po_value, status, grn_status')
-  poQ = q
-    ? poQ.ilike('po_no', `%${q}%`)
-    : poQ.eq('status', 'Approved').in('grn_status', ['No', 'Partial'])
+    .eq('status', APPROVED)
 
-  // With no query the list IS the answer — all 89 open orders, not the first
-  // 40 of them, because a storekeeper scrolling to the end of a capped list
-  // has no way to know the one they want was cut off.
-  const { data: pos } = await poQ
-    .order('po_dt', { ascending: false })
-    .limit(q ? limit : 200)
+  let rowsRaw: Array<Record<string, unknown>> = []
+  if (q) {
+    const [byNo, byParty] = await Promise.all([
+      base().ilike('po_no', `%${q}%`).order('po_dt', { ascending: false }).limit(limit),
+      supplierIds.length
+        ? base().in('supplier_id', supplierIds).order('po_dt', { ascending: false }).limit(limit)
+        : Promise.resolve({ data: [] as Array<Record<string, unknown>> }),
+    ])
+    const seen = new Set<number>()
+    for (const r of [...(byNo.data ?? []), ...(byParty.data ?? [])]) {
+      const id = r.po_id as number
+      if (!seen.has(id)) { seen.add(id); rowsRaw.push(r) }
+    }
+  } else {
+    // With no query the list IS the answer — all 89 open orders, not the first
+    // 40 of them, because a storekeeper scrolling to the end of a capped list
+    // has no way to know the one they want was cut off.
+    const { data } = await base()
+      .in('grn_status', ['No', 'Partial'])
+      .order('po_dt', { ascending: false })
+      .limit(200)
+    rowsRaw = (data ?? []) as Array<Record<string, unknown>>
+  }
 
-  const projectIds = [...new Set((pos ?? []).map(p => p.project_id as number).filter(Boolean))]
+  const projectIds = [...new Set(rowsRaw.map(p => p.project_id as number).filter(Boolean))]
   const [suppliers, { data: projects }] = await Promise.all([
-    partyNames(supabase, SUPPLIER, [...new Set((pos ?? []).map(p => p.supplier_id as number).filter(Boolean))]),
+    partyNames(supabase, SUPPLIER, [...new Set(rowsRaw.map(p => p.supplier_id as number).filter(Boolean))]),
     projectIds.length
       ? supabase.from('in4_projects').select('id, name').in('id', projectIds)
       : Promise.resolve({ data: [] as Array<{ id: number; name: string }> }),
@@ -580,7 +608,7 @@ export async function searchOrders(query: string, limit = 40): Promise<OrderOpti
   const projectById = new Map((projects ?? []).map(r => [r.id as number, (r.name as string) ?? '']))
 
   // How many lines are still due, in one query rather than one per order.
-  const poIds = (pos ?? []).map(p => p.po_id as number)
+  const poIds = rowsRaw.map(p => p.po_id as number)
   const dueByPo = new Map<number, number>()
   if (poIds.length) {
     const { data: items } = await supabase
@@ -593,23 +621,46 @@ export async function searchOrders(query: string, limit = 40): Promise<OrderOpti
     }
   }
 
-  const rows: OrderOption[] = (pos ?? []).map(p => ({
-    key: String(p.po_id),
-    no: (p.po_no as string) ?? '',
-    party: suppliers.get(p.supplier_id as number) ?? null,
-    projectName: projectById.get(p.project_id as number) ?? null,
-    date: (p.po_dt as string | null) ?? null,
-    value: p.po_value == null ? null : num(p.po_value),
-    open: p.status === 'Approved' && (p.grn_status === 'No' || p.grn_status === 'Partial'),
-    status: p.status === 'Approved' ? null : (p.status as string | null),
-    linesDue: dueByPo.get(p.po_id as number) ?? 0,
-  }))
+  const hint = normName(opts.partyHint ?? '')
+  const rows: OrderOption[] = rowsRaw.map(p => {
+    const party = suppliers.get(p.supplier_id as number) ?? null
+    return {
+      key: String(p.po_id),
+      no: (p.po_no as string) ?? '',
+      party,
+      projectName: projectById.get(p.project_id as number) ?? null,
+      date: (p.po_dt as string | null) ?? null,
+      value: p.po_value == null ? null : num(p.po_value),
+      open: p.grn_status === 'No' || p.grn_status === 'Partial',
+      linesDue: dueByPo.get(p.po_id as number) ?? 0,
+      // Security already wrote down who turned up. Where that name matches a
+      // supplier, their orders are almost certainly the ones being looked for,
+      // so they go to the top rather than being hunted for.
+      fromGateParty: !!hint && !!party && normName(party).includes(hint),
+    }
+  })
 
-  // Three tiers: what could be arriving today, then what is finished, then
-  // what IN4 no longer considers a live order. Newest first inside each.
-  const tier = (o: OrderOption) => (o.open ? 0 : o.status ? 2 : 1)
+  // Three tiers: this delivery's own supplier, then anything else still open,
+  // then what is already fully received. Newest first inside each.
+  const tier = (o: OrderOption) => (o.fromGateParty && o.open ? 0 : o.open ? 1 : 2)
   return rows.sort((a, b) =>
     tier(a) - tier(b) || (b.date ?? '').localeCompare(a.date ?? ''))
+}
+
+/** The same loose comparison the gate uses — two people spell a shop two ways. */
+function normName(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+}
+
+/** Suppliers whose name contains what was typed. */
+async function supplierIdsMatching(supabase: Sb, q: string): Promise<number[]> {
+  const { data } = await supabase
+    .from('in4_parties')
+    .select('id')
+    .eq('kind', SUPPLIER)
+    .ilike('name', `%${q}%`)
+    .limit(60)
+  return (data ?? []).map(r => r.id as number)
 }
 
 /** IN4's lines for one order — what was ordered and how much has landed

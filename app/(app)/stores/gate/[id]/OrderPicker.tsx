@@ -31,12 +31,14 @@ import { Label } from '../../field'
  * FIELD register: 56px control, 44px rows, one thing on screen at a time.
  */
 export function OrderPicker({
-  value, onPick, onClear,
+  value, onPick, onClear, gateParty = null,
 }: {
   /** The chosen order's number, or null. */
   value: string | null
   onPick: (key: string) => void
   onClear: () => void
+  /** Who Security wrote down — their open orders lead the list. */
+  gateParty?: string | null
 }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -48,10 +50,10 @@ export function OrderPicker({
   useEffect(() => {
     if (!open) return
     const t = setTimeout(() => {
-      startSearch(async () => setRows(await searchOrdersForEntry(query)))
+      startSearch(async () => setRows(await searchOrdersForEntry(query, gateParty)))
     }, query ? 250 : 0)
     return () => clearTimeout(t)
-  }, [query, open])
+  }, [query, open, gateParty])
 
   useEffect(() => { if (open) setTimeout(() => inputRef.current?.focus(), 30) }, [open])
 
@@ -112,15 +114,17 @@ export function OrderPicker({
               <div className="px-4 py-5">
                 <p className="text-[15px] font-semibold text-gray-900">{T.orderNone}</p>
                 <p className="mt-1 text-[13px] text-gray-500">
-                  Orders read like <span className="font-mono">PO/SRASSK/AB/2026-27/94</span> — the last
-                  number is usually enough. If the material came without an order, leave this out.
+                  Search the shop&rsquo;s name, or the order number — those read like{' '}
+                  <span className="font-mono">PO/SRASSK/AB/2026-27/94</span>, and the last number is
+                  usually enough. Only approved orders are listed. If the material came without an
+                  order, leave this out.
                 </p>
               </div>
             ) : (
               <ul>
                 {rows.map((r, i) => {
-                  const band = bandOf(r)
-                  const newBand = i === 0 || band !== bandOf(rows[i - 1])
+                  const band = bandOf(r, gateParty)
+                  const newBand = i === 0 || band !== bandOf(rows[i - 1], gateParty)
                   return (
                     <li key={r.key}>
                       {newBand && (
@@ -141,9 +145,6 @@ export function OrderPicker({
                             {r.projectName && <span>{r.projectName}</span>}
                             {r.date && <span>{formatDate(r.date)}</span>}
                             {r.value != null && r.value > 0 && <span>{formatINR(r.value)}</span>}
-                            {r.status && (
-                              <span className="font-semibold text-rose-700">{r.status} in IN4</span>
-                            )}
                             {r.linesDue != null && r.linesDue > 0 && (
                               <span className="font-semibold text-amber-800">
                                 {r.linesDue} {r.linesDue === 1 ? 'line' : 'lines'} still due
@@ -163,7 +164,7 @@ export function OrderPicker({
             <p className="border-t border-gray-100 bg-gray-50 px-3 py-2 text-[12px] text-gray-500">
               {query
                 ? `${rows.length} ${rows.length === 1 ? 'order' : 'orders'} match "${query}"`
-                : 'Every open purchase order. Type to search all of them, including closed ones.'}
+                : 'Every open purchase order. Type a number or a shop name to search them all.'}
             </p>
           )}
 
@@ -182,14 +183,12 @@ export function OrderPicker({
 /**
  * Which heading an order sits under.
  *
- * Three, not two. A cancelled or draft order has to be FINDABLE — a
- * storekeeper who searches for a number they are holding and gets nothing
- * concludes the order does not exist, when the truth is that somebody
- * cancelled it in IN4 and that is worth knowing before the material is
- * counted in.
+ * The first band exists because Security already wrote down who turned up, so
+ * that supplier's open orders are almost certainly the ones being looked for.
+ * It only appears when one of them matches — no empty headings.
  */
-function bandOf(r: OrderOption): string {
-  if (r.status) return T.notUsableOrders
+function bandOf(r: OrderOption, party: string | null): string {
+  if (r.fromGateParty && r.open) return party ? `Brought by ${party}` : T.openOrders
   return r.open ? T.openOrders : T.otherOrders
 }
 

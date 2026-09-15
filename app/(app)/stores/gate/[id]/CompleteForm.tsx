@@ -137,9 +137,10 @@ export function CompleteForm({
       const done: string[] = []
       const why: string[] = []
 
-      // A cancelled or draft order can still be attached — material does turn
-      // up against one — but never quietly. Said first, because it changes
-      // what the storekeeper should do next.
+      // The picker only ever lists approved orders, so this is the rare race:
+      // somebody cancels the order in IN4 between the list being fetched and
+      // the storekeeper tapping it. Cheap to check, and the one case where the
+      // material should not simply be booked in.
       if (o.status) {
         why.push(`IN4 has this order as ${o.status}. Check before taking the material in.`)
       }
@@ -271,7 +272,7 @@ export function CompleteForm({
 
       {/* The order shortcut — the point of the whole screen. */}
       <div className="rounded-xl border-2 border-gray-200 bg-white p-3.5 space-y-3">
-        <OrderPicker value={order} onPick={pickOrder} onClear={clearOrder} />
+        <OrderPicker value={order} onPick={pickOrder} onClear={clearOrder} gateParty={gateParty} />
 
         {poBusy && <p className="text-[13.5px] text-gray-500">Reading the order…</p>}
 
