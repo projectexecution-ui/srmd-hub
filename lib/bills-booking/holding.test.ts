@@ -50,6 +50,7 @@ describe('who is holding which bill', () => {
     expect(d[0].orphan).toBe(true)
     expect(d[0].holders).toEqual([])
     expect(summarise(d).orphaned).toBe(1)
+    expect(summarise(d).orphanDesks).toBe(1)
   })
 
   it('marks the desks the person looking is actually on', () => {
@@ -92,8 +93,13 @@ describe('who is holding which bill', () => {
     ], desk(['Parimal']), NOW)
     expect(d[0].bills).toHaveLength(2)
     expect(d[0].value).toBe(100_000)
+    expect(d[0].liveCount).toBe(1)
+    expect(d[0].exampleCount).toBe(1)
+    // The count of REAL work, and the walkthrough counted apart — a desk that
+    // holds only examples must never print a money figure of 0.
     expect(summarise(d).value).toBe(100_000)
-    expect(summarise(d).bills).toBe(2)
+    expect(summarise(d).bills).toBe(1)
+    expect(summarise(d).examples).toBe(1)
   })
 
   it('ranks what is wrong with a bill, worst first', () => {
@@ -120,8 +126,16 @@ describe('who is holding which bill', () => {
     expect(d.reduce((s, x) => s + x.lateCount, 0)).toBe(2)
   })
 
+  // '34.427370196759256d' on screen. The SLA clock is fractional on purpose so
+  // a limit can be crossed at the right hour; what is printed must not be.
+  it('reports whole days, never a fraction', () => {
+    const d = whoHoldsWhat([bill({ stageSince: new Date(NOW - 34.4273 * 86_400_000).toISOString() })], desk(['Parimal']), NOW)
+    expect(d[0].bills[0].days).toBe(34)
+    expect(Number.isInteger(d[0].oldestDays)).toBe(true)
+  })
+
   it('is empty, and does not throw, when nothing is moving', () => {
     expect(whoHoldsWhat([], desk(['Parimal']), NOW)).toEqual([])
-    expect(summarise([])).toEqual({ bills: 0, value: 0, late: 0, orphaned: 0, mine: 0 })
+    expect(summarise([])).toEqual({ bills: 0, examples: 0, value: 0, late: 0, orphaned: 0, mine: 0, orphanDesks: 0 })
   })
 })

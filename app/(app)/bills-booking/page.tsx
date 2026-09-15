@@ -24,6 +24,7 @@ type Row = {
   claimed_amount: number; net_amount: number | null; current_stage: BbStage; stage_since: string
   discipline: string | null; trust: string | null; project_id: string | null
   wo_pending: boolean; amendment_flag: boolean; is_example: boolean; in4_subproject_id: number | null
+  order_no: string | null
   vendor_text: string | null
 }
 
@@ -34,7 +35,7 @@ export default async function BillsBookingPage() {
   const canAdmin = can(perms, 'bills-booking', 'admin')
   const supabase = await createClient()
 
-  const COLS ='id, order_type, bill_type, bill_no, claimed_amount, net_amount, current_stage, stage_since, discipline, trust, project_id, wo_pending, amendment_flag, is_example, vendor_text, in4_subproject_id'
+  const COLS ='id, order_type, bill_type, bill_no, claimed_amount, net_amount, current_stage, stage_since, discipline, trust, project_id, wo_pending, amendment_flag, is_example, vendor_text, in4_subproject_id, order_no'
 
   // PostgREST stops at 1,000 rows and hands back the first page without a
   // word, so every KPI on this screen would quietly become a sample of the
@@ -55,8 +56,10 @@ export default async function BillsBookingPage() {
     (projData ?? []).map(p => [p.id as string, { code: p.code as string, name: p.name as string, parent: p.parent_project_id as string | null }]),
   )
   const amt = (r: Row) => Number(r.net_amount ?? r.claimed_amount ?? 0)
-  const vendorOf = (r: Row) => r.vendor_text || '—'
-  const projCode = (r: Row) => (r.project_id ? proj.get(r.project_id)?.code : '') || '—'
+  // A bill with no contractor named still has to be findable in a list. The
+  // order number is what the person holding the paper is looking at.
+  const vendorOf = (r: Row) =>
+    r.vendor_text?.trim() || r.order_no?.trim() || (r.bill_no?.trim() ? `Bill ${r.bill_no.trim()}` : 'Unnamed bill')
 
   // ── Insights ──
   // The walkthrough bills stay in the list, badged, and out of every figure.
@@ -140,7 +143,7 @@ export default async function BillsBookingPage() {
     orderType: r.order_type,
     // The building, whatever CT Hub can name it by — 32 of the 54 IN4
     // sub-projects carrying work orders have no CT Hub project at all.
-    projectLabel: projCode(r),
+    projectLabel: r.project_id ? proj.get(r.project_id)?.code ?? null : null,
     amount: amt(r),
     stage: r.current_stage,
     stageSince: r.stage_since,

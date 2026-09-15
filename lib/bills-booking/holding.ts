@@ -30,7 +30,9 @@ export interface PendingBill {
   vendor: string
   billNo: string | null
   orderType: string
-  projectLabel: string
+  /** The building, when CT Hub can name it. Null rather than a dash: a chip
+   *  reading "—" takes the same space as a real one and says nothing. */
+  projectLabel: string | null
   amount: number
   stage: BbStage
   stageSince: string
@@ -40,6 +42,9 @@ export interface PendingBill {
 }
 
 export interface HeldBill extends PendingBill {
+  /** Whole days. `daysAtStage` returns a fraction so an SLA can be crossed at
+   *  the right hour; a screen that prints "34.427370196759256d" is a screen
+   *  nobody trusts with money. */
   days: number
   late: boolean
   /** The one thing wrong with it, if anything is. Ranked: a bill that cannot be
@@ -61,6 +66,10 @@ export interface DeskHold {
    *  every other figure in the section — a demo row counted as money is worse
    *  than no demo at all. */
   value: number
+  /** Real bills here, and walkthrough ones, counted apart. A desk holding only
+   *  examples must not print "0" next to a row reading 12,37,653. */
+  liveCount: number
+  exampleCount: number
   lateCount: number
   /** The longest anything has waited here. What the order is decided on. */
   oldestDays: number
@@ -88,7 +97,7 @@ export function whoHoldsWhat(
 
   for (const b of bills) {
     if (isTerminal(b.stage)) continue
-    const days = daysAtStage(b.stageSince, now)
+    const days = Math.round(daysAtStage(b.stageSince, now))
     const late = isOverSla(b.stage, b.stageSince, now)
 
     let g = groups.get(b.stage)
@@ -102,6 +111,8 @@ export function whoHoldsWhat(
         mine,
         bills: [],
         value: 0,
+        liveCount: 0,
+        exampleCount: 0,
         lateCount: 0,
         oldestDays: 0,
         slaDays: slaFor(b.stage),
@@ -123,8 +134,9 @@ export function whoHoldsWhat(
       late,
       flag: b.amendmentFlag ? 'amendment' : b.woPending ? 'no_wo' : late ? 'late' : null,
     })
-    if (!b.isExample) g.value += b.amount
-    if (late) g.lateCount += 1
+    if (b.isExample) g.exampleCount += 1
+    else { g.value += b.amount; g.liveCount += 1 }
+    if (late && !b.isExample) g.lateCount += 1
     if (days > g.oldestDays) g.oldestDays = days
   }
 
@@ -140,7 +152,10 @@ export function whoHoldsWhat(
 }
 
 export interface HoldSummary {
+  /** Real bills still moving. */
   bills: number
+  /** Walkthrough bills, counted apart so no figure on the page is inflated. */
+  examples: number
   /** Live money, examples excluded. */
   value: number
   late: number
@@ -148,14 +163,18 @@ export interface HoldSummary {
   orphaned: number
   /** Bills on a desk this person is on. */
   mine: number
+  orphanDesks: number
 }
 
 export function summarise(desks: DeskHold[]): HoldSummary {
   return {
-    bills: desks.reduce((s, d) => s + d.bills.length, 0),
+    bills: desks.reduce((s, d) => s + d.liveCount, 0),
+    examples: desks.reduce((s, d) => s + d.exampleCount, 0),
     value: desks.reduce((s, d) => s + d.value, 0),
     late: desks.reduce((s, d) => s + d.lateCount, 0),
-    orphaned: desks.filter(d => d.orphan).reduce((s, d) => s + d.bills.length, 0),
-    mine: desks.filter(d => d.mine).reduce((s, d) => s + d.bills.length, 0),
+    orphaned: desks.filter(d => d.orphan).reduce((s, d) => s + d.liveCount, 0),
+    mine: desks.filter(d => d.mine).reduce((s, d) => s + d.liveCount, 0),
+    /** Desks with nobody on them at all — the thing to fix, stated once. */
+    orphanDesks: desks.filter(d => d.orphan).length,
   }
 }
