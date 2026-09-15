@@ -3,7 +3,7 @@ import {
   entryNo, linkedNo, foldStock, availableAt, availableAnywhere, checkIssue,
   outstandingReturnables, checkReturn, missingForGate, missingForComplete, createsStock, heldItemCount,
   fmtQty, isPilotProject, PILOT_PROJECT_IDS, RETURNABLES_ON, STORES_LIVE, canSeeStores, stockScopeFor, visibleLocationIds, emptyScopeReason,
-  approversForRequest, approverKeyOf, approverLabel, groupProjects, UNGROUPED, entityCodeFromOrderNo, categoryFor, isServiceScope, bestIssueLocation,
+  approversForRequest, approverKeyOf, approverLabel, disciplineFromIn4Type, groupProjects, UNGROUPED, entityCodeFromOrderNo, categoryFor, isServiceScope, bestIssueLocation,
   type Movement, type ReturnableLine, type StockRow,
 } from './core'
 
@@ -612,5 +612,55 @@ describe('approversForRequest — Civil/Finishes to MA, MEP to KK', () => {
     expect(approverKeyOf(' ma ')).toBe('MA')
     expect(approverKeyOf('kk')).toBe('KK')
     expect(approverKeyOf('Civil')).toBeNull()
+  })
+})
+
+describe('disciplineFromIn4Type — using IN4s own filing, not a guess', () => {
+  const D = [
+    { id: 'civ', name: 'Civil' },
+    { id: 'ele', name: 'Electrical' },
+    { id: 'plu', name: 'Plumbing' },
+    { id: 'fin', name: 'Finishes' },
+    { id: 'fir', name: 'Fire Fighting' },
+    { id: 'ict', name: 'ICT' },
+    { id: 'hvac', name: 'Mechanical: HVAC' },
+    { id: 'lift', name: 'Mechanical: Lifts' },
+    { id: 'steel', name: 'Mechanical: Steel Fabrication' },
+  ]
+
+  it('reads the discipline straight out of IN4s type name', () => {
+    // These are the real strings on in4_materials.type_name.
+    expect(disciplineFromIn4Type('12 (M) Finishes', D)).toBe('fin')
+    expect(disciplineFromIn4Type('07 (M) Electrical Works', D)).toBe('ele')
+    expect(disciplineFromIn4Type('08 (M) Plumbing Works', D)).toBe('plu')
+    expect(disciplineFromIn4Type('09 (M) Fire Fighting Works', D)).toBe('fir')
+    expect(disciplineFromIn4Type('11 (M) ICT', D)).toBe('ict')
+    expect(disciplineFromIn4Type('03 (M) Civil', D)).toBe('civ')
+  })
+
+  it('catches the infra variants too, which are the same trade', () => {
+    expect(disciplineFromIn4Type('37 (M) Infra Electrical Works', D)).toBe('ele')
+    expect(disciplineFromIn4Type('48 (M) Infra Plumbing Works', D)).toBe('plu')
+  })
+
+  it('refuses to pick between our three Mechanical disciplines', () => {
+    // IN4 says "Mechanical Works" and we hold HVAC, Lifts and Steel
+    // Fabrication. Choosing one would look exactly like a real answer.
+    expect(disciplineFromIn4Type('06 (M) Mechanical Works', D)).toBeNull()
+  })
+
+  it('leaves the ones a person has to place', () => {
+    for (const t of [
+      '13 (A) Interiors', '10 (M) MGPS', '36 (M) Infra Structures/Buildings',
+      '19 (M) Site Admin', '56 (M) Mock Up Expense',
+    ]) {
+      expect(disciplineFromIn4Type(t, D)).toBeNull()
+    }
+  })
+
+  it('treats a missing type as a gap, not an error', () => {
+    expect(disciplineFromIn4Type(null, D)).toBeNull()
+    expect(disciplineFromIn4Type('', D)).toBeNull()
+    expect(disciplineFromIn4Type('12 (M) Finishes', [])).toBeNull()
   })
 })
