@@ -14,6 +14,15 @@ export interface FlatProject {
   parentId: string | null
   /** Admin's group name on a parent, when set (e.g. "NGH" on the NGH Infra row). */
   groupLabel?: string | null
+  /**
+   * Carries Cost Control data of its own — a budget line or a working sheet
+   * (shell_for, 16 Sep 2026). Decides whether a parent is a GROUP or a PROJECT:
+   * NGH / P2 / VV hold nothing themselves and are anchors; Admin Block holds
+   * ₹1.43 Cr of its own and is a project that happens to have sub-projects.
+   * Absent means unknown (an older shell) and is treated as true, because
+   * hiding a project's money behind a roll-up is the failure this prevents.
+   */
+  hasOwnData?: boolean
 }
 
 export interface TreeProject {
@@ -23,6 +32,13 @@ export interface TreeProject {
   /** What the branch is called — the group label, else the code, else the name. */
   label: string
   children: TreeProject[]
+  /**
+   * A pure grouping anchor: has children and no data of its own. Drawn as a
+   * group (chevron, children in view, no page of its own worth landing on).
+   * A parent with its own data is NOT an anchor — it is drawn as a project
+   * row with its sub-projects folded behind a "+N".
+   */
+  anchor: boolean
 }
 
 /**
@@ -33,6 +49,9 @@ export interface TreeProject {
  *  - ONE level of nesting. The data allows deeper; the real hierarchy is two
  *    deep and a sidebar that nests further becomes unusable.
  *  - Sorted by code, then name, numerically aware, so the order is stable.
+ *  - A child whose label would repeat its parent's ("NGH" under NGH, because
+ *    NGH Infra's code is NGH) is labelled by its name instead. The code is
+ *    left alone — renaming it would break the IN4 name-match.
  */
 export function buildProjectTree(projects: FlatProject[]): TreeProject[] {
   const byId = new Map(projects.map(p => [p.id, p]))
@@ -40,6 +59,7 @@ export function buildProjectTree(projects: FlatProject[]): TreeProject[] {
     id: p.id, code: p.code, name: p.name,
     label: (p.groupLabel?.trim() || p.code?.trim() || p.name).trim(),
     children: [],
+    anchor: false,
   })
   const roots = new Map<string, TreeProject>()
   const children: FlatProject[] = []
@@ -54,13 +74,18 @@ export function buildProjectTree(projects: FlatProject[]): TreeProject[] {
   }
   const sort = (a: TreeProject, b: TreeProject) => (a.code ?? a.name).localeCompare(b.code ?? b.name, undefined, { numeric: true })
   const out = [...roots.values()].sort(sort)
-  for (const r of out) r.children.sort(sort)
+  for (const r of out) {
+    r.children.sort(sort)
+    r.anchor = r.children.length > 0 && byId.get(r.id)?.hasOwnData === false
+    for (const c of r.children) if (c.label === r.label) c.label = c.name
+  }
   return out
 }
 
-/** Total projects in the tree, at any depth — for the lane's count badge. */
+/** Projects in the tree, at any depth — for the lane's count badge. Anchors
+ *  are not projects (NGH, P2, VV hold nothing), so they are not counted. */
 export function countTree(tree: TreeProject[]): number {
-  return tree.reduce((n, t) => n + 1 + t.children.length, 0)
+  return tree.reduce((n, t) => n + (t.anchor ? 0 : 1) + t.children.length, 0)
 }
 
 /** The project id an Internal Estimate or cockpit URL is on, or null — used to auto-open the branch. */
