@@ -622,3 +622,104 @@ export function signaturesFor(
     },
   ]
 }
+
+/* ── What can be corrected on a saved entry ─────────────────────────────── */
+
+/** Where a correction gets its choices from. 'text' is typed. */
+export type CorrectKind =
+  | 'text' | 'entity' | 'delivery_mode' | 'item_category' | 'project' | 'location'
+
+export interface CorrectableField {
+  field: string
+  label: string
+  kind: CorrectKind
+  /**
+   * True when the ledger has to follow the correction.
+   *
+   * `mio_movements` carries its own project_id and location_id, copied from
+   * the entry when the stock was created. Changing one on the entry alone
+   * would leave the entry saying one thing and the stock screen another — so
+   * these move the movement rows too, in the same breath.
+   */
+  movesLedger?: boolean
+  hint?: string
+}
+
+/**
+ * The fields a saved entry can be corrected on, by direction.
+ *
+ * Aksha, 16 Sep 2026: "more specific and more fields u can think which can be
+ * added - pls do". It was eight free-text fields, all of them about the
+ * driver; the things most likely to be wrong — which project, which trust,
+ * which shelf — could not be touched at all, which is how a delivery ends up
+ * filed against NGH instead of NGH B for ever.
+ *
+ * And he asked, of "Handed over": "will come here in the SRM iN section ???"
+ * It will, and the map puts it there — SRM In Step 1 lists both "Handed Over
+ * Party Name" and "Handed over to Name". But it means the OPPOSITE way round
+ * on the way in: on an IN the vendor's man hands over and OUR person receives;
+ * on an OUT we hand over and the site receives. One label for both directions
+ * reads backwards on one of them, so each direction gets its own words.
+ *
+ * What is still deliberately NOT here: quantity, rate, and the item itself.
+ * Changing those changes what the stock ledger says, and a ledger with two
+ * explanations for one number is the thing this whole section exists to
+ * avoid. Void the entry and record it again.
+ */
+export function correctableFields(direction: 'in' | 'out'): CorrectableField[] {
+  const common: CorrectableField[] = [
+    { field: 'po_wo_no', label: 'Purchase order number', kind: 'text' },
+    { field: 'remarks', label: 'Remarks', kind: 'text' },
+  ]
+
+  if (direction === 'in') {
+    return [
+      { field: 'party_name', label: 'Who brought it', kind: 'text' },
+      { field: 'vehicle_no', label: 'Vehicle number', kind: 'text' },
+      { field: 'driver_name', label: 'Driver name', kind: 'text' },
+      { field: 'driver_mobile', label: 'Driver mobile', kind: 'text' },
+      { field: 'driver_licence', label: 'Driver licence', kind: 'text' },
+      ...common,
+      { field: 'entity_id', label: 'Which trust is paying', kind: 'entity' },
+      {
+        field: 'project_id', label: 'Which project', kind: 'project', movesLedger: true,
+        hint: 'The stock moves with it — this is the one to use when a delivery was filed against the parent instead of the wing.',
+      },
+      {
+        field: 'location_id', label: 'Where it was put', kind: 'location', movesLedger: true,
+        hint: 'The stock moves to that shelf too, so the stock screen follows.',
+      },
+      { field: 'delivery_mode_id', label: 'How it came', kind: 'delivery_mode' },
+      { field: 'item_category_id', label: 'Item category', kind: 'item_category' },
+      { field: 'handed_over_party', label: 'Handed over by — shop or transporter', kind: 'text' },
+      { field: 'handed_over_to', label: 'Received by — our person', kind: 'text' },
+      { field: 'security_by', label: 'Security’s name', kind: 'text' },
+      { field: 'incharge_name', label: 'Storekeeper’s name', kind: 'text' },
+    ]
+  }
+
+  return [
+    { field: 'party_name', label: 'Who it went to', kind: 'text' },
+    { field: 'vehicle_no', label: 'Vehicle number', kind: 'text' },
+    { field: 'driver_name', label: 'Driver name', kind: 'text' },
+    ...common,
+    {
+      field: 'project_id', label: 'Which project it went to', kind: 'project', movesLedger: true,
+      hint: 'The stock moves with it.',
+    },
+    {
+      field: 'location_id', label: 'Out of which store', kind: 'location', movesLedger: true,
+      hint: 'Changes which store the material came off. Check the other store does not go negative.',
+    },
+    { field: 'to_location_id', label: 'Where it was put down at site', kind: 'location' },
+    { field: 'delivery_mode_id', label: 'How it went', kind: 'delivery_mode' },
+    { field: 'handed_over_party', label: 'Handed over to — company', kind: 'text' },
+    { field: 'handed_over_to', label: 'Handed over to — person', kind: 'text' },
+    { field: 'security_by', label: 'Issued by', kind: 'text' },
+  ]
+}
+
+/** Every field either direction allows, for the server to check against. */
+export function isCorrectable(direction: 'in' | 'out', field: string): CorrectableField | null {
+  return correctableFields(direction).find(f => f.field === field) ?? null
+}

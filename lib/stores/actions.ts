@@ -5,8 +5,9 @@ import { createClient } from '@/lib/supabase/server'
 import { getMyProfile } from '@/lib/auth'
 import {
   entryNo, checkIssue, checkReturn, createsStock, approversForRequest, disciplineFromIn4Type,
-  type Register,
+  canCorrectEntry, canVoidEntry, type Register,
 } from './core'
+import { isCorrectable } from './desk'
 import { loadStock, loadReturnables } from './queries'
 import { formatINR } from '@/lib/utils'
 import {
@@ -572,12 +573,6 @@ export async function confirmReceipt(input: {
 
 /* ── Corrections — Aksha, 13 Sep 2026: "yes", entries are editable ──────── */
 
-const FIELD_LABELS: Record<string, string> = {
-  vehicle_no: 'Vehicle number', driver_name: 'Driver name', driver_mobile: 'Driver mobile',
-  driver_licence: 'Driver licence', party_name: 'Party', remarks: 'Remarks',
-  handed_over_to: 'Handed over to', handed_over_party: 'Handed over party', po_wo_no: 'Purchase order number',
-}
-
 /**
  * Correct a saved entry, keeping what it said before.
  *
@@ -589,15 +584,25 @@ export async function correctEntry(
   entryId: string, field: string, newValue: string, reason?: string,
 ): Promise<Result> {
   const profile = await me()
+  if (!canCorrectEntry(profile.role)) {
+    return fail('Only the people who record entries — Security, the storekeeper, or a head — can correct one.')
+  }
   const supabase = await createClient()
 
-  if (!(field in FIELD_LABELS)) return fail('That field cannot be corrected here.')
+  // The direction decides which fields exist and what they are called, so the
+  // entry is read first and the field checked against ITS list.
+  const { data: head } = await supabase
+    .from('mio_entries').select('id, no, direction, stage').eq('id', entryId).maybeSingle()
+  if (!head) return fail('That entry no longer exists.')
 
-  // The column is chosen at runtime from FIELD_LABELS, so the generated types
-  // cannot name it — hence the cast. The `field in FIELD_LABELS` guard above
-  // is what keeps this from being a way to read an arbitrary column.
+  const spec = isCorrectable(head.direction as 'in' | 'out', field)
+  if (!spec) return fail('That field cannot be corrected here.')
+
+  // The column is chosen at runtime from the list above, so the generated
+  // types cannot name it — hence the cast. isCorrectable is what keeps this
+  // from being a way to read or write an arbitrary column.
   const { data: entry } = await supabase
-    .from('mio_entries').select(`id, no, ${field}`).eq('id', entryId).maybeSingle()
+    .from('mio_entries').select(`id, ${field}`).eq('id', entryId).maybeSingle()
   if (!entry) return fail('That entry no longer exists.')
 
   const oldValue = (entry as unknown as Record<string, unknown>)[field]
@@ -608,19 +613,51 @@ export async function correctEntry(
   const { error } = await supabase.from('mio_entries').update({ [field]: newText }).eq('id', entryId)
   if (error) return fail(explain(error, 'save the correction'))
 
+  /**
+   * THE LEDGER FOLLOWS THE CORRECTION.
+   *
+   * `mio_movements` carries its own project_id and location_id, copied from
+   * the entry when the stock was created. Correcting the entry alone would
+   * leave the entry saying NGH B and the stock screen still showing the
+   * material under NGH — two answers to one question, which is exactly what
+   * folding stock from the ledger was meant to prevent.
+   *
+   * A voided entry has no movements and a vendor IN never made any, so this
+   * is a no-op on both rather than a special case.
+   */
+  let moved = 0
+  if (spec.movesLedger) {
+    const { data: rows, error: mvErr } = await supabase
+      .from('mio_movements')
+      .update({ [field]: newText })
+      .eq('entry_id', entryId)
+      .select('id')
+    if (mvErr) {
+      // The entry is already corrected; say what did not follow rather than
+      // pretending the whole thing worked or rolling back a saved fact.
+      return fail(`${spec.label} was corrected, but the stock did not move with it: ${explain(mvErr, 'move the stock')}`)
+    }
+    moved = (rows ?? []).length
+  }
+
   await supabase.from('mio_edits').insert({
-    table_name: 'mio_entries', row_id: entryId, field: FIELD_LABELS[field],
+    table_name: 'mio_entries', row_id: entryId, field: spec.label,
     old_value: oldText, new_value: newText, reason: reason?.trim() || null, changed_by: profile.id,
   })
 
   revalidatePath('/stores')
-  return done(`${FIELD_LABELS[field]} corrected. The old value is kept on the entry.`)
+  return done(moved > 0
+    ? `${spec.label} corrected, and ${moved} stock line${moved === 1 ? '' : 's'} moved with it. The old value is kept.`
+    : `${spec.label} corrected. The old value is kept on the entry.`)
 }
 
 /** Recorded in error. Kept and marked, never deleted — and its movements go,
  *  so a mistaken entry cannot leave phantom stock behind. */
 export async function voidEntry(entryId: string, reason: string): Promise<Result> {
   const profile = await me()
+  if (!canVoidEntry(profile.role)) {
+    return fail('Voiding takes the stock back off the ledger, so it is left to a head or an admin. Ask one of them, or correct the entry instead.')
+  }
   const supabase = await createClient()
   if (!reason?.trim()) return fail('Say why it is being voided.')
 

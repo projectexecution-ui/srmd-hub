@@ -1,36 +1,40 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { useState, useTransition } from 'react'
+import { useMemo, useState, useTransition } from 'react'
 import { correctEntry, voidEntry, confirmReceipt } from '@/lib/stores/actions'
 import { fmtQty, RETURNABLES_ON } from '@/lib/stores/core'
-import { signaturesFor, type SignedSlot } from '@/lib/stores/desk'
+import { signaturesFor, correctableFields, type SignedSlot } from '@/lib/stores/desk'
 import { formatDateTime, formatINR } from '@/lib/utils'
 import { PenLine } from 'lucide-react'
-import type { EntryDetail } from '@/lib/stores/queries'
-import { Field, inputClass, Btn, Notice, StageChip, RegisterChip, Scroller, th, thNum, td, tdNum } from '../../ui'
+import type { EntryDetail, ProjectOpt } from '@/lib/stores/queries'
+import {
+  Field, inputClass, Btn, Notice, StageChip, RegisterChip, Scroller, GroupedOptions,
+  th, thNum, td, tdNum,
+} from '../../ui'
 
-/** The fields a correction may touch. Anything that would change what the
- *  ledger says — quantity, rate, the item itself — is deliberately not here:
- *  that is a void and a fresh entry, so stock always has one explanation. */
-const CORRECTABLE = [
-  { field: 'vehicle_no', label: 'Vehicle number' },
-  { field: 'driver_name', label: 'Driver name' },
-  { field: 'driver_mobile', label: 'Driver mobile' },
-  { field: 'driver_licence', label: 'Driver licence' },
-  { field: 'party_name', label: 'Party' },
-  { field: 'po_wo_no', label: 'Purchase order number' },
-  { field: 'handed_over_to', label: 'Handed over to' },
-  { field: 'remarks', label: 'Remarks' },
-] as const
+/** Which fields, and what they are called, is decided by direction in
+ *  lib/stores/desk.ts — see correctableFields. Nothing is listed here, so the
+ *  screen and the server cannot disagree about what may be changed. */
+export interface CorrectOptions {
+  entities: Array<{ id: string; name: string }>
+  modes: Array<{ id: string; name: string }>
+  categories: Array<{ id: string; name: string }>
+  projects: ProjectOpt[]
+  locations: Array<{ id: string; label: string }>
+}
 
 export function EntryDetailPanels({
-  entry, places = [],
+  entry, places = [], options, canCorrect = false, canVoid = false,
 }: {
   entry: EntryDetail
   /** Where it could have been put down at the far end — the map's "capture
    *  where the materials are being stored". */
   places?: Array<{ id: string; label: string }>
+  /** The lists a correction picks from, so a project is chosen and not retyped. */
+  options: CorrectOptions
+  canCorrect?: boolean
+  canVoid?: boolean
 }) {
   const router = useRouter()
   const total = entry.lines.reduce((s, l) => s + (l.amount ?? 0), 0)
@@ -67,7 +71,19 @@ export function EntryDetailPanels({
               mean what it says. */}
           <Cell label={entry.direction === 'in' ? 'Security' : 'Issued by'} value={entry.securityBy} />
           {entry.direction === 'in' && <Cell label="SRM Incharge" value={entry.inchargeName} />}
-          <Cell label="Handed over to" value={entry.handedOverTo} />
+          {/* Aksha: "Also Handed over will come here in the SRM iN section ???"
+              It does — the map lists both halves on SRM In Step 1 — but it means
+              the other way round coming in: the vendor's man hands over and our
+              person receives. One label for both directions reads backwards on
+              one of them. */}
+          <Cell
+            label={entry.direction === 'in' ? 'Handed over by' : 'Handed over to — company'}
+            value={entry.handedOverParty}
+          />
+          <Cell
+            label={entry.direction === 'in' ? 'Received by' : 'Handed over to — person'}
+            value={entry.handedOverTo}
+          />
           <Cell label="Remarks" value={entry.remarks} />
         </dl>
 
@@ -156,7 +172,12 @@ export function EntryDetailPanels({
         <Receipt entryId={entry.id} entryNo={entry.no} places={places} onDone={() => router.refresh()} />
       )}
 
-      {entry.stage !== 'void' && <Corrections entry={entry} onDone={() => router.refresh()} />}
+      {entry.stage !== 'void' && (
+        <Corrections
+          entry={entry} options={options} canCorrect={canCorrect} canVoid={canVoid}
+          onDone={() => router.refresh()}
+        />
+      )}
 
       {entry.edits.length > 0 && (
         <details className="rounded-xl border border-gray-200 bg-white overflow-hidden">
@@ -285,13 +306,62 @@ function Cell({ label, value, mono }: { label: string; value: string | null; mon
   )
 }
 
-function Corrections({ entry, onDone }: { entry: EntryDetail; onDone: () => void }) {
+/**
+ * Correcting a saved entry.
+ *
+ * Aksha, 16 Sep 2026: "this also the Store keeper should be able to do and
+ * record of that should be there - also more specific and more fields u can
+ * think which can be added".
+ *
+ * Three things changed. WHO — the rule is canCorrectEntry in core.ts, and it
+ * is whoever may record an entry in the first place: the guard who mistyped
+ * the vehicle number and the storekeeper who filed a delivery against the
+ * wrong wing are the two people who find the mistake. WHAT — the fields now
+ * come from correctableFields(direction), which added the things most likely
+ * to be wrong and could not be touched at all: the project, the trust, the
+ * shelf, how it came, and both halves of "handed over" with the words the
+ * right way round for each direction. HOW — where the answer is a list, it is
+ * a list, because retyping a project name into a free-text box is how the
+ * wrong project gets saved twice.
+ */
+function Corrections({
+  entry, options, canCorrect, canVoid, onDone,
+}: {
+  entry: EntryDetail
+  options: CorrectOptions
+  canCorrect: boolean
+  canVoid: boolean
+  onDone: () => void
+}) {
+  const fields = useMemo(() => correctableFields(entry.direction), [entry.direction])
   const [pending, start] = useTransition()
   const [open, setOpen] = useState(false)
-  const [field, setField] = useState<string>(CORRECTABLE[0].field)
+  const [field, setField] = useState<string>(fields[0].field)
   const [value, setValue] = useState('')
   const [reason, setReason] = useState('')
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null)
+
+  const spec = fields.find(f => f.field === field) ?? fields[0]
+
+  // Never a disabled button with no explanation: somebody who may not correct
+  // is told who can, rather than finding a panel that does nothing.
+  if (!canCorrect) {
+    return (
+      <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
+        <p className="text-[12.5px] text-gray-600">
+          Something wrong on this entry? Security, the storekeeper and the heads can correct it —
+          ask one of them. Every correction keeps the old value and the name of whoever made it.
+        </p>
+      </div>
+    )
+  }
+
+  const choices: Array<{ id: string; label: string }> =
+    spec.kind === 'entity' ? options.entities.map(o => ({ id: o.id, label: o.name }))
+      : spec.kind === 'delivery_mode' ? options.modes.map(o => ({ id: o.id, label: o.name }))
+        : spec.kind === 'item_category' ? options.categories.map(o => ({ id: o.id, label: o.name }))
+          : spec.kind === 'location' ? options.locations
+            : []
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-4">
@@ -305,17 +375,50 @@ function Corrections({ entry, onDone }: { entry: EntryDetail; onDone: () => void
       ) : (
         <div className="space-y-3 max-w-lg">
           <Field label="What is wrong">
-            <select className={inputClass} value={field} onChange={e => { setField(e.target.value); setValue('') }}>
-              {CORRECTABLE.map(c => <option key={c.field} value={c.field}>{c.label}</option>)}
+            <select
+              className={inputClass} value={field}
+              onChange={e => { setField(e.target.value); setValue(''); setResult(null) }}
+            >
+              {fields.map(f => (
+                <option key={f.field} value={f.field}>
+                  {f.label}{f.movesLedger ? ' — moves the stock too' : ''}
+                </option>
+              ))}
             </select>
           </Field>
-          <Field label="Correct value">
-            <input className={inputClass} value={value} onChange={e => setValue(e.target.value)} autoComplete="off" />
+
+          <Field label="Correct value" hint={spec.hint}>
+            {spec.kind === 'text' ? (
+              <input className={inputClass} value={value} onChange={e => setValue(e.target.value)} autoComplete="off" />
+            ) : spec.kind === 'project' ? (
+              <select className={inputClass} value={value} onChange={e => setValue(e.target.value)}>
+                <option value="">Pick one</option>
+                <GroupedOptions rows={options.projects} />
+              </select>
+            ) : (
+              <select className={inputClass} value={value} onChange={e => setValue(e.target.value)}>
+                <option value="">Pick one</option>
+                {choices.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
+              </select>
+            )}
           </Field>
+
+          {/* Saying it before it is done, not after. A correction that moves
+              stock between two shelves is a bigger act than fixing a typo, and
+              the person doing it should know which one they are about to do. */}
+          {spec.movesLedger && (
+            <Notice kind="info">
+              This moves the stock with it, so the stock screen follows the correction rather than
+              disagreeing with the entry.
+            </Notice>
+          )}
+
           <Field label="Why" hint="Optional, but it is what makes the history readable in six months.">
             <input className={inputClass} value={reason} onChange={e => setReason(e.target.value)} autoComplete="off" />
           </Field>
+
           {result && <Notice kind={result.ok ? 'ok' : 'bad'}>{result.message}</Notice>}
+
           <div className="flex flex-wrap gap-2">
             <Btn
               busy={pending}
@@ -328,21 +431,29 @@ function Corrections({ entry, onDone }: { entry: EntryDetail; onDone: () => void
               Save the correction
             </Btn>
             <Btn kind="ghost" onClick={() => { setOpen(false); setResult(null) }}>Cancel</Btn>
-            <Btn
-              kind="danger" busy={pending}
-              onClick={() => {
-                const why = window.prompt('Voiding keeps the entry but removes its stock. Why?')
-                if (!why) return
-                start(async () => {
-                  const r = await voidEntry(entry.id, why)
-                  setResult(r)
-                  if (r.ok) onDone()
-                })
-              }}
-            >
-              Void this entry
-            </Btn>
+            {canVoid && (
+              <Btn
+                kind="danger" busy={pending}
+                onClick={() => {
+                  const why = window.prompt('Voiding keeps the entry but removes its stock. Why?')
+                  if (!why) return
+                  start(async () => {
+                    const r = await voidEntry(entry.id, why)
+                    setResult(r)
+                    if (r.ok) onDone()
+                  })
+                }}
+              >
+                Void this entry
+              </Btn>
+            )}
           </div>
+
+          {!canVoid && (
+            <p className="text-[11.5px] text-gray-500">
+              Voiding an entry takes its stock back off the ledger, so it is left to a head or an admin.
+            </p>
+          )}
           <p className="text-[11.5px] text-gray-500">
             Quantities, rates and the items themselves are not corrected here — changing those would change
             what the stock ledger says. Void the entry and record it again, so stock always has one explanation.

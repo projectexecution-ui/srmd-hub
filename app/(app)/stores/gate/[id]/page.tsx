@@ -4,7 +4,8 @@ import {
   loadEntry, loadItems, loadLists, listsOf, storableLocations, locationLabel, loadProjectOptions,
   loadRecentItemIds, loadLastLocations,
 } from '@/lib/stores/queries'
-import { createsStock } from '@/lib/stores/core'
+import { createsStock, canCorrectEntry, canVoidEntry } from '@/lib/stores/core'
+import { getMyProfile } from '@/lib/auth'
 import { CompleteForm } from './CompleteForm'
 import { EntryDetailPanels } from './EntryDetailPanels'
 import { guardStoreTab } from '../../guard'
@@ -16,6 +17,7 @@ export default async function GateEntryPage({ params }: { params: Promise<{ id: 
   if (blocked) return blocked
 
   const { id } = await params
+  const profile = await getMyProfile()
   const entry = await loadEntry(id)
   if (!entry) notFound()
 
@@ -38,7 +40,22 @@ export default async function GateEntryPage({ params }: { params: Promise<{ id: 
         ← Back to the register
       </Link>
 
-      <EntryDetailPanels entry={entry} places={locations} />
+      {/* A correction picks from the same lists the entry was filled in from,
+          so "which project" is chosen rather than retyped — and the storekeeper
+          can make it. Aksha, 16 Sep 2026. */}
+      <EntryDetailPanels
+        entry={entry}
+        places={locations}
+        canCorrect={canCorrectEntry(profile?.role)}
+        canVoid={canVoidEntry(profile?.role)}
+        options={{
+          entities: listsOf(lists, 'entity').filter(e => e.isActive).map(e => ({ id: e.id, name: e.name })),
+          modes: listsOf(lists, 'delivery_mode').filter(m => m.isActive).map(m => ({ id: m.id, name: m.name })),
+          categories: listsOf(lists, 'item_category').filter(c => c.isActive).map(c => ({ id: c.id, name: c.name })),
+          projects,
+          locations,
+        }}
+      />
 
       {entry.stage === 'gate' && entry.direction === 'in' && (
         <CompleteForm

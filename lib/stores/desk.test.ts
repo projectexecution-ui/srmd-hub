@@ -3,7 +3,7 @@ import {
   istDay, daysSince, daysOverdue, waitedFor, overdueWord, mostUrgent,
   setupHealth, duplicateNameGroups, checkReceipt, overReceiptNote, receiptLabel,
   searchStock, groupStockByDiscipline, groupStockByStore, stockWorth, itemHistory, moveWord,
-  stockLines, signaturesFor, NO_DISCIPLINE, type StockLine, type Waiting, type ItemMove,
+  stockLines, signaturesFor, correctableFields, isCorrectable, NO_DISCIPLINE, type StockLine, type Waiting, type ItemMove,
 } from './desk'
 
 const NOW = new Date('2026-09-16T07:30:00.000Z') // 13:00 IST
@@ -505,6 +505,79 @@ describe('which signatures an entry can actually have', () => {
       })) {
         expect(s.what.length).toBeGreaterThan(15)
       }
+    }
+  })
+})
+
+describe('what can be corrected on a saved entry', () => {
+  const inFields = correctableFields('in')
+  const outFields = correctableFields('out')
+
+  it('offers the things most likely to be wrong, which could not be touched before', () => {
+    // It was eight free-text fields, all about the driver.
+    for (const f of ['project_id', 'location_id', 'entity_id', 'item_category_id', 'delivery_mode_id']) {
+      expect(inFields.map(x => x.field)).toContain(f)
+    }
+  })
+
+  it('words "handed over" the right way round for each direction', () => {
+    // Aksha: "Also Handed over will come here in the SRM iN section ???"
+    // It does, and the map puts it there — but coming IN the vendor hands over
+    // and our person receives, which is the opposite of going out.
+    const inParty = inFields.find(f => f.field === 'handed_over_party')!
+    const inTo = inFields.find(f => f.field === 'handed_over_to')!
+    expect(inParty.label).toContain('Handed over by')
+    expect(inTo.label).toContain('Received by')
+
+    const outParty = outFields.find(f => f.field === 'handed_over_party')!
+    const outTo = outFields.find(f => f.field === 'handed_over_to')!
+    expect(outParty.label).toContain('Handed over to')
+    expect(outTo.label).toContain('person')
+  })
+
+  it('marks exactly the two fields the ledger has to follow', () => {
+    // mio_movements carries its own project_id and location_id.
+    expect(inFields.filter(f => f.movesLedger).map(f => f.field).sort())
+      .toEqual(['location_id', 'project_id'])
+    expect(outFields.filter(f => f.movesLedger).map(f => f.field).sort())
+      .toEqual(['location_id', 'project_id'])
+  })
+
+  it('tells the person what a ledger-moving correction will do', () => {
+    for (const f of [...inFields, ...outFields].filter(x => x.movesLedger)) {
+      expect(f.hint && f.hint.length > 20).toBe(true)
+    }
+  })
+
+  it('never offers a field that would rewrite what the stock says', () => {
+    const forbidden = ['qty', 'rate', 'item_id', 'amount', 'stage', 'no', 'direction', 'entry_date']
+    for (const f of [...inFields, ...outFields]) {
+      expect(forbidden).not.toContain(f.field)
+    }
+  })
+
+  it('does not offer a driver on an issue, nor a trust on the way out', () => {
+    expect(outFields.map(f => f.field)).not.toContain('driver_licence')
+    expect(outFields.map(f => f.field)).not.toContain('entity_id')
+  })
+
+  it('offers where it was put down at site only on the way out', () => {
+    expect(outFields.map(f => f.field)).toContain('to_location_id')
+    expect(inFields.map(f => f.field)).not.toContain('to_location_id')
+  })
+
+  it('checks a field against the direction it was asked for', () => {
+    expect(isCorrectable('in', 'entity_id')?.label).toBe('Which trust is paying')
+    expect(isCorrectable('out', 'entity_id')).toBeNull()
+    expect(isCorrectable('in', 'qty')).toBeNull()
+    // The classic one: a column name that exists but was never offered.
+    expect(isCorrectable('in', 'security_signed_by')).toBeNull()
+  })
+
+  it('gives every field a label a person would say out loud', () => {
+    for (const f of [...inFields, ...outFields]) {
+      expect(f.label).not.toMatch(/_id\b|_no\b|^[a-z_]+$/)
+      expect(f.label.length).toBeGreaterThan(3)
     }
   })
 })

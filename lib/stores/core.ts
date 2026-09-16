@@ -753,3 +753,35 @@ export function canRecordAtGate(role: string | null | undefined): boolean {
   if (!role) return false
   return ['security', 'store_manager', 'admin', 'founder', 'head'].includes(role)
 }
+
+/**
+ * Who may correct a saved entry.
+ *
+ * Aksha, 16 Sep 2026: "this also the Store keeper should be able to do and
+ * record of that should be there."
+ *
+ * Whoever may WRITE an entry may fix one — a guard who mistypes a vehicle
+ * number and a storekeeper who files a delivery against the wrong wing are
+ * the two people who find the mistake, and sending them to look for an admin
+ * is how a register stops being corrected at all. Every correction keeps the
+ * old value with the name of whoever made it, which is what makes that safe.
+ *
+ * Nothing about it was decided before this: `correctEntry` asked only that
+ * somebody was signed in, so the rule existed nowhere and could be widened or
+ * narrowed by accident.
+ */
+export function canCorrectEntry(role: string | null | undefined): boolean {
+  return canRecordAtGate(role)
+}
+
+/**
+ * Who may VOID one — which is a different question.
+ *
+ * Voiding deletes the entry's movements: stock that was there stops being
+ * there. It stays narrow, and the button says so rather than vanishing,
+ * because a storekeeper who cannot void needs to know who to ask.
+ */
+export function canVoidEntry(role: string | null | undefined): boolean {
+  if (!role) return false
+  return ['admin', 'founder', 'head'].includes(role)
+}

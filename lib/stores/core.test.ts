@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   entryNo, linkedNo, foldStock, availableAt, availableAnywhere, checkIssue,
   outstandingReturnables, checkReturn, missingForGate, missingForComplete, createsStock, heldItemCount,
-  fmtQty, isPilotProject, PILOT_PROJECT_IDS, RETURNABLES_ON, STORES_LIVE, canSeeStores, canRecordAtGate, stockScopeFor, visibleLocationIds, emptyScopeReason,
+  fmtQty, isPilotProject, PILOT_PROJECT_IDS, RETURNABLES_ON, STORES_LIVE, canSeeStores, canRecordAtGate, canCorrectEntry, canVoidEntry, stockScopeFor, visibleLocationIds, emptyScopeReason,
   roleStoreTabs, visibleStoreTabs, canOpenStoreTab, homeStoreTab, storeTabHref, STORE_TABS, STORE_TAB_LABEL,
   approversForRequest, approverKeyOf, approverLabel, disciplineFromIn4Type, groupProjects, UNGROUPED, entityCodeFromOrderNo, categoryFor, isServiceScope, bestIssueLocation,
   type Movement, type ReturnableLine, type StockRow,
@@ -799,5 +799,32 @@ describe('the fold remembers when a shelf last changed', () => {
     ])
     expect(rows.find(r => r.locationId === 'L1')?.lastMovedAt).toBe('2026-08-01T00:00:00.000Z')
     expect(rows.find(r => r.locationId === 'L2')?.lastMovedAt).toBe('2026-09-14T00:00:00.000Z')
+  })
+})
+
+describe('who may correct, and who may void', () => {
+  it('lets whoever records an entry fix one', () => {
+    // Aksha, 16 Sep 2026: "this also the Store keeper should be able to do".
+    for (const role of ['security', 'store_manager', 'admin', 'founder', 'head']) {
+      expect(canCorrectEntry(role)).toBe(true)
+    }
+  })
+
+  it('does not let an engineer rewrite a gate entry', () => {
+    expect(canCorrectEntry('engineer')).toBe(false)
+    expect(canCorrectEntry('backoffice')).toBe(false)
+    expect(canCorrectEntry(null)).toBe(false)
+  })
+
+  it('keeps voiding narrower than correcting, because it removes stock', () => {
+    expect(canVoidEntry('store_manager')).toBe(false)
+    expect(canVoidEntry('security')).toBe(false)
+    for (const role of ['admin', 'founder', 'head']) expect(canVoidEntry(role)).toBe(true)
+  })
+
+  it('never lets somebody void who may not even correct', () => {
+    for (const role of ['admin', 'founder', 'head', 'store_manager', 'security', 'engineer', 'backoffice', null]) {
+      if (canVoidEntry(role)) expect(canCorrectEntry(role)).toBe(true)
+    }
   })
 })
