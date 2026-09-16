@@ -581,3 +581,32 @@ describe('what can be corrected on a saved entry', () => {
     }
   })
 })
+
+describe('the Odoo backlog is flagged until it is worked down', () => {
+  const none = {
+    itemsWithoutDiscipline: 0, duplicateNameGroups: 0, staffAssigned: 4,
+    itemsWithoutRate: 0, locationsWithoutProject: 0,
+  }
+
+  it('says how many lines do not say whose they are', () => {
+    // Aksha, 16 Sep 2026: "just flag me which all are pending to do".
+    const note = setupHealth({ ...none, unassignedStock: 551 })
+      .find(n => n.key === 'whose')
+    expect(note?.text).toContain('551 stock lines')
+    expect(note?.href).toBe('/stores/masters?list=whose')
+  })
+
+  it('treats it as serious — an engineer cannot request stock nobody owns', () => {
+    expect(setupHealth({ ...none, unassignedStock: 551 }).find(n => n.key === 'whose')?.serious).toBe(true)
+  })
+
+  it('says nothing once the backlog is cleared', () => {
+    expect(setupHealth({ ...none, unassignedStock: 0 }).map(n => n.key)).not.toContain('whose')
+    expect(setupHealth(none).map(n => n.key)).not.toContain('whose')
+  })
+
+  it('counts one line in the right English', () => {
+    expect(setupHealth({ ...none, unassignedStock: 1 }).find(n => n.key === 'whose')?.text)
+      .toContain('1 stock line does not')
+  })
+})

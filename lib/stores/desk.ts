@@ -124,6 +124,8 @@ export interface HealthNote {
 }
 
 export interface HealthInput {
+  /** Stock lines whose movements carry no project — the Odoo backlog. */
+  unassignedStock?: number
   itemsWithoutDiscipline: number
   duplicateNameGroups: number
   staffAssigned: number
@@ -165,6 +167,16 @@ export function setupHealth(n: HealthInput): HealthNote[] {
       key: 'duplicates',
       text: `${n.duplicateNameGroups} item${n.duplicateNameGroups === 1 ? '' : 's'} spelled two ways — ${n.duplicateNameGroups === 1 ? 'its' : 'their'} stock is split in two`,
       href: '/stores/masters?list=items',
+      serious: true,
+    })
+  }
+  if ((n.unassignedStock ?? 0) > 0) {
+    out.push({
+      key: 'whose',
+      text: n.unassignedStock === 1
+        ? '1 stock line does not say which project it belongs to'
+        : `${n.unassignedStock} stock lines do not say which project they belong to`,
+      href: '/stores/masters?list=whose',
       serious: true,
     })
   }

@@ -1095,11 +1095,12 @@ export async function loadCounts(projectId?: string | null): Promise<StoreCounts
  */
 export async function loadSetupHealth(): Promise<HealthInput> {
   const supabase = await createClient()
-  const [items, stock, lists, { count: staff }] = await Promise.all([
+  const [items, stock, lists, { count: staff }, unassigned] = await Promise.all([
     loadItems(),
     loadStock(),
     loadLists(),
     supabase.from('mio_project_staff').select('id', { count: 'exact', head: true }).eq('is_active', true),
+    loadUnassignedStock(),
   ])
 
   const active = items.filter(i => i.isActive)
@@ -1122,6 +1123,7 @@ export async function loadSetupHealth(): Promise<HealthInput> {
     itemsWithoutRate: [...held].filter(id => rateOf.get(id) == null
       && active.find(i => i.id === id)?.lastRate == null).length,
     locationsWithoutProject: sites.filter(s => !s.projectId).length,
+    unassignedStock: unassigned.length,
   }
 }
 
@@ -1554,4 +1556,71 @@ export async function loadAwaitingReceipt(projectIds: readonly string[] | null):
       qty: num(l.qty),
     })),
   }))
+}
+
+/* ── Stock that belongs to nobody ───────────────────────────────────────── */
+
+export interface UnassignedStock {
+  itemId: string
+  itemName: string
+  unit: string
+  locationId: string | null
+  where: string
+  qty: number
+  /** How many movements carry this line, so the screen can say what it moves. */
+  movements: number
+}
+
+/**
+ * Stock whose movements carry no project.
+ *
+ * Aksha, 16 Sep 2026, on his own rule that stock belongs to a project wherever
+ * it is stored: "i will do that assignment - give me Bulk selector to assign -
+ * so i can do - just flag me which all are pending to do".
+ *
+ * Every one of the opening rows loaded from Odoo is in here, because Odoo
+ * tracked a LOCATION and never a project. Material arriving through the gate
+ * since then carries its project from the purchase order, so this list only
+ * ever shrinks — it is a backlog, not a leak.
+ *
+ * Grouped to (item, place) rather than listed per movement: that is the line a
+ * person sees on the stock screen, and assigning a project to half a shelf is
+ * not a thing anybody wants to do.
+ */
+export async function loadUnassignedStock(): Promise<UnassignedStock[]> {
+  const supabase = await createClient()
+  const [{ data }, items, lists] = await Promise.all([
+    supabase
+      .from('mio_movements')
+      .select('item_id, location_id, qty')
+      .is('project_id', null)
+      .limit(5000),
+    loadItems(),
+    loadLists(),
+  ])
+
+  const byItem = new Map(items.map(i => [i.id, i]))
+  const rows = new Map<string, UnassignedStock>()
+  for (const m of data ?? []) {
+    const itemId = m.item_id as string
+    const locationId = (m.location_id as string | null) ?? null
+    const k = `${itemId}::${locationId ?? ''}`
+    const row = rows.get(k) ?? {
+      itemId,
+      itemName: byItem.get(itemId)?.name ?? 'Unknown item',
+      unit: byItem.get(itemId)?.unit ?? '',
+      locationId,
+      where: locationLabel(lists, locationId) ?? 'Not placed',
+      qty: 0,
+      movements: 0,
+    }
+    row.qty += num(m.qty)
+    row.movements += 1
+    rows.set(k, row)
+  }
+
+  return [...rows.values()]
+    // Nothing left on the shelf is nothing to assign.
+    .filter(r => r.qty !== 0)
+    .sort((a, b) => a.where.localeCompare(b.where) || a.itemName.localeCompare(b.itemName))
 }

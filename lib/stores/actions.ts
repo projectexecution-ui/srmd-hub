@@ -887,3 +887,53 @@ export async function unassignStaff(id: string): Promise<Result> {
   revalidatePath('/stores/masters')
   return done('Removed.')
 }
+
+/* ── Saying whose stock it is ───────────────────────────────────────────── */
+
+/**
+ * Attach a project to stock that carries none.
+ *
+ * Aksha's rule, 16 Sep 2026: stock belongs to a PROJECT and can sit in any
+ * warehouse — "PO of NGH B Belongs to NGH PRoject - so Eng of NGH Project can
+ * call for NGH A,B,C etc Stock". Everything loaded from Odoo arrived without
+ * one, because Odoo tracked the shelf and never the project.
+ *
+ * It writes the project onto the MOVEMENTS, not onto a separate table, so the
+ * fold keeps being the single source of what is held and whose it is. Only
+ * rows that still carry no project are touched — running it twice cannot
+ * reassign stock somebody has already placed, and two people working down the
+ * list cannot overwrite each other.
+ */
+export async function assignStockProject(input: {
+  lines: Array<{ itemId: string; locationId: string | null }>
+  projectId: string
+}): Promise<Result<{ moved: number }>> {
+  const profile = await me()
+  if (!canCorrectEntry(profile.role)) {
+    return fail('Only the people who keep the store can say whose stock it is.')
+  }
+  if (!input.projectId) return fail('Pick the project this stock belongs to.')
+  const lines = (input.lines ?? []).filter(l => l.itemId)
+  if (lines.length === 0) return fail('Tick at least one line first.')
+
+  const supabase = await createClient()
+  let moved = 0
+  for (const l of lines) {
+    let q = supabase
+      .from('mio_movements')
+      .update({ project_id: input.projectId })
+      .eq('item_id', l.itemId)
+      .is('project_id', null)
+    q = l.locationId ? q.eq('location_id', l.locationId) : q.is('location_id', null)
+
+    const { data, error } = await q.select('id')
+    if (error) return fail(explain(error, 'assign the stock'))
+    moved += (data ?? []).length
+  }
+
+  revalidatePath('/stores')
+  return done(
+    `${moved} stock movement${moved === 1 ? '' : 's'} now belong${moved === 1 ? 's' : ''} to that project.`,
+    { moved },
+  )
+}

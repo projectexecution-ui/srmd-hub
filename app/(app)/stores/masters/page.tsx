@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import {
-  loadLists, loadItems, loadProjectOptions, loadProjectStaff, loadAssignablePeople,
+  loadLists, loadItems, loadProjectOptions, loadProjectStaff, loadAssignablePeople, loadUnassignedStock,
 } from '@/lib/stores/queries'
 import { MastersClient } from './MastersClient'
 import { guardStoreTab } from '../guard'
@@ -12,13 +12,14 @@ export default async function MastersPage() {
   if (blocked) return blocked
 
   const supabase = await createClient()
-  const [lists, items, { data: companies }, projects, staff, people] = await Promise.all([
+  const [lists, items, { data: companies }, projects, staff, people, unassigned] = await Promise.all([
     loadLists(),
     loadItems(),
     supabase.from('in4_companies').select('id, code, name').order('code'),
     loadProjectOptions(),
     loadProjectStaff(),
     loadAssignablePeople(),
+    loadUnassignedStock(),
   ])
 
   return (
@@ -29,6 +30,7 @@ export default async function MastersPage() {
       projects={projects}
       staff={staff}
       people={people}
+      unassigned={unassigned}
     />
   )
 }
