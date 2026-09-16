@@ -1,6 +1,7 @@
 'use client'
 
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
+import { fmtQty } from '@/lib/stores/core'
 import { Check, ChevronLeft, Truck, Package, Hand, Container, Car, Box } from 'lucide-react'
 
 /**
@@ -134,19 +135,27 @@ export function BigInput({
   )
 }
 
-/** Quick picks above a text field — a guard types "Balaji" far less often than
- *  he taps it, and the same shop comes six times a week. */
-export function QuickPicks({ options, onPick }: { options: string[]; onPick: (v: string) => void }) {
+/** Quick picks above the shop picker — a guard taps "Sonal Ceramics" far more
+ *  often than he searches for it, and the same shop comes six times a week.
+ *
+ *  These are IN4 SUPPLIERS, carrying their id, so the quickest path is also
+ *  the one that links the entry to a purchase order. */
+export function QuickPicks({
+  options, onPick,
+}: {
+  options: ReadonlyArray<{ id: number; name: string }>
+  onPick: (s: { id: number; name: string }) => void
+}) {
   if (options.length === 0) return null
   return (
     <div className="flex flex-wrap gap-2">
       {options.slice(0, 6).map(o => (
         <button
-          key={o} type="button" onClick={() => onPick(o)}
+          key={o.id} type="button" onClick={() => onPick(o)}
           className="rounded-full border-2 border-gray-200 bg-white px-4 py-2.5 min-h-[48px]
             text-[14px] font-semibold text-gray-700 active:bg-gray-100 max-w-full truncate"
         >
-          {o}
+          {o.name}
         </button>
       ))}
     </div>
@@ -229,6 +238,7 @@ export function BigNotice({ kind, title, sub }: { kind: 'ok' | 'bad' | 'info'; t
 export function Stepper({
   value, onChange, step = 1, unit,
 }: { value: string; onChange: (v: string) => void; step?: number; unit?: string }) {
+  const [focused, setFocused] = useState(false)
   const n = Number(value) || 0
   const bump = (by: number) => onChange(String(Math.max(0, Math.round((n + by) * 1000) / 1000)))
   return (
@@ -238,8 +248,18 @@ export function Stepper({
         −
       </button>
       <div className="flex-1 relative">
+        {/* Grouped while you read it, plain while you type it.
+            20,088 and 20088 are the same number, but only one of them can be
+            checked at a glance against a challan — and the line above this box
+            already says "Ordered 20,088", so leaving the box ungrouped made the
+            same figure look like two. Reformatting mid-keystroke would fight
+            the caret, so the separators go in the moment the field is left. */}
         <input
-          value={value} onChange={e => onChange(e.target.value)} inputMode="decimal"
+          value={focused ? value : fmtQty(Number(value) || 0)}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          onChange={e => onChange(e.target.value.replace(/,/g, ''))}
+          inputMode="decimal"
           className="w-full h-full rounded-xl border-2 border-gray-300 bg-white px-3 text-center
             text-[22px] font-bold tabular-nums text-gray-900 min-h-[56px]
             focus:border-indigo-500 focus:outline-none focus:ring-4 focus:ring-indigo-100"

@@ -487,22 +487,66 @@ export async function loadReturnables(projectId?: string | null): Promise<Return
  * back week after week, and tapping one beats spelling it — which matters most
  * for the person we are asking to type the least.
  */
-export async function loadRecentParties(limit = 6): Promise<string[]> {
+/**
+ * The shops to offer a guard before they search.
+ *
+ * IN4'S NAMES, not whatever was typed into an earlier entry. Aksha, 16 Sep
+ * 2026: "names should come as per out IN4 data". The chips used to be the most
+ * frequent party_name on past entries, which was free text — so they showed
+ * six spellings nobody could match back to a purchase order, and tapping one
+ * gave the storekeeper a name IN4 had never heard of.
+ *
+ * Recently seen first, because the same shop comes six times a week. Topped up
+ * with whoever has the most OPEN purchase orders — the best available guess at
+ * who is about to arrive when there is no history yet, which is exactly the
+ * position on day one.
+ */
+export async function loadRecentParties(limit = 6): Promise<SupplierOpt[]> {
   const supabase = await createClient()
-  const { data } = await supabase
-    .from('mio_entries')
-    .select('party_name')
-    .not('party_name', 'is', null)
-    .neq('stage', 'void')
-    .order('entry_at', { ascending: false })
-    .limit(120)
 
-  const count = new Map<string, number>()
-  for (const r of data ?? []) {
-    const name = (r.party_name as string | null)?.trim()
-    if (name) count.set(name, (count.get(name) ?? 0) + 1)
+  const [{ data: seen }, { data: open }] = await Promise.all([
+    supabase
+      .from('mio_entries')
+      .select('in4_party_id')
+      .not('in4_party_id', 'is', null)
+      .neq('stage', 'void')
+      .order('entry_at', { ascending: false })
+      .limit(120),
+    supabase
+      .from('in4_purchase_orders')
+      .select('supplier_id')
+      .eq('status', 'Approved')
+      .in('grn_status', ['No', 'Partial'])
+      .limit(400),
+  ])
+
+  const rank = new Map<number, number>()
+  const bump = (id: number | null, by: number) => {
+    if (id == null) return
+    rank.set(id, (rank.get(id) ?? 0) + by)
   }
-  return [...count.entries()].sort((a, b) => b[1] - a[1]).slice(0, limit).map(([n]) => n)
+  // A shop this gate has actually seen beats one that merely has paperwork.
+  for (const r of seen ?? []) bump(r.in4_party_id as number | null, 10)
+  for (const r of open ?? []) bump(r.supplier_id as number | null, 1)
+
+  const ids = [...rank.entries()].sort((a, b) => b[1] - a[1]).slice(0, limit).map(([id]) => id)
+  if (ids.length === 0) return []
+
+  const { data: parties } = await supabase
+    .from('in4_parties')
+    .select('id, name, city')
+    .eq('kind', 'supplier')
+    .in('id', ids)
+
+  const byId = new Map((parties ?? []).map(r => [r.id as number, r]))
+  return ids
+    .map(id => byId.get(id))
+    .filter(Boolean)
+    .map(r => ({
+      id: r!.id as number,
+      name: ((r!.name as string) ?? '').trim(),
+      hint: ((r!.city as string | null) ?? '').trim() || null,
+    }))
 }
 
 /* ── Purchase orders ────────────────────────────────────────────────────── */

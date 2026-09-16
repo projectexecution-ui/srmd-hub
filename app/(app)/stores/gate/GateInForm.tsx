@@ -31,7 +31,7 @@ export function GateInForm({
   modes, recentParties = [], suppliers = [],
 }: {
   modes: Array<{ id: string; name: string }>
-  recentParties?: string[]
+  recentParties?: SupplierOpt[]
   /** IN4's 180 suppliers. Empty is fine — the step falls back to typing. */
   suppliers?: SupplierOpt[]
 }) {
@@ -61,12 +61,10 @@ export function GateInForm({
     [suppliers],
   )
 
-  /** A tapped shortcut should carry the id too, when the name is one of IN4's —
-   *  otherwise the quickest path would be the one that loses the link. */
-  const pickByName = (name: string) => {
-    const hit = suppliers.find(s => s.name.toLowerCase() === name.toLowerCase())
-    set({ partyName: name, in4PartyId: hit ? hit.id : null })
-  }
+  /** A tapped shortcut carries the id, so the quickest path is also the one
+   *  that links the entry to IN4 rather than losing it. */
+  const pickSupplier = (s: { id: number; name: string }) =>
+    set({ partyName: s.name, in4PartyId: s.id })
 
   const submit = () => start(async () => {
     setError(null)
@@ -157,7 +155,7 @@ export function GateInForm({
         {step === 'who' && (
           <>
             <Question t={T.qWho} hint={T.whoHint} />
-            <QuickPicks options={recentParties} onPick={pickByName} />
+            <QuickPicks options={recentParties} onPick={pickSupplier} />
 
             {byHand || supplierOptions.length === 0 ? (
               <>

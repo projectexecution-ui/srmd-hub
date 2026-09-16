@@ -9,9 +9,22 @@ import { stockScopeFor, visibleLocationIds, emptyScopeReason } from '@/lib/store
 
 export const dynamic = 'force-dynamic'
 
+/**
+ * Named by WHO IS HOLDING IT, not by what the status column says.
+ *
+ * Aksha, 16 Sep 2026, wanted "To approve" and "To issue" spelled out — his own
+ * wording was "Request raised by Engineer for Site - Approval" and "Storekeeper
+ * to Enginner Handover Process", and he asked for something shorter that says
+ * as much.
+ *
+ * "To approve" never said to approve BY WHOM, and a chip has to read at a
+ * glance from across a desk. Whose desk it is on answers the question everybody
+ * actually opens this screen with — where has my request got to — and it is
+ * three words instead of eight.
+ */
 const FILTERS = [
-  { key: 'pending',  label: 'To approve' },
-  { key: 'approved', label: 'To issue' },
+  { key: 'pending',  label: 'With Mayank / Kanti' },
+  { key: 'approved', label: 'With the storekeeper' },
   { key: '',         label: 'Everything' },
 ]
 
@@ -21,14 +34,19 @@ export default async function RequestsPage({
   const { status } = await searchParams
   const active = FILTERS.find(f => f.key === status)?.key ?? 'pending'
 
-  const [requests, items, lists, stock, projects, recentItemIds] = await Promise.all([
+  const [requests, items, lists, stock, projects, recentItemIds, allRequests] = await Promise.all([
     loadRequests({ status: active || null }),
     loadItems(),
     loadLists(),
     loadStock(),
     loadProjectOptions(),
     loadRecentItemIds(),
+    loadRequests({}),
   ])
+
+  // A count on the chip, so "is anything on me?" is answered without a click.
+  const countFor = (key: string) =>
+    key === '' ? allRequests.length : allRequests.filter(r => r.status === key).length
 
   // An engineer asks for their own site and sees their own site's stock; a
   // storekeeper holds material for eleven sites and sees all of it. Aksha,
@@ -58,6 +76,11 @@ export default async function RequestsPage({
 
   const scopeNote = emptyScopeReason(scope, askableProjects.length)
 
+  // Which approver each item implies — the button can then say who it is
+  // going to instead of naming both and meaning one.
+  const discCode = new Map(
+    listsOf(lists, 'discipline').map(d => [d.id, d.code]))
+
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap gap-1.5">
@@ -70,6 +93,11 @@ export default async function RequestsPage({
             }`}
           >
             {f.label}
+            {countFor(f.key) > 0 && (
+              <span className={`ml-1.5 tabular-nums ${active === f.key ? 'text-white/80' : 'text-gray-400'}`}>
+                {countFor(f.key)}
+              </span>
+            )}
           </Link>
         ))}
       </div>
@@ -79,7 +107,10 @@ export default async function RequestsPage({
         projects={askableProjects}
         scopeNote={scopeNote}
         recentItemIds={recentItemIds}
-        items={items.filter(i => i.isActive).map(i => ({ id: i.id, name: i.name, unit: i.unit }))}
+        items={items.filter(i => i.isActive).map(i => ({
+          id: i.id, name: i.name, unit: i.unit,
+          disciplineCode: discCode.get(i.disciplineId ?? '') ?? null,
+        }))}
         locations={locations}
         modes={listsOf(lists, 'delivery_mode').filter(m => m.isActive).map(m => ({ id: m.id, name: m.name }))}
         stock={visibleStock.map(s => ({ itemId: s.itemId, locationId: s.locationId, qty: s.qty }))}

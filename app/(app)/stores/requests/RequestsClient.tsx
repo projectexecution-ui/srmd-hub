@@ -4,7 +4,8 @@ import { useRouter } from 'next/navigation'
 import { useMemo, useState, useTransition } from 'react'
 import { raiseRequest, decideRequest, issueRequest } from '@/lib/stores/actions'
 import {
-  checkIssue, bestIssueLocation, fmtQty, approverLabel, RETURNABLES_ON, type StockRow,
+  checkIssue, bestIssueLocation, fmtQty, approverLabel, approversForRequest,
+  RETURNABLES_ON, CROSS_PROJECT_ON, type StockRow,
 } from '@/lib/stores/core'
 import { formatDate, formatDateTime } from '@/lib/utils'
 import type { RequestRow, ProjectOpt } from '@/lib/stores/queries'
@@ -27,7 +28,7 @@ export function RequestsClient({
 }: {
   requests: RequestRow[]
   projects: ProjectOpt[]
-  items: Array<{ id: string; name: string; unit: string }>
+  items: Array<{ id: string; name: string; unit: string; disciplineCode?: string | null }>
   locations: Array<{ id: string; label: string }>
   modes: Opt[]
   stock: Array<Pick<StockRow, 'itemId' | 'locationId' | 'qty'>>
@@ -42,12 +43,13 @@ export function RequestsClient({
   return (
     <div className="space-y-6">
       <Section
-        title="Step 3 · An engineer asks for material"
+        title="Ask for material"
         note="Stock is shown while asking, so nobody requests what is not there"
       >
         {projects.length === 0
           ? <Notice kind="info">{scopeNote ?? 'You are not on any project yet, so there is nothing to ask for.'}</Notice>
-          : <RaiseForm projects={projects} items={items} stock={rows} recentItemIds={recentItemIds} onDone={() => router.refresh()} />}
+          : <RaiseForm projects={projects} items={items} stock={rows} locations={locations}
+              recentItemIds={recentItemIds} onDone={() => router.refresh()} />}
       </Section>
 
       <Section title="Requests">
@@ -69,11 +71,14 @@ export function RequestsClient({
 /* ── Raise ──────────────────────────────────────────────────────────────── */
 
 function RaiseForm({
-  projects, items, stock, recentItemIds, onDone,
+  projects, items, stock, locations, recentItemIds, onDone,
 }: {
-  projects: ProjectOpt[]; items: Array<{ id: string; name: string; unit: string }>
-  stock: StockRow[]; recentItemIds: readonly string[]; onDone: () => void
+  projects: ProjectOpt[]; items: Array<{ id: string; name: string; unit: string; disciplineCode?: string | null }>
+  stock: StockRow[]; locations: Array<{ id: string; label: string }>
+  recentItemIds: readonly string[]; onDone: () => void
 }) {
+  const placeName = (id: string | null) =>
+    locations.find(l => l.id === id)?.label ?? 'an unnamed place'
   const [pending, start] = useTransition()
   const [open, setOpen] = useState(false)
   // One site means there is no question to ask — most engineers are on one.
@@ -87,10 +92,39 @@ function RaiseForm({
   const setLine = (key: string, patch: Partial<Line>) =>
     setLines(ls => ls.map(l => (l.key === key ? { ...l, ...patch } : l)))
 
-  const itemOptions = useMemo(
-    () => items.map(i => ({ id: i.id, label: i.name, hint: i.unit })),
-    [items],
-  )
+  /**
+   * Only what this project actually holds.
+   *
+   * Aksha, 16 Sep 2026: "Also the Items of that project only show up". It is
+   * also the mind map's hardest rule — "Item can be picked up ONLY from stock
+   * Items" — so offering all 660 was offering 650 an engineer cannot have.
+   *
+   * The stock handed to this component is already scoped to the sites they are
+   * on, so "held" here means held somewhere they can draw from.
+   */
+  /** Where an item sits, short enough for a dropdown's second line. */
+  const whereShort = (itemId: string) => {
+    const at = stock.filter(r => r.itemId === itemId && r.qty > 0)
+    if (at.length === 0) return 'nowhere'
+    if (at.length === 1) return placeName(at[0].locationId)
+    return `${at.length} places`
+  }
+
+  const itemOptions = useMemo(() => {
+    const held = new Map<string, number>()
+    for (const r of stock) {
+      if (r.qty > 0) held.set(r.itemId, (held.get(r.itemId) ?? 0) + r.qty)
+    }
+    return items
+      .filter(i => held.has(i.id))
+      .map(i => ({
+        id: i.id,
+        label: i.name,
+        // How much there is, on the line where it is being chosen.
+        hint: `${fmtQty(held.get(i.id) ?? 0)} ${i.unit} · ${whereShort(i.id)}`,
+      }))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items, stock, locations])
 
   const held = (itemId: string) => stock.filter(s => s.itemId === itemId && s.qty > 0)
 
@@ -98,19 +132,23 @@ function RaiseForm({
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-4 max-w-2xl space-y-3">
-      <div className="grid sm:grid-cols-2 gap-3">
+      <div className={`grid gap-3 ${CROSS_PROJECT_ON ? 'sm:grid-cols-2' : ''}`}>
         <Field label="For which project" required>
           <select className={inputClass} value={projectId} onChange={e => setProjectId(e.target.value)}>
             <option value="">Pick one</option>
             <GroupedOptions rows={projects} />
           </select>
         </Field>
-        <Field label="Borrowing from another project?" hint="Leave blank for a normal issue from the warehouse.">
-          <select className={inputClass} value={fromProjectId} onChange={e => setFromProjectId(e.target.value)}>
-            <option value="">No — from the store</option>
-            <GroupedOptions rows={projects.filter(p => p.id !== projectId)} />
-          </select>
-        </Field>
+        {/* Borrowing from another project is paused — the HOD has not settled
+            the process — so an engineer is not asked about it at all. */}
+        {CROSS_PROJECT_ON && (
+          <Field label="Borrowing from another project?" hint="Leave blank for a normal issue from the warehouse.">
+            <select className={inputClass} value={fromProjectId} onChange={e => setFromProjectId(e.target.value)}>
+              <option value="">No — from the store</option>
+              <GroupedOptions rows={projects.filter(p => p.id !== projectId)} />
+            </select>
+          </Field>
+        )}
       </div>
 
       {fromProjectId && RETURNABLES_ON && (
@@ -135,8 +173,8 @@ function RaiseForm({
                     }}
                     options={itemOptions}
                     pinned={recentItemIds}
-                    placeholder="Type three letters"
-                    emptyText="No item by that name"
+                    placeholder={itemOptions.length ? 'Type three letters' : 'Nothing in your stores yet'}
+                    emptyText="Not in your stores — it has to come in through the gate first"
                   />
                 </Field>
                 <Field label="Qty">
@@ -151,7 +189,24 @@ function RaiseForm({
               {l.itemId && (
                 <p className={`text-[12px] ${total > 0 ? 'text-emerald-800' : 'text-rose-800'}`}>
                   {total > 0
-                    ? <><b>In stock: {fmtQty(total)} {l.unit}</b> — {where.length} place{where.length === 1 ? '' : 's'}</>
+                    ? (
+                      <>
+                        <b>In stock: {fmtQty(total)} {l.unit}</b>
+                        {/* NAME the shelf. "1 place" told an engineer there was
+                            one and not which — and the point of asking is to go
+                            and collect it. Aksha, 16 Sep 2026: "the name of the
+                            place should come so the Engineer knows the Exact
+                            location". */}
+                        {' — '}
+                        {where.map((w, n) => (
+                          <span key={w.locationId ?? n}>
+                            {n > 0 && ' · '}
+                            {where.length > 1 && <>{fmtQty(w.qty)} at </>}
+                            <b>{placeName(w.locationId)}</b>
+                          </span>
+                        ))}
+                      </>
+                    )
                     : <>Nothing in stock. It has to come in through the gate before it can be issued.</>}
                 </p>
               )}
@@ -203,7 +258,9 @@ function RaiseForm({
             if (r.ok) { setLines([newLine()]); setRemarks(''); onDone() }
           })}
         >
-          Send to Mayank / Kanti
+          Send to {approverLabel(approversForRequest(
+            lines.filter(l => l.itemId).map(l => items.find(i => i.id === l.itemId)?.disciplineCode ?? null),
+          ))}
         </Btn>
         <Btn kind="ghost" onClick={() => { setOpen(false); setResult(null) }}>Cancel</Btn>
       </div>

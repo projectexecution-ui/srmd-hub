@@ -261,31 +261,6 @@ export function CompleteForm({
         </div>
       </div>
 
-      {/* Who and where — three answers, stacked on a phone. */}
-      <div className="grid sm:grid-cols-3 gap-3">
-        <label className="block space-y-1.5">
-          <Label t={T.whichTrust} />
-          <select className={sel} value={entityId} onChange={e => setEntityId(e.target.value)}>
-            <option value="">—</option>
-            {entities.map(e => <option key={e.id} value={e.id}>{e.code || e.name}</option>)}
-          </select>
-        </label>
-        <label className="block space-y-1.5">
-          <Label t={T.whichProject} />
-          <select className={sel} value={projectId} onChange={e => setProjectId(e.target.value)}>
-            <option value="">—</option>
-            <GroupedOptions rows={projects} />
-          </select>
-        </label>
-        <label className="block space-y-1.5">
-          <Label t={T.itemCategory} />
-          <select className={sel} value={itemCategoryId} onChange={e => setItemCategoryId(e.target.value)}>
-            <option value="">—</option>
-            {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-        </label>
-      </div>
-
       {/* The order shortcut — the point of the whole screen. */}
       <div className="rounded-xl border-2 border-gray-200 bg-white p-3.5 space-y-3">
         <OrderPicker value={order} onPick={pickOrder} onClear={clearOrder} gateParty={gateParty} gatePartyId={gatePartyId} />
@@ -317,6 +292,32 @@ export function CompleteForm({
 
         {poNote?.text && <BigNotice kind={poNote.ok ? 'info' : 'bad'} title={poNote.text} />}
       </div>
+
+      {/* Who and where — three answers, stacked on a phone. */}
+      <div className="grid sm:grid-cols-3 gap-3">
+        <label className="block space-y-1.5">
+          <Label t={T.whichTrust} />
+          <select className={sel} value={entityId} onChange={e => setEntityId(e.target.value)}>
+            <option value="">—</option>
+            {entities.map(e => <option key={e.id} value={e.id}>{e.code || e.name}</option>)}
+          </select>
+        </label>
+        <label className="block space-y-1.5">
+          <Label t={T.whichProject} />
+          <select className={sel} value={projectId} onChange={e => setProjectId(e.target.value)}>
+            <option value="">—</option>
+            <GroupedOptions rows={projects} />
+          </select>
+        </label>
+        <label className="block space-y-1.5">
+          <Label t={T.itemCategory} />
+          <select className={sel} value={itemCategoryId} onChange={e => setItemCategoryId(e.target.value)}>
+            <option value="">—</option>
+            {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        </label>
+      </div>
+
 
       {makesStock && (
         <label className="block space-y-1.5">

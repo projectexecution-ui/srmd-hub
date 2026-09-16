@@ -609,3 +609,24 @@ export function disciplineFromIn4Type(
   }
   return null
 }
+
+/**
+ * Borrowing material from another project's store — OFF.
+ *
+ * Aksha, 15 Sep 2026: "Other Project Stock - we will built but keep it as
+ * optional in settings to switch on or off its on Admin", and then: "Internal
+ * Transfer and Other Project stock request to other project we hav
+ * consicoulslly paused as HOD want this part to be activated and then think on
+ * that later to set up the process". And on 16 Sep, seeing it still on the
+ * form: "i had told other Project should not come to Eng".
+ *
+ * So it is off, and an engineer is not asked a question about a process nobody
+ * has agreed yet. Off rather than deleted: the column, the forced-returnable
+ * rule and the cross-project wiring all stay, so turning it back on is this
+ * one line.
+ *
+ * When the HOD does activate it this should become a real admin setting rather
+ * than a constant — that is what Aksha asked for. It is a constant today
+ * because a settings screen for a paused feature is a screen nobody can use.
+ */
+export const CROSS_PROJECT_ON = false
