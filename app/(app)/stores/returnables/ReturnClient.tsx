@@ -6,7 +6,7 @@ import { Undo2 } from 'lucide-react'
 import { returnItems } from '@/lib/stores/actions'
 import { checkReturn, fmtQty, CHASE_AFTER_DAYS, type ReturnableRow } from '@/lib/stores/core'
 import { formatDate } from '@/lib/utils'
-import { Field, inputClass, Btn, Notice, Empty, Scroller, th, thNum, td, tdNum } from '../ui'
+import { Field, inputClass, Btn, Notice, Empty, Scroller, NumberInput, th, thNum, td, tdNum } from '../ui'
 
 /**
  * Still to come back — and, now, the way to clear it.
@@ -144,9 +144,9 @@ function ReturnForm({
             </div>
             <label className="block">
               <span className="block text-[10.5px] font-bold uppercase tracking-wider text-gray-500 mb-1">Coming back</span>
-              <input
-                className={`${inputClass} w-28 text-right`} value={qtys[l.lineId] ?? ''} inputMode="decimal"
-                onChange={e => setQtys(q => ({ ...q, [l.lineId]: e.target.value }))}
+              <NumberInput
+                className="w-28 text-right" value={qtys[l.lineId] ?? ''}
+                onChange={v => setQtys(q => ({ ...q, [l.lineId]: v }))}
               />
             </label>
             {check && !check.ok && (

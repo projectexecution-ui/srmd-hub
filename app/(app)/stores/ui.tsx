@@ -3,7 +3,9 @@
 import Link from 'next/link'
 import { useState, useTransition, type ReactNode } from 'react'
 import { formatDateTime, formatNumber } from '@/lib/utils'
+import { fmtQty } from '@/lib/stores/core'
 import type { Stage, Register } from '@/lib/stores/core'
+import { sayStage, sayStatus, type Tone } from '@/lib/stores/status'
 
 /**
  * The shared chrome for the Stores section.
@@ -53,6 +55,54 @@ export function Field({ label, hint, children, required }: { label: string; hint
   )
 }
 
+/**
+ * A number you can read while you check it against a challan.
+ *
+ * Aksha, 16 Sep 2026, on a quantity box reading 22277: "why commas not coming
+ * here why ???" — fair, since the line above it already said "4,500 m" and the
+ * same figure was wearing two different faces on one screen.
+ *
+ * Grouped while you READ it, plain while you TYPE it. Reformatting on every
+ * keystroke fights the caret — type "1" into "22,277" and the separators move
+ * under your finger — so the commas go in the moment the field is left, which
+ * is the same rule the field register's Stepper already used. This is its desk
+ * twin, so both registers behave the same way.
+ */
+export function NumberInput({
+  value, onChange, className = '', money = false, placeholder, ariaLabel,
+}: {
+  value: string
+  onChange: (v: string) => void
+  className?: string
+  /** Two decimals kept, for a rate. A quantity drops trailing zeros. */
+  money?: boolean
+  placeholder?: string
+  ariaLabel?: string
+}) {
+  const [focused, setFocused] = useState(false)
+  const n = Number(value)
+  const shown = focused || value === '' || !Number.isFinite(n)
+    ? value
+    : money
+      ? n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+      : fmtQty(n)
+
+  return (
+    <input
+      value={shown}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      // Whatever is pasted in, the separators come straight back out — nobody
+      // should have to think about which characters the box will accept.
+      onChange={e => onChange(e.target.value.replace(/,/g, ''))}
+      inputMode="decimal"
+      placeholder={placeholder}
+      aria-label={ariaLabel}
+      className={`${inputClass} tabular-nums ${className}`}
+    />
+  )
+}
+
 export const inputClass =
   'w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-[13.5px] min-h-[44px] ' +
   'focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-200 disabled:bg-gray-50 disabled:text-gray-500'
@@ -80,16 +130,28 @@ export function Btn({
 
 /* ── Status ─────────────────────────────────────────────────────────────── */
 
-const STAGE_LOOK: Record<Stage, { label: string; cls: string }> = {
-  gate:     { label: 'Waiting on storekeeper', cls: 'bg-amber-100 text-amber-900' },
-  complete: { label: 'Complete',               cls: 'bg-emerald-100 text-emerald-800' },
-  closed:   { label: 'Closed',                 cls: 'bg-gray-200 text-gray-700' },
-  void:     { label: 'Voided',                 cls: 'bg-rose-100 text-rose-800' },
+/**
+ * What a tone looks like on a desk screen.
+ *
+ * The WORDS live in lib/stores/status.ts and are shared with every other
+ * screen; only the paint is here, because the field register paints the same
+ * tones differently and has to keep being able to.
+ */
+const TONE: Record<Tone, string> = {
+  wait: 'bg-amber-100 text-amber-900',
+  go:   'bg-blue-100 text-blue-900',
+  done: 'bg-emerald-100 text-emerald-800',
+  dead: 'bg-rose-100 text-rose-800',
+  bad:  'bg-rose-100 text-rose-800',
 }
 
 export function StageChip({ stage }: { stage: Stage }) {
-  const s = STAGE_LOOK[stage] ?? STAGE_LOOK.gate
-  return <span className={`inline-block rounded-full px-2 py-0.5 text-[10.5px] font-bold ${s.cls}`}>{s.label}</span>
+  const s = sayStage(stage)
+  return (
+    <span title={s.meaning} className={`inline-block rounded-full px-2 py-0.5 text-[10.5px] font-bold ${TONE[s.tone]}`}>
+      {s.label}
+    </span>
+  )
 }
 
 const REGISTER_LOOK: Record<Register, { label: string; cls: string }> = {
@@ -103,31 +165,46 @@ export function RegisterChip({ register }: { register: Register }) {
   return <span className={`inline-block rounded px-1.5 py-0.5 text-[10.5px] font-semibold ${r.cls}`}>{r.label}</span>
 }
 
+/**
+ * A request's status, in the same words the filter chips use.
+ *
+ * It used to print the database value with a capital letter — so the filter
+ * said "With Mayank / Kanti" and the card beside it said "Pending", which are
+ * the same fact wearing two names.
+ */
 export function StatusChip({ status }: { status: string }) {
-  const cls = {
-    pending:  'bg-amber-100 text-amber-900',
-    approved: 'bg-blue-100 text-blue-900',
-    rejected: 'bg-rose-100 text-rose-800',
-    issued:   'bg-emerald-100 text-emerald-800',
-    closed:   'bg-gray-200 text-gray-700',
-  }[status] ?? 'bg-gray-200 text-gray-700'
-  return <span className={`inline-block rounded-full px-2 py-0.5 text-[10.5px] font-bold capitalize ${cls}`}>{status}</span>
+  const s = sayStatus(status)
+  return (
+    <span title={s.meaning} className={`inline-block rounded-full px-2 py-0.5 text-[10.5px] font-bold ${TONE[s.tone]}`}>
+      {s.label}
+    </span>
+  )
 }
 
 /* ── Layout ─────────────────────────────────────────────────────────────── */
 
-/** A live count on a tile — Aksha's V1 rule: the tile says what is waiting. */
-export function Tile({ href, label, count, sub, tone = 'slate' }: {
-  href: string; label: string; count?: number; sub: string; tone?: 'amber' | 'blue' | 'emerald' | 'slate'
+/**
+ * A live count on a tile — Aksha's V1 rule: the tile says what is waiting.
+ *
+ * `value` is for a figure that is not a count of things waiting — money, most
+ * obviously. It is never dimmed to grey the way a zero count is, because ₹0 of
+ * stock is not "nothing on you", it is a fact about the store.
+ */
+export function Tile({ href, label, count, value, sub, tone = 'slate' }: {
+  href: string; label: string; count?: number; value?: string; sub: string
+  tone?: 'amber' | 'blue' | 'emerald' | 'slate'
 }) {
   const waiting = (count ?? 0) > 0
-  const ring = waiting
+  const lit = value != null || waiting
+  const ring = lit
     ? { amber: 'border-amber-300 bg-amber-50', blue: 'border-blue-300 bg-blue-50', emerald: 'border-emerald-300 bg-emerald-50', slate: 'border-gray-300 bg-white' }[tone]
     : 'border-gray-200 bg-white'
   return (
     <Link href={href} className={`block rounded-xl border p-4 hover:shadow-sm transition-shadow min-h-[44px] ${ring}`}>
       <p className="text-[13px] font-bold text-gray-900">{label}</p>
-      {count != null && (
+      {value != null ? (
+        <p className="text-2xl font-bold mt-1 tabular-nums text-gray-900">{value}</p>
+      ) : count != null && (
         <p className={`text-2xl font-bold mt-1 tabular-nums ${waiting ? 'text-gray-900' : 'text-gray-400'}`}>
           {formatNumber(count, 0)}
         </p>

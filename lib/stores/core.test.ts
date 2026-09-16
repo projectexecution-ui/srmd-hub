@@ -2,7 +2,9 @@ import { describe, it, expect } from 'vitest'
 import {
   entryNo, linkedNo, foldStock, availableAt, availableAnywhere, checkIssue,
   outstandingReturnables, checkReturn, missingForGate, missingForComplete, createsStock, heldItemCount,
-  fmtQty, isPilotProject, PILOT_PROJECT_IDS, RETURNABLES_ON, STORES_LIVE, canSeeStores, stockScopeFor, visibleLocationIds, emptyScopeReason,
+  fmtQty, isPilotProject, PILOT_PROJECT_IDS, RETURNABLES_ON, STORES_LIVE, canSeeStores, canRecordAtGate, canCorrectEntry, canVoidEntry, stockScopeFor, visibleLocationIds, emptyScopeReason,
+  familyOf, isCrossProject, routeRequest,
+  roleStoreTabs, visibleStoreTabs, canOpenStoreTab, homeStoreTab, storeTabHref, STORE_TABS, STORE_TAB_LABEL,
   approversForRequest, approverKeyOf, approverLabel, disciplineFromIn4Type, groupProjects, UNGROUPED, entityCodeFromOrderNo, categoryFor, isServiceScope, bestIssueLocation,
   type Movement, type ReturnableLine, type StockRow,
 } from './core'
@@ -454,7 +456,7 @@ describe('isServiceScope — what never takes a delivery', () => {
 
 describe('bestIssueLocation — which store to issue out of', () => {
   const s = (itemId: string, locationId: string, qty: number): StockRow =>
-    ({ itemId, locationId, qty, lastRate: null })
+    ({ itemId, locationId, qty, lastRate: null, lastMovedAt: null })
 
   const STOCK = [
     s('tile-a', 'yunus', 0),
@@ -662,5 +664,241 @@ describe('disciplineFromIn4Type — using IN4s own filing, not a guess', () => {
     expect(disciplineFromIn4Type(null, D)).toBeNull()
     expect(disciplineFromIn4Type('', D)).toBeNull()
     expect(disciplineFromIn4Type('12 (M) Finishes', [])).toBeNull()
+  })
+})
+
+describe('canRecordAtGate — the storekeeper covers when Security is off', () => {
+  it('lets Security record, which is their job', () => {
+    expect(canRecordAtGate('security')).toBe(true)
+  })
+
+  it('lets the storekeeper record too', () => {
+    // Aksha, 16 Sep 2026: "this should be available with Storekeeper - if
+    // Security is unavailable". A lorry does not wait because one person is off.
+    expect(canRecordAtGate('store_manager')).toBe(true)
+  })
+
+  it('lets management cover as well', () => {
+    for (const r of ['admin', 'founder', 'head']) expect(canRecordAtGate(r)).toBe(true)
+  })
+
+  it('does not let an engineer or a contractor open the gate register', () => {
+    for (const r of ['engineer', 'contractor', 'viewer', 'billing', 'uploader']) {
+      expect(canRecordAtGate(r)).toBe(false)
+    }
+  })
+
+  it('refuses somebody with no role', () => {
+    expect(canRecordAtGate(null)).toBe(false)
+    expect(canRecordAtGate(undefined)).toBe(false)
+    expect(canRecordAtGate('')).toBe(false)
+  })
+})
+
+/**
+ * Who sees which screen. Aksha, 16 Sep 2026: "Role-aware tabs, one status
+ * language". These are the only proof available until the section goes live —
+ * the security and storekeeper accounts exist but cannot sign in yet, so the
+ * behaviour cannot be walked through from their seat.
+ */
+describe('who sees which screen', () => {
+  it('gives a guard the gate and nothing else', () => {
+    expect(roleStoreTabs('security')).toEqual(['gate'])
+  })
+
+  it('gives the storekeeper what they actually hold and hand out', () => {
+    expect(roleStoreTabs('store_manager')).toEqual(['gate', 'requests', 'issue', 'receive', 'stock'])
+  })
+
+  it('gives an engineer the asking, not the store’s books', () => {
+    expect(roleStoreTabs('engineer')).toEqual(['requests', 'receive', 'stock'])
+  })
+
+  it('lets Mayank reach the requests he is mailed about', () => {
+    // He is `backoffice`, and until 16 Sep 2026 that role could not open the
+    // section at all — notify.ts would have told him a request was waiting and
+    // the app would then have refused him the screen to act on it.
+    expect(roleStoreTabs('backoffice')).toEqual(['requests', 'stock', 'reports'])
+  })
+
+  it('gives the people who run it everything', () => {
+    for (const role of ['admin', 'founder', 'head']) {
+      expect(roleStoreTabs(role)).toEqual(['overview', 'gate', 'requests', 'issue', 'receive', 'stock', 'reports', 'masters'])
+    }
+  })
+
+  it('gives somebody with no role nothing at all', () => {
+    expect(roleStoreTabs(null)).toEqual([])
+    expect(roleStoreTabs('contractor')).toEqual([])
+    expect(canOpenStoreTab(undefined, 'gate')).toBe(false)
+  })
+
+  it('lands everyone on a screen their own job includes', () => {
+    for (const role of ['admin', 'founder', 'head', 'backoffice', 'store_manager', 'security', 'engineer']) {
+      expect(roleStoreTabs(role)).toContain(homeStoreTab(role))
+    }
+  })
+
+  it('sends a guard to the gate rather than to an overview they do not have', () => {
+    expect(homeStoreTab('security')).toBe('gate')
+    expect(homeStoreTab('store_manager')).toBe('gate')
+    expect(homeStoreTab('engineer')).toBe('requests')
+    expect(homeStoreTab('backoffice')).toBe('requests')
+    expect(homeStoreTab('admin')).toBe('overview')
+  })
+
+  it('points every tab at a real address', () => {
+    expect(storeTabHref('overview')).toBe('/stores')
+    expect(storeTabHref('gate')).toBe('/stores/gate')
+    for (const t of STORE_TABS) expect(STORE_TAB_LABEL[t]).toBeTruthy()
+  })
+
+  it('shows nobody a tab while the section is still closed to them', () => {
+    // roleStoreTabs says what the job needs; visibleStoreTabs also asks whether
+    // the section is open at all. Only the second may put a tab on a screen.
+    if (!STORES_LIVE) {
+      for (const role of ['founder', 'head', 'backoffice', 'store_manager', 'security', 'engineer']) {
+        expect(roleStoreTabs(role).length).toBeGreaterThan(0)
+        expect(visibleStoreTabs(role)).toEqual([])
+        expect(canOpenStoreTab(role, 'gate')).toBe(false)
+      }
+      expect(visibleStoreTabs('admin')).toHaveLength(8)
+    }
+  })
+})
+
+describe('the fold remembers when a shelf last changed', () => {
+  it('carries the latest movement, not the first', () => {
+    const rows = foldStock([
+      mv({ itemId: 'i1', qty: 320, movedAt: '2026-08-26T00:00:00.000Z', kind: 'opening' }),
+      mv({ itemId: 'i1', qty: -10, movedAt: '2026-09-11T11:55:00.000Z' }),
+    ])
+    expect(rows[0].lastMovedAt).toBe('2026-09-11T11:55:00.000Z')
+  })
+
+  it('does not depend on the order the rows came back in', () => {
+    const rows = foldStock([
+      mv({ itemId: 'i1', qty: -10, movedAt: '2026-09-11T11:55:00.000Z' }),
+      mv({ itemId: 'i1', qty: 320, movedAt: '2026-08-26T00:00:00.000Z', kind: 'opening' }),
+    ])
+    expect(rows[0].lastMovedAt).toBe('2026-09-11T11:55:00.000Z')
+  })
+
+  it('stops where the "as on" figure stops, so the date matches the balance', () => {
+    const rows = foldStock([
+      mv({ itemId: 'i1', qty: 320, movedAt: '2026-08-26T00:00:00.000Z', kind: 'opening' }),
+      mv({ itemId: 'i1', qty: -10, movedAt: '2026-09-11T11:55:00.000Z' }),
+    ], '2026-09-01')
+    expect(rows[0].qty).toBe(320)
+    expect(rows[0].lastMovedAt).toBe('2026-08-26T00:00:00.000Z')
+  })
+
+  it('keeps each shelf’s own date, not the item’s', () => {
+    const rows = foldStock([
+      mv({ itemId: 'i1', locationId: 'L1', qty: 100, movedAt: '2026-08-01T00:00:00.000Z' }),
+      mv({ itemId: 'i1', locationId: 'L2', qty: 50, movedAt: '2026-09-14T00:00:00.000Z' }),
+    ])
+    expect(rows.find(r => r.locationId === 'L1')?.lastMovedAt).toBe('2026-08-01T00:00:00.000Z')
+    expect(rows.find(r => r.locationId === 'L2')?.lastMovedAt).toBe('2026-09-14T00:00:00.000Z')
+  })
+})
+
+describe('who may correct, and who may void', () => {
+  it('lets whoever records an entry fix one', () => {
+    // Aksha, 16 Sep 2026: "this also the Store keeper should be able to do".
+    for (const role of ['security', 'store_manager', 'admin', 'founder', 'head']) {
+      expect(canCorrectEntry(role)).toBe(true)
+    }
+  })
+
+  it('does not let an engineer rewrite a gate entry', () => {
+    expect(canCorrectEntry('engineer')).toBe(false)
+    expect(canCorrectEntry('backoffice')).toBe(false)
+    expect(canCorrectEntry(null)).toBe(false)
+  })
+
+  it('keeps voiding narrower than correcting, because it removes stock', () => {
+    expect(canVoidEntry('store_manager')).toBe(false)
+    expect(canVoidEntry('security')).toBe(false)
+    for (const role of ['admin', 'founder', 'head']) expect(canVoidEntry(role)).toBe(true)
+  })
+
+  it('never lets somebody void who may not even correct', () => {
+    for (const role of ['admin', 'founder', 'head', 'store_manager', 'security', 'engineer', 'backoffice', null]) {
+      if (canVoidEntry(role)) expect(canCorrectEntry(role)).toBe(true)
+    }
+  })
+})
+
+describe('project families, and where a request goes', () => {
+  // NGH is the real shape: parent with five children.
+  const PROJECTS = [
+    { id: 'ngh', parentId: null },
+    { id: 'ngh-a', parentId: 'ngh' },
+    { id: 'ngh-b', parentId: 'ngh' },
+    { id: 'ngh-c', parentId: 'ngh' },
+    { id: 'ab', parentId: null },
+    { id: 'ab-gf', parentId: 'ab' },
+    { id: 'vv', parentId: null },
+  ]
+
+  it('gives a child the whole family, not just itself', () => {
+    // Aksha: "PO of NGH B Belongs to NGH PRoject - so Eng of NGH Project can
+    // call for NGH A,B,C etc Stock".
+    expect(familyOf('ngh-b', PROJECTS).sort()).toEqual(['ngh', 'ngh-a', 'ngh-b', 'ngh-c'])
+  })
+
+  it('gives the parent the same family as its child', () => {
+    expect(familyOf('ngh', PROJECTS).sort()).toEqual(familyOf('ngh-a', PROJECTS).sort())
+  })
+
+  it('leaves a standalone project a family of one', () => {
+    expect(familyOf('vv', PROJECTS)).toEqual(['vv'])
+  })
+
+  it('does not hang on a project that is its own ancestor', () => {
+    const looped = [{ id: 'a', parentId: 'b' }, { id: 'b', parentId: 'a' }]
+    expect(familyOf('a', looped).length).toBeGreaterThan(0)
+  })
+
+  it('knows what is somebody else’s', () => {
+    expect(isCrossProject('ngh-b', 'ngh-a', PROJECTS)).toBe(false)
+    expect(isCrossProject('ngh-b', 'ngh', PROJECTS)).toBe(false)
+    expect(isCrossProject('ngh-b', 'ab-gf', PROJECTS)).toBe(true)
+  })
+
+  it('treats stock that belongs to nobody as nobody’s to refuse', () => {
+    // The Odoo backlog, until Masters → Whose stock is worked down.
+    expect(isCrossProject('ngh-b', null, PROJECTS)).toBe(false)
+  })
+
+  it('sends an own-family request straight to the storekeeper', () => {
+    // Aksha chose this over any sign-off: "Nobody — straight to the storekeeper".
+    const r = routeRequest({ crossProjectOn: false, isCrossProject: false, disciplineCodes: ['MA'] })
+    expect(r.status).toBe('approved')
+    expect(r.approvers).toEqual([])
+    expect(r.why).toContain('straight to the storekeeper')
+  })
+
+  it('sends a borrowed request to the approver its disciplines imply', () => {
+    const civil = routeRequest({ crossProjectOn: true, isCrossProject: true, disciplineCodes: ['MA'] })
+    expect(civil.status).toBe('pending')
+    expect(civil.approvers).toEqual(['MA'])
+
+    const both = routeRequest({ crossProjectOn: true, isCrossProject: true, disciplineCodes: ['MA', 'KK'] })
+    expect(both.approvers).toEqual(['MA', 'KK'])
+  })
+
+  it('refuses a borrowed request while borrowing is switched off', () => {
+    const r = routeRequest({ crossProjectOn: false, isCrossProject: true, disciplineCodes: ['KK'] })
+    expect(r.status).toBe('blocked')
+    expect(r.why).toContain('Masters → Settings')
+  })
+
+  it('never routes an own-family request to an approver, whatever the switch says', () => {
+    for (const on of [true, false]) {
+      expect(routeRequest({ crossProjectOn: on, isCrossProject: false, disciplineCodes: ['MA', 'KK'] }).approvers)
+        .toEqual([])
+    }
   })
 })

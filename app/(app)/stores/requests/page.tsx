@@ -6,20 +6,56 @@ import {
 import { RequestsClient } from './RequestsClient'
 import { getMyProfile } from '@/lib/auth'
 import { stockScopeFor, visibleLocationIds, emptyScopeReason } from '@/lib/stores/core'
+import { sayStatus } from '@/lib/stores/status'
+import { crossProjectOn } from '@/lib/stores/settings'
+import { guardStoreTab } from '../guard'
 
 export const dynamic = 'force-dynamic'
 
+/**
+ * Named by WHO IS HOLDING IT, not by what the status column says — and named
+ * in lib/stores/status.ts, so the chip on the card and the filter above it can
+ * never drift apart again. Aksha asked for those words on 16 Sep 2026; his own
+ * wording was "Request raised by Engineer for Site - Approval", shortened to
+ * something that reads at a glance from across a desk.
+ */
+/**
+ * "With the storekeeper" is NOT a filter here any more.
+ *
+ * Aksha, 16 Sep 2026: "can u check why twice ?? similar data". Splitting the
+ * storekeeper's queue into its own tab and then leaving the same rows behind
+ * as a chip on this one put five requests on two screens — which is the
+ * confusion the split was meant to end, wearing a new hat.
+ *
+ * This screen is now about asking and following: what is waiting for approval,
+ * and everything you have raised. What is waiting to go OUT is To issue.
+ */
 const FILTERS = [
-  { key: 'pending',  label: 'To approve' },
-  { key: 'approved', label: 'To issue' },
+  { key: 'pending',  label: sayStatus('pending').label },
   { key: '',         label: 'Everything' },
 ]
 
 export default async function RequestsPage({
   searchParams,
 }: { searchParams: Promise<{ status?: string }> }) {
+  const blocked = await guardStoreTab('requests')
+  if (blocked) return blocked
+
   const { status } = await searchParams
-  const active = FILTERS.find(f => f.key === status)?.key ?? 'pending'
+
+  /**
+   * Default to what is actually there.
+   *
+   * "With Mayank / Kanti" was the landing filter, and since own-family requests
+   * stopped needing approval nothing is ever pending — so an engineer opened
+   * their own screen and saw an empty list under a form they had just used.
+   * When nothing is waiting on an approver, the honest default is everything.
+   */
+  const allRequests = await loadRequests({})
+  const anyPending = allRequests.some(r => r.status === 'pending')
+  const active = status !== undefined
+    ? FILTERS.find(f => f.key === status)?.key ?? ''
+    : (anyPending ? 'pending' : '')
 
   const [requests, items, lists, stock, projects, recentItemIds] = await Promise.all([
     loadRequests({ status: active || null }),
@@ -29,6 +65,11 @@ export default async function RequestsPage({
     loadProjectOptions(),
     loadRecentItemIds(),
   ])
+  const crossProject = await crossProjectOn()
+
+  // A count on the chip, so "is anything on me?" is answered without a click.
+  const countFor = (key: string) =>
+    key === '' ? allRequests.length : allRequests.filter(r => r.status === key).length
 
   // An engineer asks for their own site and sees their own site's stock; a
   // storekeeper holds material for eleven sites and sees all of it. Aksha,
@@ -58,6 +99,11 @@ export default async function RequestsPage({
 
   const scopeNote = emptyScopeReason(scope, askableProjects.length)
 
+  // Which approver each item implies — the button can then say who it is
+  // going to instead of naming both and meaning one.
+  const discCode = new Map(
+    listsOf(lists, 'discipline').map(d => [d.id, d.code]))
+
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap gap-1.5">
@@ -70,16 +116,37 @@ export default async function RequestsPage({
             }`}
           >
             {f.label}
+            {countFor(f.key) > 0 && (
+              <span className={`ml-1.5 tabular-nums ${active === f.key ? 'text-white/80' : 'text-gray-400'}`}>
+                {countFor(f.key)}
+              </span>
+            )}
           </Link>
         ))}
+
+        {/* Where the storekeeper's queue went, said once rather than shown
+            twice. */}
+        {countFor('approved') > 0 && (
+          <Link
+            href="/stores/issue"
+            className="inline-flex items-center rounded-lg px-3 py-2 text-[12.5px] font-semibold
+              text-indigo-700 hover:underline min-h-[44px]"
+          >
+            {countFor('approved')} approved, waiting in To issue →
+          </Link>
+        )}
       </div>
 
       <RequestsClient
+        crossProject={crossProject}
         requests={requests}
         projects={askableProjects}
         scopeNote={scopeNote}
         recentItemIds={recentItemIds}
-        items={items.filter(i => i.isActive).map(i => ({ id: i.id, name: i.name, unit: i.unit }))}
+        items={items.filter(i => i.isActive).map(i => ({
+          id: i.id, name: i.name, unit: i.unit,
+          disciplineCode: discCode.get(i.disciplineId ?? '') ?? null,
+        }))}
         locations={locations}
         modes={listsOf(lists, 'delivery_mode').filter(m => m.isActive).map(m => ({ id: m.id, name: m.name }))}
         stock={visibleStock.map(s => ({ itemId: s.itemId, locationId: s.locationId, qty: s.qty }))}

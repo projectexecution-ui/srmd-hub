@@ -12,7 +12,8 @@
  */
 import { fmtQty } from './core'
 import { qtyLine, type RegisterGroup, type RegisterTotals } from './registers'
-import { formatINR } from '@/lib/utils'
+import type { StockLine } from './desk'
+import { formatINR, formatDate } from '@/lib/utils'
 
 export interface ExportSpec {
   title: string
@@ -175,4 +176,272 @@ async function toPdf(spec: ExportSpec) {
   doc.text('Quantities are totalled within each unit, never across.', 32, y + (spec.grand.amountPartial && money ? 36 : 24))
 
   doc.save(fileName(spec.title, 'pdf'))
+}
+
+/* ── Stock — the map's fifth report, on paper ───────────────────────────── */
+
+export interface StockExportGroup {
+  label: string
+  rows: readonly StockLine[]
+  items: number
+  value: number
+  unpriced: boolean
+}
+
+export interface StockExportSpec {
+  /** "Stock by item" or "Stock by store" — whichever is on screen. */
+  title: string
+  /** "As on 31 Aug 2026" or "Right now" — never blank. */
+  period: string
+  /** What was searched or filtered, so the page says what it is a page OF. */
+  notes: string[]
+  groups: StockExportGroup[]
+  grand: { lines: number; items: number; value: number; unpriced: boolean }
+}
+
+const STOCK_HEADERS = ['Item', 'Where', 'In hand', 'Unit', 'Last rate', 'Value', 'Last moved']
+
+/**
+ * The map lists Total Stock among its five reports — "Select Period · Select
+ * Disciplines · Storage Location Wise" — and it was the one that existed only
+ * as a screen. Aksha, 16 Sep 2026: a stock statement is the thing the HOD asks
+ * to hold.
+ *
+ * Built from the SAME grouped rows the screen renders, for the same reason the
+ * register export is: a column added to one cannot go missing from the other.
+ */
+export async function exportStock(as: 'xlsx' | 'pdf', spec: StockExportSpec): Promise<void> {
+  if (as === 'xlsx') return stockToExcel(spec)
+  return stockToPdf(spec)
+}
+
+const when = (at: string | null) => (at ? formatDate(at) : '—')
+
+async function stockToExcel(spec: StockExportSpec) {
+  const XLSX = await import('xlsx')
+  const rows: Array<Array<string | number | null>> = []
+
+  rows.push([spec.title])
+  rows.push([spec.period])
+  if (spec.notes.length) rows.push([spec.notes.join(' · ')])
+  rows.push([])
+  rows.push(STOCK_HEADERS)
+
+  for (const g of spec.groups) {
+    rows.push([g.label])
+    for (const r of g.rows) {
+      // Raw numbers, so the column can still be added up — which is the only
+      // reason anybody asks for Excel rather than the PDF.
+      rows.push([r.name, r.where, r.qty, r.unit, r.lastRate, r.value, when(r.lastMovedAt)])
+    }
+    rows.push([`${g.label} — ${g.items} item${g.items === 1 ? '' : 's'}`, '', '', '', '', g.value, ''])
+    rows.push([])
+  }
+
+  rows.push([`TOTAL — ${spec.grand.items} items · ${spec.grand.lines} lines`, '', '', '', '', spec.grand.value, ''])
+  if (spec.grand.unpriced) {
+    rows.push([])
+    rows.push(['The ₹ total is understated — some lines have no known rate.'])
+  }
+
+  const ws = XLSX.utils.aoa_to_sheet(rows)
+  ws['!cols'] = [{ wch: 46 }, { wch: 30 }, { wch: 12 }, { wch: 8 }, { wch: 12 }, { wch: 14 }, { wch: 13 }]
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, spec.title.slice(0, 31))
+  XLSX.writeFile(wb, fileName(spec.title, 'xlsx'))
+}
+
+async function stockToPdf(spec: StockExportSpec) {
+  const { jsPDF } = await import('jspdf')
+  const autoTable = (await import('jspdf-autotable')).default
+
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' })
+  const W = doc.internal.pageSize.getWidth()
+
+  doc.setFillColor(...NAVY)
+  doc.rect(0, 0, W, 54, 'F')
+  doc.setTextColor(255).setFont('helvetica', 'bold').setFontSize(15)
+  doc.text(spec.title.toUpperCase(), 32, 24)
+  doc.setFont('helvetica', 'normal').setFontSize(9)
+  doc.text(spec.period, 32, 40)
+  if (spec.notes.length) doc.text(spec.notes.join('   ·   '), W - 32, 40, { align: 'right' })
+
+  const body: Array<Array<string>> = []
+  for (const g of spec.groups) {
+    body.push([`__GROUP__${g.label}`, `${g.items} item${g.items === 1 ? '' : 's'}`, '', '', '',
+      g.value > 0 ? formatINR(g.value) + (g.unpriced ? ' *' : '') : '—', ''])
+    for (const r of g.rows) {
+      body.push([r.name, r.where, fmtQty(r.qty), r.unit,
+        r.lastRate == null ? '—' : formatINR(r.lastRate),
+        r.value == null ? '—' : formatINR(r.value),
+        when(r.lastMovedAt)])
+    }
+  }
+
+  autoTable(doc, {
+    startY: 68,
+    head: [STOCK_HEADERS],
+    body,
+    theme: 'grid',
+    styles: { fontSize: 7.5, cellPadding: 3, overflow: 'linebreak', textColor: [30, 35, 45] },
+    headStyles: { fillColor: NAVY, textColor: 255, fontStyle: 'bold', fontSize: 7.5 },
+    alternateRowStyles: { fillColor: [252, 252, 253] },
+    columnStyles: {
+      0: { cellWidth: 250 }, 1: { cellWidth: 150 },
+      2: { halign: 'right', cellWidth: 60 }, 3: { cellWidth: 40 },
+      4: { halign: 'right', cellWidth: 60 }, 5: { halign: 'right', cellWidth: 74 },
+      6: { cellWidth: 62 },
+    },
+    didParseCell: (d) => {
+      const raw = d.row.raw as unknown as Array<string> | undefined
+      const first = String(raw?.[0] ?? '')
+      if (first.startsWith('__GROUP__')) {
+        d.cell.styles.fillColor = PAPER
+        d.cell.styles.fontStyle = 'bold'
+        d.cell.styles.fontSize = 8
+        if (d.column.index === 0) d.cell.text = [first.replace('__GROUP__', '')]
+      }
+    },
+    didDrawPage: () => {
+      const h = doc.internal.pageSize.getHeight()
+      doc.setFontSize(7).setTextColor(130)
+      doc.text(`CT Hub · Material In & Out · printed ${stamp()}`, 32, h - 16)
+      doc.text(`Page ${doc.getNumberOfPages()}`, W - 32, h - 16, { align: 'right' })
+    },
+  })
+
+  const y = ((doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? 68) + 14
+  doc.setFillColor(...NAVY)
+  doc.rect(32, y - 11, W - 64, 20, 'F')
+  doc.setTextColor(255).setFont('helvetica', 'bold').setFontSize(9)
+  doc.text(`TOTAL — ${spec.grand.items} items · ${spec.grand.lines} lines`, 40, y + 2)
+  doc.text(spec.grand.value > 0 ? formatINR(spec.grand.value) : '—', W - 40, y + 2, { align: 'right' })
+
+  if (spec.grand.unpriced) {
+    doc.setFont('helvetica', 'normal').setFontSize(7.5).setTextColor(150, 80, 20)
+    doc.text('* The ₹ total is understated — some lines have no known rate. Odoo carried none.',
+      32, y + 24)
+  }
+  doc.setFont('helvetica', 'normal').setFontSize(7).setTextColor(130)
+  doc.text('Folded from every movement in the register — the same figure the screen shows.',
+    32, y + (spec.grand.unpriced ? 36 : 24))
+
+  doc.save(fileName(spec.title, 'pdf'))
+}
+
+/* ── One entry, as the slip that travels with the lorry ─────────────────── */
+
+export interface SlipSpec {
+  /** "In: 16Sep26/002" */
+  no: string
+  /** "Material In" or "Material Out". */
+  kind: string
+  /** The entry this one answers, for a return or an issue. */
+  linked: string | null
+  when: string
+  from: string | null
+  to: string | null
+  /** Label/value pairs: party, vehicle, driver, purchase order, request. */
+  facts: Array<[string, string]>
+  lines: Array<{ name: string; qty: number; unit: string }>
+  /** The three the mind map asks for, in its own order. */
+  signatures: string[]
+  /** Printed small at the foot — what this piece of paper is. */
+  note?: string
+}
+
+/**
+ * The map replaces a paper register, but paper still travels with a lorry:
+ * the site engineer signs it, the gate keeps a copy, and nobody at the far end
+ * has the app open. Aksha, 16 Sep 2026 — 12.
+ *
+ * A5 portrait, because that is a half-sheet on the pad at the gate, and
+ * because a slip that needs two hands is a slip that gets put down.
+ *
+ * Quantities only — no rates. What a site paid for its cement is not a thing
+ * to hand a driver.
+ */
+export async function exportEntrySlip(spec: SlipSpec, share = false): Promise<void> {
+  const { jsPDF } = await import('jspdf')
+  const autoTable = (await import('jspdf-autotable')).default
+
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a5' })
+  const W = doc.internal.pageSize.getWidth()
+  const M = 28
+
+  doc.setFillColor(...NAVY)
+  doc.rect(0, 0, W, 46, 'F')
+  doc.setTextColor(255).setFont('helvetica', 'bold').setFontSize(12)
+  doc.text(`SRMD · ${spec.kind}`, M, 20)
+  doc.setFont('courier', 'bold').setFontSize(11)
+  doc.text(spec.no, M, 36)
+  if (spec.linked) {
+    doc.setFont('helvetica', 'normal').setFontSize(8)
+    doc.text(`answers ${spec.linked}`, W - M, 36, { align: 'right' })
+  }
+
+  doc.setTextColor(30, 35, 45).setFont('helvetica', 'normal').setFontSize(9)
+  let y = 64
+  const fact = (label: string, value: string) => {
+    doc.setTextColor(120).setFontSize(8)
+    doc.text(label, M, y)
+    doc.setTextColor(20).setFontSize(9.5)
+    doc.text(value || '—', M + 96, y)
+    y += 15
+  }
+  fact('Date', spec.when)
+  if (spec.from) fact('From', spec.from)
+  if (spec.to) fact('To', spec.to)
+  for (const [k, v] of spec.facts) fact(k, v)
+
+  autoTable(doc, {
+    startY: y + 6,
+    head: [['Item', 'Qty', 'Unit']],
+    body: spec.lines.map(l => [l.name, fmtQty(l.qty), l.unit]),
+    theme: 'grid',
+    margin: { left: M, right: M },
+    styles: { fontSize: 8, cellPadding: 3.5, overflow: 'linebreak', textColor: [30, 35, 45] },
+    headStyles: { fillColor: NAVY, textColor: 255, fontStyle: 'bold', fontSize: 8 },
+    columnStyles: { 1: { halign: 'right', cellWidth: 54 }, 2: { cellWidth: 44 } },
+  })
+
+  // Signature lines — ruled, not printed names: this is the piece of paper
+  // somebody actually signs.
+  let sy = ((doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? y) + 46
+  const slotW = (W - M * 2 - 16) / Math.max(1, spec.signatures.length)
+  doc.setDrawColor(40)
+  spec.signatures.forEach((label, i) => {
+    const x = M + i * (slotW + 8)
+    doc.line(x, sy, x + slotW, sy)
+    doc.setFontSize(7.5).setTextColor(90)
+    doc.text(label, x, sy + 10)
+  })
+
+  sy += 30
+  doc.setFontSize(6.8).setTextColor(140)
+  doc.text(spec.note ?? 'Quantities as recorded in CT Hub · Material In & Out.', M, sy)
+  doc.text(`printed ${stamp()}`, W - M, sy, { align: 'right' })
+
+  const file = `${spec.no.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.pdf`
+
+  // On a phone, hand it to whatever the person shares with — which is
+  // WhatsApp. On a laptop there is nothing to share to, so it downloads.
+  if (share && typeof navigator !== 'undefined' && 'share' in navigator) {
+    try {
+      const blob = doc.output('blob') as Blob
+      const f = new File([blob], file, { type: 'application/pdf' })
+      const nav = navigator as Navigator & {
+        canShare?: (d: { files: File[] }) => boolean
+        share: (d: { files: File[]; title?: string }) => Promise<void>
+      }
+      if (nav.canShare?.({ files: [f] })) {
+        await nav.share({ files: [f], title: spec.no })
+        return
+      }
+    } catch {
+      // Shrugged off on purpose: a cancelled share sheet is not an error, and
+      // either way the download below is the honest fallback.
+    }
+  }
+  doc.save(file)
 }

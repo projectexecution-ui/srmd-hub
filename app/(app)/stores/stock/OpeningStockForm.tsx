@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation'
 import { useMemo, useState, useTransition } from 'react'
 import { setOpeningStock } from '@/lib/stores/actions'
-import { Field, inputClass, Btn, Notice, Empty } from '../ui'
+import { Field, inputClass, Btn, Notice, Empty, NumberInput } from '../ui'
 import { SearchableSelect } from '@/components/ui/searchable-select'
 
 export function OpeningStockForm({
@@ -62,10 +62,10 @@ export function OpeningStockForm({
 
       <div className="grid sm:grid-cols-2 gap-3">
         <Field label="Quantity" required>
-          <input className={inputClass} value={qty} inputMode="decimal" onChange={e => setQty(e.target.value)} />
+          <NumberInput value={qty} onChange={setQty} />
         </Field>
         <Field label="Rate" hint="What it cost. Used to value the stock; leave blank if unknown.">
-          <input className={inputClass} value={rate} inputMode="decimal" onChange={e => setRate(e.target.value)} />
+          <NumberInput money value={rate} onChange={setRate} />
         </Field>
       </div>
 

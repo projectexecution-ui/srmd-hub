@@ -1,12 +1,15 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
+import Link from 'next/link'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useState, useTransition } from 'react'
 import { saveListRow, setListActive, saveItem } from '@/lib/stores/actions'
-import type { ListRow, ItemRow, ProjectOpt, StaffRow } from '@/lib/stores/queries'
+import type { ListRow, ItemRow, ProjectOpt, StaffRow, UnassignedStock } from '@/lib/stores/queries'
 import { StaffDesk } from './StaffDesk'
+import { WhoseStock } from './WhoseStock'
+import { SettingsPanel } from './SettingsPanel'
 import { formatINR, formatNumber } from '@/lib/utils'
-import { Field, inputClass, Btn, Notice, Empty, Scroller, th, thNum, td, tdNum, GroupedOptions } from '../ui'
+import { Field, inputClass, Btn, Notice, Empty, Scroller, NumberInput, th, thNum, td, tdNum, GroupedOptions } from '../ui'
 
 type Kind = ListRow['kind']
 
@@ -24,7 +27,7 @@ const KINDS: Array<{ kind: Kind; title: string; note: string }> = [
 ]
 
 export function MastersClient({
-  lists, items, companies, projects, staff, people,
+  lists, items, companies, projects, staff, people, unassigned, crossProject,
 }: {
   lists: ListRow[]
   items: ItemRow[]
@@ -32,9 +35,26 @@ export function MastersClient({
   projects: ProjectOpt[]
   staff: StaffRow[]
   people: Array<{ id: string; name: string; role: string }>
+  /** Stock whose movements carry no project yet. */
+  unassigned: UnassignedStock[]
+  /** Whether borrowing between project families is switched on. */
+  crossProject: boolean
 }) {
   const router = useRouter()
-  const [openKind, setOpenKind] = useState<Kind | 'items' | 'staff'>('location')
+  /**
+   * Which list is open is in the ADDRESS, not just in this component.
+   *
+   * Aksha, 16 Sep 2026: "i want to know where can i assign the Project to Eng
+   * and etc where is the desk located". It was the eighth tab behind a
+   * horizontal scroll, and nothing could link to it — the setup-health line on
+   * the Overview pointed here and then opened Storage locations, which is the
+   * same buried-config failure as the language toggle he could not find.
+   */
+  const params = useSearchParams()
+  const asked = params.get('list') as Kind | 'items' | 'staff' | 'whose' | 'settings' | null
+  const [picked, setPicked] = useState<Kind | 'items' | 'staff' | 'whose' | 'settings' | null>(null)
+  const openKind = picked ?? asked ?? 'location'
+  const setOpenKind = (k: Kind | 'items' | 'staff' | 'whose' | 'settings') => setPicked(k)
 
   return (
     <div className="space-y-4">
@@ -44,6 +64,8 @@ export function MastersClient({
             ...KINDS.map(k => ({ key: k.kind as Kind | 'items' | 'staff', label: k.title })),
             { key: 'items' as const, label: 'Items' },
             { key: 'staff' as const, label: 'Who works where' },
+            { key: 'whose' as const, label: `Whose stock${unassigned.length ? ` (${unassigned.length})` : ''}` },
+            { key: 'settings' as const, label: 'Settings' },
           ].map(t => (
             <button
               key={t.key} type="button" onClick={() => setOpenKind(t.key)}
@@ -57,7 +79,11 @@ export function MastersClient({
         </div>
       </div>
 
-      {openKind === 'staff'
+      {openKind === 'settings'
+        ? <SettingsPanel crossProject={crossProject} />
+        : openKind === 'whose'
+        ? <WhoseStock rows={unassigned} projects={projects} />
+        : openKind === 'staff'
         ? <StaffDesk staff={staff} people={people} projects={projects} />
         : openKind === 'items'
         ? <ItemsPanel items={items} disciplines={lists.filter(l => l.kind === 'discipline' && l.isActive)} onDone={() => router.refresh()} />
@@ -339,32 +365,146 @@ function ItemsPanel({
                 <th className={th}>Discipline</th>
                 <th className={thNum}>Last rate</th>
                 <th className={th}>From IN4</th>
+                <th className={th}></th>
               </tr>
             </thead>
             <tbody>
               {shown.map(i => (
-                <tr key={i.id} className={i.isActive ? '' : 'opacity-55'}>
-                  <td className={td}>{i.name}</td>
-                  <td className={td}>{i.unit}</td>
-                  {/* An item with no discipline reaches NO approver — its
-                      requests fall through to the admins. That is a gap to
-                      fill, so it is shown as one rather than left blank. */}
-                  <td className={td}>
-                    {discName.get(i.disciplineId ?? '')
-                      ?? <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10.5px] font-semibold text-amber-900">not set</span>}
-                  </td>
-                  <td className={tdNum}>{i.lastRate == null ? '—' : formatINR(i.lastRate)}</td>
-                  <td className={td}>
-                    {i.in4MaterialId
-                      ? <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10.5px] font-semibold text-emerald-900">#{i.in4MaterialId}</span>
-                      : <span className="text-[12px] text-gray-400">local</span>}
-                  </td>
-                </tr>
+                <ItemRowEditable
+                  key={i.id} item={i} disciplines={disciplines} discName={discName}
+                  onDone={onDone}
+                />
               ))}
             </tbody>
           </table>
         </Scroller>
       )}
     </div>
+  )
+}
+
+/**
+ * One item, and the way to change it.
+ *
+ * Aksha, 16 Sep 2026: "What about Items rate where can i change if i need also
+ * i will need all the data should be recorded and what all changes is done to
+ * that item should also come". The rate could never be changed after an item
+ * existed — the save action always accepted one, and no screen ever offered it.
+ *
+ * Editing opens in the row rather than on another page, so the list stays in
+ * front of you while you work down it. Every change is written to the item's
+ * history with your name; the card at /stores/stock/<item> shows it.
+ */
+function ItemRowEditable({
+  item, disciplines, discName, onDone,
+}: {
+  item: ItemRow
+  disciplines: ListRow[]
+  discName: Map<string, string>
+  onDone: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [pending, start] = useTransition()
+  const [name, setName] = useState(item.name)
+  const [unit, setUnit] = useState(item.unit)
+  const [disciplineId, setDisciplineId] = useState(item.disciplineId ?? '')
+  const [rate, setRate] = useState(item.lastRate == null ? '' : String(item.lastRate))
+  const [reason, setReason] = useState('')
+  const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null)
+
+  if (!open) {
+    return (
+      <tr className={item.isActive ? '' : 'opacity-55'}>
+        <td className={td}>
+          <Link href={`/stores/stock/${item.id}`} className="text-indigo-700 hover:underline">
+            {item.name}
+          </Link>
+        </td>
+        <td className={td}>{item.unit}</td>
+        {/* An item with no discipline reaches NO approver — its requests fall
+            through to the admins. That is a gap to fill, so it is shown as one
+            rather than left blank. */}
+        <td className={td}>
+          {discName.get(item.disciplineId ?? '')
+            ?? <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10.5px] font-semibold text-amber-900">not set</span>}
+        </td>
+        <td className={tdNum}>{item.lastRate == null ? '—' : formatINR(item.lastRate)}</td>
+        <td className={td}>
+          {item.in4MaterialId
+            ? <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10.5px] font-semibold text-emerald-900">#{item.in4MaterialId}</span>
+            : <span className="text-[12px] text-gray-400">local</span>}
+        </td>
+        <td className={td}>
+          <button
+            type="button" onClick={() => { setOpen(true); setResult(null) }}
+            className="text-[12px] font-semibold text-indigo-700 hover:underline min-h-[44px] px-1"
+          >
+            Change
+          </button>
+        </td>
+      </tr>
+    )
+  }
+
+  return (
+    <tr className="bg-indigo-50/40">
+      <td className={td} colSpan={6}>
+        <div className="space-y-3 max-w-3xl py-1">
+          <div className="grid sm:grid-cols-4 gap-3">
+            <Field label="Name"><input className={inputClass} value={name} onChange={e => setName(e.target.value)} /></Field>
+            <Field label="Unit"><input className={inputClass} value={unit} onChange={e => setUnit(e.target.value)} /></Field>
+            <Field label="Discipline" hint="Decides whether a request reaches Mayank or Kanti.">
+              <select className={inputClass} value={disciplineId} onChange={e => setDisciplineId(e.target.value)}>
+                <option value="">Not set</option>
+                {disciplines.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+              </select>
+            </Field>
+            <Field label="Rate" hint="Used where no delivery carried one.">
+              <NumberInput money value={rate} onChange={setRate} />
+            </Field>
+          </div>
+
+          <Field label="Why" hint="Optional, and it is what makes the history readable in six months.">
+            <input className={inputClass} value={reason} onChange={e => setReason(e.target.value)} />
+          </Field>
+
+          {result && <Notice kind={result.ok ? 'ok' : 'bad'}>{result.message}</Notice>}
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Btn
+              busy={pending}
+              onClick={() => start(async () => {
+                const r = await saveItem({
+                  id: item.id,
+                  name,
+                  unit,
+                  disciplineId: disciplineId || null,
+                  lastRate: rate.trim() === '' ? null : Number(rate),
+                  reason,
+                })
+                setResult(r)
+                if (r.ok) { setOpen(false); setReason(''); onDone() }
+              })}
+            >
+              Save the change
+            </Btn>
+            <Btn kind="ghost" onClick={() => {
+              setOpen(false); setResult(null)
+              setName(item.name); setUnit(item.unit)
+              setDisciplineId(item.disciplineId ?? '')
+              setRate(item.lastRate == null ? '' : String(item.lastRate))
+            }}>Cancel</Btn>
+            <Link href={`/stores/stock/${item.id}`} className="text-[12px] font-semibold text-indigo-700 hover:underline">
+              Its card and history →
+            </Link>
+          </div>
+
+          <p className="text-[11.5px] text-gray-500">
+            Changing the rate does not rewrite what past deliveries cost — each one keeps the rate it came
+            in at. It sets what a new entry pre-fills, and values the stock that never had a rate at all.
+          </p>
+        </div>
+      </td>
+    </tr>
   )
 }

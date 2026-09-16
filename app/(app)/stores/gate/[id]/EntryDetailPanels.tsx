@@ -1,38 +1,44 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { useState, useTransition } from 'react'
+import { useMemo, useState, useTransition } from 'react'
 import { correctEntry, voidEntry, confirmReceipt } from '@/lib/stores/actions'
 import { fmtQty, RETURNABLES_ON } from '@/lib/stores/core'
+import { signaturesFor, correctableFields, type SignedSlot } from '@/lib/stores/desk'
 import { formatDateTime, formatINR } from '@/lib/utils'
 import { PenLine } from 'lucide-react'
-import type { EntryDetail, Signature } from '@/lib/stores/queries'
-import { Field, inputClass, Btn, Notice, StageChip, RegisterChip, Scroller, th, thNum, td, tdNum } from '../../ui'
+import type { EntryDetail, ProjectOpt } from '@/lib/stores/queries'
+import {
+  Field, inputClass, Btn, Notice, StageChip, RegisterChip, Scroller, GroupedOptions,
+  th, thNum, td, tdNum,
+} from '../../ui'
 
-/** The fields a correction may touch. Anything that would change what the
- *  ledger says — quantity, rate, the item itself — is deliberately not here:
- *  that is a void and a fresh entry, so stock always has one explanation. */
-const CORRECTABLE = [
-  { field: 'vehicle_no', label: 'Vehicle number' },
-  { field: 'driver_name', label: 'Driver name' },
-  { field: 'driver_mobile', label: 'Driver mobile' },
-  { field: 'driver_licence', label: 'Driver licence' },
-  { field: 'party_name', label: 'Party' },
-  { field: 'po_wo_no', label: 'Purchase order number' },
-  { field: 'handed_over_to', label: 'Handed over to' },
-  { field: 'remarks', label: 'Remarks' },
-] as const
+/** Which fields, and what they are called, is decided by direction in
+ *  lib/stores/desk.ts — see correctableFields. Nothing is listed here, so the
+ *  screen and the server cannot disagree about what may be changed. */
+export interface CorrectOptions {
+  entities: Array<{ id: string; name: string }>
+  modes: Array<{ id: string; name: string }>
+  categories: Array<{ id: string; name: string }>
+  projects: ProjectOpt[]
+  locations: Array<{ id: string; label: string }>
+}
 
 export function EntryDetailPanels({
-  entry, places = [],
+  entry, places = [], options, canCorrect = false, canVoid = false,
 }: {
   entry: EntryDetail
   /** Where it could have been put down at the far end — the map's "capture
    *  where the materials are being stored". */
   places?: Array<{ id: string; label: string }>
+  /** The lists a correction picks from, so a project is chosen and not retyped. */
+  options: CorrectOptions
+  canCorrect?: boolean
+  canVoid?: boolean
 }) {
   const router = useRouter()
   const total = entry.lines.reduce((s, l) => s + (l.amount ?? 0), 0)
+  const slots = signaturesFor(entry.direction, { ...entry.signatures, completedBy: entry.completedBy, completedAt: entry.completedAt })
 
   return (
     <div className="space-y-4">
@@ -47,6 +53,7 @@ export function EntryDetailPanels({
             </span>
           )}
           <span className="ml-auto text-[12px] text-gray-500">{formatDateTime(entry.entryAt)}</span>
+          <SlipButtons entry={entry} />
         </div>
 
         <dl className="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-3 mt-4">
@@ -58,24 +65,56 @@ export function EntryDetailPanels({
           <Cell label="Project" value={entry.projectName} />
           <Cell label="Purchase order" value={entry.poWoNo} mono />
           <Cell label="Put away at" value={entry.locationName} />
-          <Cell label="Security" value={entry.securityBy} />
-          <Cell label="SRM Incharge" value={entry.inchargeName} />
-          <Cell label="Handed over to" value={entry.handedOverTo} />
+          {/* On an OUT, `security_by` holds the STOREKEEPER who issued it —
+              issueRequest writes their name there. Labelling that "Security"
+              is the same confusion as the receiver box: a word that does not
+              mean what it says. */}
+          <Cell label={entry.direction === 'in' ? 'Security' : 'Issued by'} value={entry.securityBy} />
+          {entry.direction === 'in' && <Cell label="SRM Incharge" value={entry.inchargeName} />}
+          {/* Aksha: "Also Handed over will come here in the SRM iN section ???"
+              It does — the map lists both halves on SRM In Step 1 — but it means
+              the other way round coming in: the vendor's man hands over and our
+              person receives. One label for both directions reads backwards on
+              one of them. */}
+          <Cell
+            label={entry.direction === 'in' ? 'Handed over by' : 'Handed over to — company'}
+            value={entry.handedOverParty}
+          />
+          <Cell
+            label={entry.direction === 'in' ? 'Received by' : 'Handed over to — person'}
+            value={entry.handedOverTo}
+          />
           <Cell label="Remarks" value={entry.remarks} />
         </dl>
 
-        {/* The mind map's signature points. Shown, not just stored — an entry
-            whose signatures are invisible is an entry nobody has signed. */}
+        {/* The photographs. Taken since the camera was wired, recorded
+            against every entry — and shown on NO screen, because the bucket is
+            private and a stored path is not a web address. A photograph nobody
+            can look at is the same as one nobody took. */}
+        {entry.photos.length > 0 && (
+          <div className="mt-5 pt-4 border-t border-gray-100">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-2.5">
+              Photographs ({entry.photos.length})
+            </p>
+            <ul className="flex flex-wrap gap-2.5">
+              {entry.photos.map(p => (
+                <li key={p.id}>
+                  <Shot photo={p} />
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {/* WHICH signatures apply is decided in lib/stores/desk.ts, by
+            direction. All three used to be drawn on every entry, so a finished
+            IN carried a hollow "Receiver · Not signed" for a step that only
+            ever runs on an OUT — Aksha, 16 Sep 2026: "i dont know this cycle
+            is closed - why its showing am i missing something". */}
         <div className="mt-5 pt-4 border-t border-gray-100">
           <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-2.5">Signed by</p>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-            <Signed label="Security" sig={entry.signatures.security} />
-            <Signed label="SRM Incharge" sig={entry.signatures.incharge} />
-            <Signed
-              label="Receiver"
-              sig={entry.signatures.receiver}
-              missingHint="No receipt step yet — the person taking the material has nowhere to sign."
-            />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            {slots.map(s => <Signed key={s.key} slot={s} />)}
           </div>
         </div>
       </div>
@@ -133,7 +172,12 @@ export function EntryDetailPanels({
         <Receipt entryId={entry.id} entryNo={entry.no} places={places} onDone={() => router.refresh()} />
       )}
 
-      {entry.stage !== 'void' && <Corrections entry={entry} onDone={() => router.refresh()} />}
+      {entry.stage !== 'void' && (
+        <Corrections
+          entry={entry} options={options} canCorrect={canCorrect} canVoid={canVoid}
+          onDone={() => router.refresh()}
+        />
+      )}
 
       {entry.edits.length > 0 && (
         <details className="rounded-xl border border-gray-200 bg-white overflow-hidden">
@@ -225,30 +269,28 @@ function Receipt({
  * One signature point.
  *
  * A name and a time, because that is what the app can actually prove — the
- * person was signed in and pressed the button. Where nothing has been signed
- * it says so plainly, and where nothing CAN be signed yet it says that too,
- * rather than leaving a blank that reads like an oversight.
+ * person was signed in and pressed the button. It also says WHAT signing it
+ * meant, which is the thing the box was missing: "Receiver" on its own is a
+ * word, and nobody reading a finished entry could tell whether it mattered.
  */
-function Signed({ label, sig, missingHint }: { label: string; sig: Signature; missingHint?: string }) {
-  const signed = !!sig.at
+function Signed({ slot }: { slot: SignedSlot }) {
+  const signed = !!slot.at
   return (
     <div className={`rounded-lg border px-3 py-2.5 ${
       signed ? 'border-emerald-200 bg-emerald-50/60' : 'border-dashed border-gray-300 bg-gray-50'}`}>
-      <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500">{label}</p>
+      <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500">{slot.label}</p>
       {signed ? (
         <>
           <p className="text-[13.5px] font-semibold text-gray-900 mt-0.5 flex items-center gap-1.5">
             <PenLine className="h-3.5 w-3.5 text-emerald-700 shrink-0" />
-            {sig.who || 'Signed'}
+            {slot.who || 'Signed'}
           </p>
-          <p className="text-[11.5px] text-gray-500">{formatDateTime(sig.at)}</p>
+          <p className="text-[11.5px] text-gray-500">{formatDateTime(slot.at)}</p>
         </>
       ) : (
-        <>
-          <p className="text-[13px] text-gray-400 mt-0.5">Not signed</p>
-          {missingHint && <p className="text-[11px] text-gray-400 leading-snug mt-0.5">{missingHint}</p>}
-        </>
+        <p className="text-[13px] text-gray-500 mt-0.5">{slot.waitingFor}</p>
       )}
+      <p className="text-[11px] text-gray-400 leading-snug mt-1">{slot.what}</p>
     </div>
   )
 }
@@ -264,13 +306,62 @@ function Cell({ label, value, mono }: { label: string; value: string | null; mon
   )
 }
 
-function Corrections({ entry, onDone }: { entry: EntryDetail; onDone: () => void }) {
+/**
+ * Correcting a saved entry.
+ *
+ * Aksha, 16 Sep 2026: "this also the Store keeper should be able to do and
+ * record of that should be there - also more specific and more fields u can
+ * think which can be added".
+ *
+ * Three things changed. WHO — the rule is canCorrectEntry in core.ts, and it
+ * is whoever may record an entry in the first place: the guard who mistyped
+ * the vehicle number and the storekeeper who filed a delivery against the
+ * wrong wing are the two people who find the mistake. WHAT — the fields now
+ * come from correctableFields(direction), which added the things most likely
+ * to be wrong and could not be touched at all: the project, the trust, the
+ * shelf, how it came, and both halves of "handed over" with the words the
+ * right way round for each direction. HOW — where the answer is a list, it is
+ * a list, because retyping a project name into a free-text box is how the
+ * wrong project gets saved twice.
+ */
+function Corrections({
+  entry, options, canCorrect, canVoid, onDone,
+}: {
+  entry: EntryDetail
+  options: CorrectOptions
+  canCorrect: boolean
+  canVoid: boolean
+  onDone: () => void
+}) {
+  const fields = useMemo(() => correctableFields(entry.direction), [entry.direction])
   const [pending, start] = useTransition()
   const [open, setOpen] = useState(false)
-  const [field, setField] = useState<string>(CORRECTABLE[0].field)
+  const [field, setField] = useState<string>(fields[0].field)
   const [value, setValue] = useState('')
   const [reason, setReason] = useState('')
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null)
+
+  const spec = fields.find(f => f.field === field) ?? fields[0]
+
+  // Never a disabled button with no explanation: somebody who may not correct
+  // is told who can, rather than finding a panel that does nothing.
+  if (!canCorrect) {
+    return (
+      <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
+        <p className="text-[12.5px] text-gray-600">
+          Something wrong on this entry? Security, the storekeeper and the heads can correct it —
+          ask one of them. Every correction keeps the old value and the name of whoever made it.
+        </p>
+      </div>
+    )
+  }
+
+  const choices: Array<{ id: string; label: string }> =
+    spec.kind === 'entity' ? options.entities.map(o => ({ id: o.id, label: o.name }))
+      : spec.kind === 'delivery_mode' ? options.modes.map(o => ({ id: o.id, label: o.name }))
+        : spec.kind === 'item_category' ? options.categories.map(o => ({ id: o.id, label: o.name }))
+          : spec.kind === 'location' ? options.locations
+            : []
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-4">
@@ -284,17 +375,50 @@ function Corrections({ entry, onDone }: { entry: EntryDetail; onDone: () => void
       ) : (
         <div className="space-y-3 max-w-lg">
           <Field label="What is wrong">
-            <select className={inputClass} value={field} onChange={e => { setField(e.target.value); setValue('') }}>
-              {CORRECTABLE.map(c => <option key={c.field} value={c.field}>{c.label}</option>)}
+            <select
+              className={inputClass} value={field}
+              onChange={e => { setField(e.target.value); setValue(''); setResult(null) }}
+            >
+              {fields.map(f => (
+                <option key={f.field} value={f.field}>
+                  {f.label}{f.movesLedger ? ' — moves the stock too' : ''}
+                </option>
+              ))}
             </select>
           </Field>
-          <Field label="Correct value">
-            <input className={inputClass} value={value} onChange={e => setValue(e.target.value)} autoComplete="off" />
+
+          <Field label="Correct value" hint={spec.hint}>
+            {spec.kind === 'text' ? (
+              <input className={inputClass} value={value} onChange={e => setValue(e.target.value)} autoComplete="off" />
+            ) : spec.kind === 'project' ? (
+              <select className={inputClass} value={value} onChange={e => setValue(e.target.value)}>
+                <option value="">Pick one</option>
+                <GroupedOptions rows={options.projects} />
+              </select>
+            ) : (
+              <select className={inputClass} value={value} onChange={e => setValue(e.target.value)}>
+                <option value="">Pick one</option>
+                {choices.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
+              </select>
+            )}
           </Field>
+
+          {/* Saying it before it is done, not after. A correction that moves
+              stock between two shelves is a bigger act than fixing a typo, and
+              the person doing it should know which one they are about to do. */}
+          {spec.movesLedger && (
+            <Notice kind="info">
+              This moves the stock with it, so the stock screen follows the correction rather than
+              disagreeing with the entry.
+            </Notice>
+          )}
+
           <Field label="Why" hint="Optional, but it is what makes the history readable in six months.">
             <input className={inputClass} value={reason} onChange={e => setReason(e.target.value)} autoComplete="off" />
           </Field>
+
           {result && <Notice kind={result.ok ? 'ok' : 'bad'}>{result.message}</Notice>}
+
           <div className="flex flex-wrap gap-2">
             <Btn
               busy={pending}
@@ -307,27 +431,130 @@ function Corrections({ entry, onDone }: { entry: EntryDetail; onDone: () => void
               Save the correction
             </Btn>
             <Btn kind="ghost" onClick={() => { setOpen(false); setResult(null) }}>Cancel</Btn>
-            <Btn
-              kind="danger" busy={pending}
-              onClick={() => {
-                const why = window.prompt('Voiding keeps the entry but removes its stock. Why?')
-                if (!why) return
-                start(async () => {
-                  const r = await voidEntry(entry.id, why)
-                  setResult(r)
-                  if (r.ok) onDone()
-                })
-              }}
-            >
-              Void this entry
-            </Btn>
+            {canVoid && (
+              <Btn
+                kind="danger" busy={pending}
+                onClick={() => {
+                  const why = window.prompt('Voiding keeps the entry but removes its stock. Why?')
+                  if (!why) return
+                  start(async () => {
+                    const r = await voidEntry(entry.id, why)
+                    setResult(r)
+                    if (r.ok) onDone()
+                  })
+                }}
+              >
+                Void this entry
+              </Btn>
+            )}
           </div>
+
+          {!canVoid && (
+            <p className="text-[11.5px] text-gray-500">
+              Voiding an entry takes its stock back off the ledger, so it is left to a head or an admin.
+            </p>
+          )}
           <p className="text-[11.5px] text-gray-500">
             Quantities, rates and the items themselves are not corrected here — changing those would change
             what the stock ledger says. Void the entry and record it again, so stock always has one explanation.
           </p>
         </div>
       )}
+    </div>
+  )
+}
+
+/**
+ * One photograph or video from the entry.
+ *
+ * A video is not shown as a thumbnail — a poster frame would need decoding it
+ * — so it is named and opens in its own tab. What matters on this screen is
+ * that it EXISTS and can be reached; watching it is a deliberate act.
+ */
+function Shot({ photo }: { photo: EntryDetail['photos'][number] }) {
+  const label = PHOTO_WORDS[photo.kind] ?? photo.kind
+  const isVideo = /\.(mp4|mov|webm)$/i.test(photo.path)
+
+  if (!photo.url) {
+    return (
+      <div className="w-[104px] rounded-lg border border-dashed border-gray-300 bg-gray-50 p-2 text-center">
+        <p className="text-[11px] font-semibold text-gray-600">{label}</p>
+        <p className="text-[10.5px] text-gray-400 mt-0.5">could not be fetched</p>
+      </div>
+    )
+  }
+
+  return (
+    <a
+      href={photo.url} target="_blank" rel="noopener noreferrer"
+      className="block w-[104px] rounded-lg border border-gray-200 overflow-hidden hover:border-indigo-300 hover:shadow-sm"
+    >
+      {isVideo ? (
+        <span className="flex h-[78px] items-center justify-center bg-gray-900 text-white text-[11px] font-semibold">
+          ▶ video
+        </span>
+      ) : (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={photo.url} alt={label} className="h-[78px] w-full object-cover" loading="lazy" />
+      )}
+      <span className="block px-1.5 py-1 text-[10.5px] font-semibold text-gray-600 truncate">{label}</span>
+    </a>
+  )
+}
+
+/** What each kind of photograph is called, in the words the field screens use
+ *  rather than the database's own. */
+const PHOTO_WORDS: Record<string, string> = {
+  challan: 'The papers',
+  item: 'The material',
+  location: 'Where it was put',
+  video: 'The load',
+}
+
+/**
+ * The slip that travels with the lorry.
+ *
+ * Share hands the PDF to whatever the phone shares with — WhatsApp, in
+ * practice. On a laptop there is nothing to share to, so both buttons
+ * download, and the second is hidden rather than offered and doing the same
+ * thing as the first.
+ */
+function SlipButtons({ entry }: { entry: EntryDetail }) {
+  const [busy, setBusy] = useState(false)
+  const canShare = typeof navigator !== 'undefined' && 'canShare' in navigator
+
+  const print = async (share: boolean) => {
+    setBusy(true)
+    try {
+      const { exportEntrySlip } = await import('@/lib/stores/export')
+      const facts: Array<[string, string]> = []
+      if (entry.partyName) facts.push([entry.direction === 'in' ? 'Brought by' : 'Handed to', entry.partyName])
+      if (entry.vehicleNo) facts.push(['Vehicle', entry.vehicleNo])
+      if (entry.driverName) facts.push(['Driver', entry.driverName])
+      if (entry.poWoNo) facts.push(['Purchase order', entry.poWoNo])
+      if (entry.handedOverTo) facts.push(['Handed over to', entry.handedOverTo])
+
+      await exportEntrySlip({
+        no: entry.no,
+        kind: entry.direction === 'in' ? 'Material In' : 'Material Out',
+        linked: entry.linkedNo,
+        when: formatDateTime(entry.entryAt),
+        from: entry.direction === 'out' ? entry.locationName : (entry.partyName ?? null),
+        to: entry.direction === 'out' ? (entry.projectName ?? null) : entry.locationName,
+        facts,
+        lines: entry.lines.map(l => ({ name: l.itemName, qty: l.qty, unit: l.unit })),
+        // The map's own three, in its own order.
+        signatures: ['Sign of Security', 'Sign of SRM Incharge', 'Sign of Receiver'],
+      }, share)
+    } finally { setBusy(false) }
+  }
+
+  if (entry.lines.length === 0) return null
+
+  return (
+    <div className="flex gap-2">
+      <Btn kind="ghost" busy={busy} onClick={() => print(false)}>Print slip</Btn>
+      {canShare && <Btn kind="ghost" busy={busy} onClick={() => print(true)}>Share</Btn>}
     </div>
   )
 }

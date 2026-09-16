@@ -31,7 +31,15 @@ export const isPilotProject = (projectId: string): boolean =>
  *   security       records the vehicle at the gate
  *   store_manager  counts the material in, puts it away, issues it out
  *   engineer       raises a request for their site
+ *   backoffice     Mayank — approves requests
  *   head, founder  approve, and read the registers
+ *
+ * BACKOFFICE WAS MISSING UNTIL 16 SEP 2026, and it mattered: Mayank is the
+ * approver the whole OUT cycle routes to, notify.ts already mails him by name,
+ * and his account is `backoffice` — so the day this went live he would have
+ * been told a request was waiting and then refused the screen to act on it.
+ * Found while drawing who-sees-what for the Round Two preview. The go-live
+ * migration carries the same list and was corrected with it.
  *
  * GOING LIVE IS TWO ACTS, deliberately. Flip STORES_LIVE, and apply
  * supabase/migrations/20260915_material_in_out_go_live.sql — which is written
@@ -43,12 +51,106 @@ export const isPilotProject = (projectId: string): boolean =>
 export const STORES_LIVE = false
 
 const LIVE_ROLES: readonly string[] = [
-  'admin', 'founder', 'head', 'store_manager', 'security', 'engineer',
+  'admin', 'founder', 'head', 'backoffice', 'store_manager', 'security', 'engineer',
 ]
 
 export function canSeeStores(role: string | null | undefined): boolean {
   if (!role) return false
   return STORES_LIVE ? LIVE_ROLES.includes(role) : role === 'admin'
+}
+
+/* ── Which screens are whose ────────────────────────────────────────────── */
+
+export type StoreTab =
+  | 'overview' | 'gate' | 'requests' | 'issue' | 'receive' | 'stock' | 'reports' | 'masters'
+
+/**
+ * Who sees which screen — Aksha, 16 Sep 2026: "Role-aware tabs, one status
+ * language".
+ *
+ * It is a JOB, not a rank. A guard needs one screen and six is five too many;
+ * a storekeeper holds material and issues it, so they get the gate, the stock
+ * and the requests waiting to be issued; an engineer asks and follows; Mayank
+ * approves and wants to see what is held and what moved. Everything belongs to
+ * the people who run the whole thing.
+ *
+ * An unlisted screen is REFUSED WITH A SENTENCE, never a blank 404 — see
+ * NotYourScreen. A tab that silently vanishes and then 404s on a bookmark is
+ * the silent blocker Aksha has asked me not to ship.
+ */
+const TAB_ROLES: Record<StoreTab, readonly string[]> = {
+  overview: ['admin', 'founder', 'head'],
+  gate:     ['admin', 'founder', 'head', 'security', 'store_manager'],
+  // Asking and following — the site's screen, and the approvers'.
+  requests: ['admin', 'founder', 'head', 'backoffice', 'store_manager', 'engineer'],
+  // Handing it out. Aksha, 16 Sep 2026: "i would like Issue as a seperate
+  // section ( of Storekeeper so its easy to make out" — one screen was doing
+  // three jobs, which is why it read as confusing.
+  issue:    ['admin', 'founder', 'head', 'store_manager'],
+  // Signing for it at the far end. This existed only as a panel buried at the
+  // foot of one entry page, which is exactly why he could not find it:
+  // "Where will the reciever do the entry - i cant see the page or section".
+  receive:  ['admin', 'founder', 'head', 'store_manager', 'engineer'],
+  stock:    ['admin', 'founder', 'head', 'backoffice', 'store_manager', 'engineer'],
+  reports:  ['admin', 'founder', 'head', 'backoffice'],
+  masters:  ['admin', 'founder', 'head'],
+}
+
+/** Reading order, which is also the order of the nav. */
+export const STORE_TABS: readonly StoreTab[] =
+  ['overview', 'gate', 'requests', 'issue', 'receive', 'stock', 'reports', 'masters']
+
+/**
+ * What this JOB needs, before asking whether the section is open yet.
+ *
+ * Deliberately separate from the live switch. Which screens a storekeeper
+ * needs is a fact about the work and does not change on the day it goes live —
+ * and if the two were one function, none of it could be tested until it was,
+ * because STORES_LIVE is false and every role but admin would come back empty.
+ */
+export function roleStoreTabs(role: string | null | undefined): StoreTab[] {
+  if (!role) return []
+  return STORE_TABS.filter(t => TAB_ROLES[t]?.includes(role) ?? false)
+}
+
+/** The real gate: the section has to be open to them AND the screen has to be
+ *  part of their job. */
+export function canOpenStoreTab(role: string | null | undefined, tab: StoreTab): boolean {
+  return canSeeStores(role) && roleStoreTabs(role).includes(tab)
+}
+
+/** What goes in the nav — nothing at all while the section is closed to them. */
+export function visibleStoreTabs(role: string | null | undefined): StoreTab[] {
+  return canSeeStores(role) ? roleStoreTabs(role) : []
+}
+
+/**
+ * Where this person lands, and what the section's own link points at.
+ *
+ * A guard opening /stores should be looking at the gate, not at a page they
+ * may not have. Falls back to the first screen they do have, and to the
+ * overview when they have none — at which point canSeeStores has already
+ * refused them anyway.
+ */
+export function homeStoreTab(role: string | null | undefined): StoreTab {
+  const mine = roleStoreTabs(role)
+  if (mine.includes('overview')) return 'overview'
+  if (mine.includes('gate')) return 'gate'
+  return mine[0] ?? 'overview'
+}
+
+export const storeTabHref = (tab: StoreTab): string =>
+  tab === 'overview' ? '/stores' : `/stores/${tab}`
+
+export const STORE_TAB_LABEL: Record<StoreTab, string> = {
+  overview: 'Overview',
+  gate: 'Gate register',
+  requests: 'Requests',
+  issue: 'To issue',
+  receive: 'Received at site',
+  stock: 'Stock',
+  reports: 'Reports',
+  masters: 'Masters',
 }
 
 /**
@@ -115,6 +217,15 @@ export interface StockRow {
   qty: number
   /** Last rate seen on an inbound movement — what it cost, not an average. */
   lastRate: number | null
+  /**
+   * When this shelf last changed. Folded here rather than queried separately,
+   * because a "last moved" read off a different query can disagree with the
+   * balance beside it — and a stock screen whose two columns disagree is one
+   * nobody checks twice.
+   *
+   * Null only for a row folded from nothing, which cannot happen today.
+   */
+  lastMovedAt: string | null
 }
 
 const key = (itemId: string, locationId: string | null) => `${itemId}::${locationId ?? ''}`
@@ -135,9 +246,12 @@ export function foldStock(movements: readonly Movement[], asOn?: string): StockR
   for (const m of ordered) {
     if (new Date(m.movedAt).getTime() > cut) continue
     const k = key(m.itemId, m.locationId)
-    const row = by.get(k) ?? { itemId: m.itemId, locationId: m.locationId, qty: 0, lastRate: null }
+    const row = by.get(k)
+      ?? { itemId: m.itemId, locationId: m.locationId, qty: 0, lastRate: null, lastMovedAt: null }
     row.qty += m.qty
     if (m.qty > 0 && m.rate != null) row.lastRate = m.rate
+    // `ordered` is sorted oldest first, so the last one seen is the latest.
+    row.lastMovedAt = m.movedAt
     by.set(k, row)
   }
   // A line that went in and fully out leaves a zero row. Keep it — "we hold
@@ -608,4 +722,190 @@ export function disciplineFromIn4Type(
     if (t.includes(name)) return d.id
   }
   return null
+}
+
+/**
+ * Borrowing material from another project's store — OFF.
+ *
+ * Aksha, 15 Sep 2026: "Other Project Stock - we will built but keep it as
+ * optional in settings to switch on or off its on Admin", and then: "Internal
+ * Transfer and Other Project stock request to other project we hav
+ * consicoulslly paused as HOD want this part to be activated and then think on
+ * that later to set up the process". And on 16 Sep, seeing it still on the
+ * form: "i had told other Project should not come to Eng".
+ *
+ * So it is off, and an engineer is not asked a question about a process nobody
+ * has agreed yet. Off rather than deleted: the column, the forced-returnable
+ * rule and the cross-project wiring all stay, so turning it back on is this
+ * one line.
+ *
+ * When the HOD does activate it this should become a real admin setting rather
+ * than a constant — that is what Aksha asked for. It is a constant today
+ * because a settings screen for a paused feature is a screen nobody can use.
+ */
+export const CROSS_PROJECT_ON = false
+
+/**
+ * Who may record a vehicle at the gate.
+ *
+ * Security's job, and the STOREKEEPER'S TOO. Aksha, 16 Sep 2026: "this should
+ * be available with Storekeeper - if Security is unavailable" — the same
+ * fallback he set for the video of the load, and for the same reason: a lorry
+ * does not wait because one person is off.
+ *
+ * It worked before this only because nothing stopped it. A capability nobody
+ * decided on is one somebody removes by accident later while tightening
+ * permissions, so it is written down here, named, and tested.
+ *
+ * Whoever does it signs it — security_by and security_signed_by carry their
+ * name and id — so "the storekeeper covered the gate on Tuesday" stays on the
+ * record rather than being lost in a shared role.
+ */
+export function canRecordAtGate(role: string | null | undefined): boolean {
+  if (!role) return false
+  return ['security', 'store_manager', 'admin', 'founder', 'head'].includes(role)
+}
+
+/**
+ * Who may correct a saved entry.
+ *
+ * Aksha, 16 Sep 2026: "this also the Store keeper should be able to do and
+ * record of that should be there."
+ *
+ * Whoever may WRITE an entry may fix one — a guard who mistypes a vehicle
+ * number and a storekeeper who files a delivery against the wrong wing are
+ * the two people who find the mistake, and sending them to look for an admin
+ * is how a register stops being corrected at all. Every correction keeps the
+ * old value with the name of whoever made it, which is what makes that safe.
+ *
+ * Nothing about it was decided before this: `correctEntry` asked only that
+ * somebody was signed in, so the rule existed nowhere and could be widened or
+ * narrowed by accident.
+ */
+export function canCorrectEntry(role: string | null | undefined): boolean {
+  return canRecordAtGate(role)
+}
+
+/**
+ * Who may VOID one — which is a different question.
+ *
+ * Voiding deletes the entry's movements: stock that was there stops being
+ * there. It stays narrow, and the button says so rather than vanishing,
+ * because a storekeeper who cannot void needs to know who to ask.
+ */
+export function canVoidEntry(role: string | null | undefined): boolean {
+  if (!role) return false
+  return ['admin', 'founder', 'head'].includes(role)
+}
+
+/* ── Project families, and where a request goes ─────────────────────────── */
+
+export interface ProjectNode { id: string; parentId: string | null }
+
+/**
+ * Everything in one project's family: its root, and every project under that
+ * root.
+ *
+ * Aksha, 16 Sep 2026: "PO of NGH B Belongs to NGH PRoject - so Eng of NGH
+ * Project can call for NGH A,B,C etc Stock - but NGH Project stock can be
+ * stored at diff location". So the unit of ownership is the FAMILY, not the
+ * individual sub-project and not the shelf — NGH covers NGH A, B, C, Infra and
+ * Common Expenses, and NGH stock sitting in CT Warehouse is still NGH stock.
+ *
+ * Walks up to the root first, then down: an engineer on NGH B gets the whole
+ * NGH family, not only NGH B and its children. A project that is its own root
+ * with no children is a family of one, which is correct and common.
+ *
+ * Guards against a parent loop — a project that is its own ancestor would
+ * otherwise spin here, and bad data should not hang a page.
+ */
+export function familyOf(projectId: string, projects: readonly ProjectNode[]): string[] {
+  const byId = new Map(projects.map(p => [p.id, p]))
+  if (!byId.has(projectId)) return [projectId]
+
+  let root = projectId
+  const walked = new Set<string>([root])
+  for (;;) {
+    const parent = byId.get(root)?.parentId
+    if (!parent || walked.has(parent) || !byId.has(parent)) break
+    root = parent
+    walked.add(root)
+  }
+
+  const family = new Set<string>([root])
+  let grew = true
+  while (grew) {
+    grew = false
+    for (const p of projects) {
+      if (p.parentId && family.has(p.parentId) && !family.has(p.id)) {
+        family.add(p.id)
+        grew = true
+      }
+    }
+  }
+  return [...family]
+}
+
+/** Is taking from `stockProjectId` a cross-project request for `forProjectId`?
+ *  Stock that belongs to nobody yet is nobody's to refuse — see the Whose
+ *  stock backlog in Masters. */
+export function isCrossProject(
+  forProjectId: string,
+  stockProjectId: string | null,
+  projects: readonly ProjectNode[],
+): boolean {
+  if (!stockProjectId) return false
+  return !familyOf(forProjectId, projects).includes(stockProjectId)
+}
+
+export type RequestRouting = {
+  /** Where the request lands the moment it is raised. */
+  status: 'approved' | 'pending' | 'blocked'
+  approvers: ApproverKey[]
+  /** Why it went there, in words, kept on the request. */
+  why: string
+}
+
+/**
+ * Where a request goes the moment it is raised.
+ *
+ * Aksha, 16 Sep 2026, and this is a change from the mind map, which put MA/KK
+ * on every request: "if the cross project is off then Site Head or Site Eng
+ * raises only his project stock not cross project - so MA & KK approval is not
+ * required - the request goes directly to Storekeeper". Asked whether anybody
+ * signs off in that case, he chose: "Nobody — straight to the storekeeper".
+ *
+ * So approval is the price of borrowing from ANOTHER family, not of asking for
+ * your own material. Own-family requests land on the storekeeper already
+ * approved; cross-family ones wait for Mayank or Kanti by discipline.
+ *
+ * `blocked` is the case the screens should never produce — a cross-project
+ * request raised while the setting is off. It is returned rather than thrown
+ * so the action can refuse it with a sentence instead of a stack trace.
+ */
+export function routeRequest(input: {
+  crossProjectOn: boolean
+  isCrossProject: boolean
+  disciplineCodes: ReadonlyArray<string | null | undefined>
+}): RequestRouting {
+  if (!input.isCrossProject) {
+    return {
+      status: 'approved',
+      approvers: [],
+      why: 'Your own project’s stock — it goes straight to the storekeeper.',
+    }
+  }
+  if (!input.crossProjectOn) {
+    return {
+      status: 'blocked',
+      approvers: [],
+      why: 'Borrowing from another project is switched off. Ask Aksha to turn it on in Masters → Settings.',
+    }
+  }
+  const approvers = approversForRequest(input.disciplineCodes)
+  return {
+    status: 'pending',
+    approvers,
+    why: `Borrowed from another project, so ${approverLabel(approvers)} approves it first.`,
+  }
 }

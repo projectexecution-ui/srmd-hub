@@ -1,20 +1,27 @@
 import { createClient } from '@/lib/supabase/server'
 import {
-  loadLists, loadItems, loadProjectOptions, loadProjectStaff, loadAssignablePeople,
+  loadLists, loadItems, loadProjectOptions, loadProjectStaff, loadAssignablePeople, loadUnassignedStock,
 } from '@/lib/stores/queries'
 import { MastersClient } from './MastersClient'
+import { crossProjectOn } from '@/lib/stores/settings'
+import { guardStoreTab } from '../guard'
 
 export const dynamic = 'force-dynamic'
 
 export default async function MastersPage() {
+  const blocked = await guardStoreTab('masters')
+  if (blocked) return blocked
+
   const supabase = await createClient()
-  const [lists, items, { data: companies }, projects, staff, people] = await Promise.all([
+  const [lists, items, { data: companies }, projects, staff, people, unassigned, crossProject] = await Promise.all([
     loadLists(),
     loadItems(),
     supabase.from('in4_companies').select('id, code, name').order('code'),
     loadProjectOptions(),
     loadProjectStaff(),
     loadAssignablePeople(),
+    loadUnassignedStock(),
+    crossProjectOn(),
   ])
 
   return (
@@ -25,6 +32,8 @@ export default async function MastersPage() {
       projects={projects}
       staff={staff}
       people={people}
+      unassigned={unassigned}
+      crossProject={crossProject}
     />
   )
 }

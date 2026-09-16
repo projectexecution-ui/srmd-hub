@@ -4,16 +4,19 @@ import { useRouter } from 'next/navigation'
 import { useMemo, useState, useTransition } from 'react'
 import { raiseRequest, decideRequest, issueRequest } from '@/lib/stores/actions'
 import {
-  checkIssue, bestIssueLocation, fmtQty, approverLabel, RETURNABLES_ON, type StockRow,
+  checkIssue, bestIssueLocation, fmtQty, approverLabel, routeRequest,
+  RETURNABLES_ON, type StockRow,
 } from '@/lib/stores/core'
 import { formatDate, formatDateTime } from '@/lib/utils'
 import type { RequestRow, ProjectOpt } from '@/lib/stores/queries'
 import { SearchableSelect } from '@/components/ui/searchable-select'
+import { daysSince, daysOverdue, overdueWord, waitedFor } from '@/lib/stores/desk'
 import { ISSUE_SLOTS, missingPhotos } from '@/lib/stores/photos'
 import { PhotoCapture, type Shot } from '../PhotoCapture'
 import { uploadEntryPhotos } from '../upload-photos'
 import {
-  Field, inputClass, Btn, Notice, Empty, Section, StatusChip, Scroller, th, thNum, td, tdNum, GroupedOptions,
+  Field, inputClass, Btn, Notice, Empty, Section, StatusChip, Scroller, NumberInput,
+  th, thNum, td, tdNum, GroupedOptions,
 } from '../ui'
 
 interface Opt { id: string; name: string }
@@ -24,10 +27,11 @@ const newLine = (): Line => ({ key: `r${++seq}`, itemId: '', unit: '', qty: '', 
 
 export function RequestsClient({
   requests, projects, items, locations, modes, stock, recentItemIds = [], scopeNote = null,
+  mode = 'ask', crossProject = false,
 }: {
   requests: RequestRow[]
   projects: ProjectOpt[]
-  items: Array<{ id: string; name: string; unit: string }>
+  items: Array<{ id: string; name: string; unit: string; disciplineCode?: string | null }>
   locations: Array<{ id: string; label: string }>
   modes: Opt[]
   stock: Array<Pick<StockRow, 'itemId' | 'locationId' | 'qty'>>
@@ -35,29 +39,53 @@ export function RequestsClient({
   recentItemIds?: readonly string[]
   /** Why this person can raise for nothing, when that is the case. */
   scopeNote?: string | null
+  /**
+   * Which job this screen is doing. Aksha, 16 Sep 2026: "i would like Issue as
+   * a seperate section ( of Storekeeper so its easy to make out" — one screen
+   * was asking, approving AND handing out, which is three jobs and three
+   * different people.
+   *
+   * A flag rather than a second component on purpose: the issue form carries
+   * the stock checks, and a copy of those is a copy that drifts.
+   */
+  mode?: 'ask' | 'issue'
+  /** Whether borrowing from another project family is switched on — the live
+   *  setting from Masters, not a constant. */
+  crossProject?: boolean
 }) {
   const router = useRouter()
-  const rows: StockRow[] = stock.map(s => ({ ...s, lastRate: null }))
+  const rows: StockRow[] = stock.map(s => ({ ...s, lastRate: null, lastMovedAt: null }))
 
   return (
     <div className="space-y-6">
+      {mode === 'ask' && (
       <Section
-        title="Step 3 · An engineer asks for material"
+        title="Ask for material"
         note="Stock is shown while asking, so nobody requests what is not there"
       >
         {projects.length === 0
           ? <Notice kind="info">{scopeNote ?? 'You are not on any project yet, so there is nothing to ask for.'}</Notice>
-          : <RaiseForm projects={projects} items={items} stock={rows} recentItemIds={recentItemIds} onDone={() => router.refresh()} />}
+          : <RaiseForm projects={projects} items={items} stock={rows} locations={locations}
+              recentItemIds={recentItemIds} crossProject={crossProject}
+              onDone={() => router.refresh()} />}
       </Section>
+      )}
 
-      <Section title="Requests">
+      <Section title={mode === 'issue' ? 'Approved, waiting to go out' : 'Your requests'}>
         {requests.length === 0 ? (
-          <Empty title="No requests here" hint="Raise one above and it will appear for approval." />
+          <Empty
+            title="No requests here"
+            hint={mode === 'issue'
+              ? 'Approved requests land here for you to hand out.'
+              : crossProject
+                ? 'Raise one above. Your own family’s stock goes straight to the storekeeper; borrowing from another project waits for Mayank or Kanti.'
+                : 'Raise one above and it goes straight to the storekeeper.'}
+          />
         ) : (
           <div className="space-y-3">
             {requests.map(r => (
               <RequestCard key={r.id} req={r} locations={locations} modes={modes} stock={rows}
-                onDone={() => router.refresh()} />
+                mode={mode} onDone={() => router.refresh()} />
             ))}
           </div>
         )}
@@ -69,11 +97,14 @@ export function RequestsClient({
 /* ── Raise ──────────────────────────────────────────────────────────────── */
 
 function RaiseForm({
-  projects, items, stock, recentItemIds, onDone,
+  projects, items, stock, locations, recentItemIds, crossProject, onDone,
 }: {
-  projects: ProjectOpt[]; items: Array<{ id: string; name: string; unit: string }>
-  stock: StockRow[]; recentItemIds: readonly string[]; onDone: () => void
+  projects: ProjectOpt[]; items: Array<{ id: string; name: string; unit: string; disciplineCode?: string | null }>
+  stock: StockRow[]; locations: Array<{ id: string; label: string }>
+  recentItemIds: readonly string[]; crossProject: boolean; onDone: () => void
 }) {
+  const placeName = (id: string | null) =>
+    locations.find(l => l.id === id)?.label ?? 'an unnamed place'
   const [pending, start] = useTransition()
   const [open, setOpen] = useState(false)
   // One site means there is no question to ask — most engineers are on one.
@@ -87,30 +118,80 @@ function RaiseForm({
   const setLine = (key: string, patch: Partial<Line>) =>
     setLines(ls => ls.map(l => (l.key === key ? { ...l, ...patch } : l)))
 
-  const itemOptions = useMemo(
-    () => items.map(i => ({ id: i.id, label: i.name, hint: i.unit })),
-    [items],
-  )
+  /**
+   * Only what this project actually holds.
+   *
+   * Aksha, 16 Sep 2026: "Also the Items of that project only show up". It is
+   * also the mind map's hardest rule — "Item can be picked up ONLY from stock
+   * Items" — so offering all 660 was offering 650 an engineer cannot have.
+   *
+   * The stock handed to this component is already scoped to the sites they are
+   * on, so "held" here means held somewhere they can draw from.
+   */
+  /** Where an item sits, short enough for a dropdown's second line. */
+  const whereShort = (itemId: string) => {
+    const at = stock.filter(r => r.itemId === itemId && r.qty > 0)
+    if (at.length === 0) return 'nowhere'
+    if (at.length === 1) return placeName(at[0].locationId)
+    return `${at.length} places`
+  }
+
+  const itemOptions = useMemo(() => {
+    const held = new Map<string, number>()
+    for (const r of stock) {
+      if (r.qty > 0) held.set(r.itemId, (held.get(r.itemId) ?? 0) + r.qty)
+    }
+    return items
+      .filter(i => held.has(i.id))
+      .map(i => ({
+        id: i.id,
+        label: i.name,
+        // How much there is, on the line where it is being chosen.
+        hint: `${fmtQty(held.get(i.id) ?? 0)} ${i.unit} · ${whereShort(i.id)}`,
+      }))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items, stock, locations])
 
   const held = (itemId: string) => stock.filter(s => s.itemId === itemId && s.qty > 0)
+
+  /**
+   * Where this request will actually go — worked out by the SAME function the
+   * server uses, so the button cannot say one thing and the system do another.
+   *
+   * Aksha, 16 Sep 2026, with borrowing switched off and the button still
+   * reading "Send to Mayank or Kanti": "what are u upto ???". Fair. The
+   * routing had moved and the label had not, which is the screen lying about
+   * what pressing it does.
+   */
+  const route = routeRequest({
+    crossProjectOn: crossProject,
+    isCrossProject: !!fromProjectId,
+    disciplineCodes: lines
+      .filter(l => l.itemId)
+      .map(l => items.find(i => i.id === l.itemId)?.disciplineCode ?? null),
+  })
 
   if (!open) return <Btn onClick={() => { setOpen(true); setResult(null) }}>Raise a request</Btn>
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-4 max-w-2xl space-y-3">
-      <div className="grid sm:grid-cols-2 gap-3">
+      <div className={`grid gap-3 ${crossProject ? 'sm:grid-cols-2' : ''}`}>
         <Field label="For which project" required>
           <select className={inputClass} value={projectId} onChange={e => setProjectId(e.target.value)}>
             <option value="">Pick one</option>
             <GroupedOptions rows={projects} />
           </select>
         </Field>
-        <Field label="Borrowing from another project?" hint="Leave blank for a normal issue from the warehouse.">
-          <select className={inputClass} value={fromProjectId} onChange={e => setFromProjectId(e.target.value)}>
-            <option value="">No — from the store</option>
-            <GroupedOptions rows={projects.filter(p => p.id !== projectId)} />
-          </select>
-        </Field>
+        {/* Borrowing from another project is paused — the HOD has not settled
+            the process — so an engineer is not asked about it at all. */}
+        {crossProject && (
+          <Field label="Borrowing from another project?" hint="Leave blank for a normal issue from the warehouse.">
+            <select className={inputClass} value={fromProjectId} onChange={e => setFromProjectId(e.target.value)}>
+              <option value="">No — from the store</option>
+              <GroupedOptions rows={projects.filter(p => p.id !== projectId)} />
+            </select>
+          </Field>
+        )}
       </div>
 
       {fromProjectId && RETURNABLES_ON && (
@@ -135,13 +216,12 @@ function RaiseForm({
                     }}
                     options={itemOptions}
                     pinned={recentItemIds}
-                    placeholder="Type three letters"
-                    emptyText="No item by that name"
+                    placeholder={itemOptions.length ? 'Type three letters' : 'Nothing in your stores yet'}
+                    emptyText="Not in your stores — it has to come in through the gate first"
                   />
                 </Field>
                 <Field label="Qty">
-                  <input className={inputClass} value={l.qty} inputMode="decimal"
-                    onChange={e => setLine(l.key, { qty: e.target.value })} />
+                  <NumberInput value={l.qty} onChange={v => setLine(l.key, { qty: v })} />
                 </Field>
                 <Field label="Unit">
                   <input className={inputClass} value={l.unit} onChange={e => setLine(l.key, { unit: e.target.value })} />
@@ -151,7 +231,24 @@ function RaiseForm({
               {l.itemId && (
                 <p className={`text-[12px] ${total > 0 ? 'text-emerald-800' : 'text-rose-800'}`}>
                   {total > 0
-                    ? <><b>In stock: {fmtQty(total)} {l.unit}</b> — {where.length} place{where.length === 1 ? '' : 's'}</>
+                    ? (
+                      <>
+                        <b>In stock: {fmtQty(total)} {l.unit}</b>
+                        {/* NAME the shelf. "1 place" told an engineer there was
+                            one and not which — and the point of asking is to go
+                            and collect it. Aksha, 16 Sep 2026: "the name of the
+                            place should come so the Engineer knows the Exact
+                            location". */}
+                        {' — '}
+                        {where.map((w, n) => (
+                          <span key={w.locationId ?? n}>
+                            {n > 0 && ' · '}
+                            {where.length > 1 && <>{fmtQty(w.qty)} at </>}
+                            <b>{placeName(w.locationId)}</b>
+                          </span>
+                        ))}
+                      </>
+                    )
                     : <>Nothing in stock. It has to come in through the gate before it can be issued.</>}
                 </p>
               )}
@@ -190,7 +287,7 @@ function RaiseForm({
 
       {result && <Notice kind={result.ok ? 'ok' : 'bad'}>{result.message}</Notice>}
 
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Btn
           busy={pending}
           onClick={() => start(async () => {
@@ -203,10 +300,31 @@ function RaiseForm({
             if (r.ok) { setLines([newLine()]); setRemarks(''); onDone() }
           })}
         >
-          Send to Mayank / Kanti
+          {route.status === 'pending' ? `Send to ${approverLabel(route.approvers)}` : 'Send to the storekeeper'}
         </Btn>
         <Btn kind="ghost" onClick={() => { setOpen(false); setResult(null) }}>Cancel</Btn>
+        {/* Where it is about to go, in the same words the server will use —
+            both come from routeRequest, so the button cannot promise one thing
+            and the system do another. */}
+        <p className="text-[12px] text-gray-500 flex-1 min-w-[200px]">{route.why}</p>
       </div>
+    </div>
+  )
+}
+
+/** One fact on a request card. Shows the gap rather than hiding it — an
+ *  approver needs to know what was NOT said as much as what was. */
+function Fact({
+  label, value, empty = '—', tone,
+}: { label: string; value: string | null; empty?: string; tone?: 'bad' }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-[10px] font-bold uppercase tracking-wider text-gray-400">{label}</dt>
+      <dd className={`mt-0.5 text-[12.5px] ${
+        value ? 'text-gray-900' : tone === 'bad' ? 'font-semibold text-rose-700' : 'text-gray-400'
+      }`}>
+        {value ?? empty}
+      </dd>
     </div>
   )
 }
@@ -214,15 +332,20 @@ function RaiseForm({
 /* ── One request ────────────────────────────────────────────────────────── */
 
 function RequestCard({
-  req, locations, modes, stock, onDone,
+  req, locations, modes, stock, mode, onDone,
 }: {
   req: RequestRow; locations: Array<{ id: string; label: string }>; modes: Opt[]
-  stock: StockRow[]; onDone: () => void
+  stock: StockRow[]; mode: 'ask' | 'issue'; onDone: () => void
 }) {
   const [pending, start] = useTransition()
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null)
   const [note, setNote] = useState('')
   const [issuing, setIssuing] = useState(false)
+  // Only a request somebody still has to act on has "been waiting" — a closed
+  // one waited once, and saying so now is history, not a prompt.
+  const open = req.status === 'pending' || req.status === 'approved'
+  const waiting = open ? daysSince(req.raisedAt) : null
+  const late = open ? overdueWord(daysOverdue(req.neededBy)) : null
   // Start at the store that actually holds this request. The screen already
   // knows — it prints "140 is held in another location" under the line — so
   // making the storekeeper go and find that place by hand is asking them to
@@ -256,6 +379,21 @@ function RequestCard({
         {req.status === 'pending' && (
           <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10.5px] font-semibold text-amber-900">
             {approverLabel(req.approvers)}
+          </span>
+        )}
+        {/* How long it has been sitting there. Every pending card looked
+            identical whether it was raised an hour ago or nine days ago —
+            Aksha, 16 Sep 2026, 11. */}
+        {waiting != null && (
+          <span className={`rounded-full px-2 py-0.5 text-[10.5px] font-bold ${
+            waiting >= 3 ? 'bg-rose-100 text-rose-800' : 'bg-gray-100 text-gray-600'
+          }`}>
+            waiting {waitedFor(waiting)}
+          </span>
+        )}
+        {late != null && (
+          <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10.5px] font-bold text-rose-800">
+            needed {formatDate(req.neededBy!)} — {late}
           </span>
         )}
         <span className="text-[12.5px] text-gray-700">{req.projectName}</span>
@@ -302,8 +440,8 @@ function RequestCard({
                   )}
                   {issuing && (
                     <td className={td}>
-                      <input className={`${inputClass} w-24 text-right`} value={qtys[l.id] ?? ''} inputMode="decimal"
-                        onChange={e => setQtys(q => ({ ...q, [l.id]: e.target.value }))} />
+                      <NumberInput className="w-24 text-right" ariaLabel={`Issue ${l.itemName}`}
+                        value={qtys[l.id] ?? ''} onChange={v => setQtys(q => ({ ...q, [l.id]: v }))} />
                     </td>
                   )}
                 </tr>
@@ -313,10 +451,32 @@ function RequestCard({
         </table>
       </Scroller>
 
-      {req.remarks && <p className="px-4 py-2 text-[12.5px] text-gray-600 border-t border-gray-100">{req.remarks}</p>}
-      {req.neededBy && (
-        <p className="px-4 pb-2 text-[12px] text-gray-500">Needed by {formatDate(req.neededBy)}</p>
-      )}
+      {/* Everything the approver needs, without opening anything else.
+          Aksha, 16 Sep 2026: "which project and which warehouse and where will
+          it be used - all data should show to the approver". Saying yes to
+          4,111 SqFt the store does not hold is a promise nobody can keep, and
+          the storekeeper is the one who finds out. */}
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-2 border-t border-gray-100 px-4 py-3 sm:grid-cols-4">
+        <Fact label="For which project" value={req.projectName} />
+        <Fact
+          label="Out of which store"
+          value={req.heldAt.length === 0
+            ? null
+            : req.heldAt.map(h => h.label).join(' · ')}
+          tone={req.heldAt.length === 0 ? 'bad' : undefined}
+          empty="Not in any store — cannot be issued"
+        />
+        <Fact label="What it is for" value={req.remarks} empty="not said" />
+        <Fact
+          label="Needed by"
+          value={req.neededBy ? formatDate(req.neededBy) : null}
+          empty="no date"
+          tone={late ? 'bad' : undefined}
+        />
+      </dl>
+
+      <Timeline req={req} />
+
       {req.decisionNote && (
         <p className="px-4 py-2 text-[12.5px] text-gray-700 bg-gray-50 border-t border-gray-100">
           <b>{req.decidedByName ?? 'Approver'}:</b> {req.decisionNote}
@@ -342,7 +502,7 @@ function RequestCard({
           </div>
         )}
 
-        {req.status === 'approved' && (
+        {req.status === 'approved' && mode === 'issue' && (
           issuing ? (
             <div className="space-y-3">
               <div className="grid sm:grid-cols-3 gap-3">
@@ -408,5 +568,65 @@ function RequestCard({
         )}
       </div>
     </div>
+  )
+}
+
+/**
+ * Where a request has got to: raised → approved → issued → received.
+ *
+ * Four steps, each with a name and a date, and the ones that have not happened
+ * shown as hollow rather than hidden. Aksha, 16 Sep 2026: "The request card
+ * tells the time". A status word says where it IS; this says how it got there
+ * and what is left — which is the question an engineer actually opens the
+ * screen with.
+ */
+function Timeline({ req }: { req: RequestRow }) {
+  const steps: Array<{ label: string; who: string | null; at: string | null; done: boolean; now?: boolean }> = [
+    { label: 'Raised', who: req.raisedByName, at: req.raisedAt, done: true },
+    {
+      label: req.status === 'rejected' ? 'Rejected' : 'Approved',
+      who: req.decidedByName ?? (req.status === 'pending' ? approverLabel(req.approvers) : null),
+      at: req.decidedAt,
+      done: !!req.decidedAt,
+      now: req.status === 'pending',
+    },
+    {
+      label: 'Issued',
+      who: req.issuedEntryNo,
+      at: req.issuedAt,
+      done: !!req.issuedAt,
+      now: req.status === 'approved',
+    },
+    {
+      label: 'Received',
+      who: req.receivedBy,
+      at: req.receivedAt,
+      done: !!req.receivedAt,
+      now: !!req.issuedAt && !req.receivedAt,
+    },
+  ]
+
+  // A rejected request never goes any further, and drawing two hollow steps
+  // after it suggests it is still on its way.
+  const shown = req.status === 'rejected' ? steps.slice(0, 2) : steps
+
+  return (
+    <ol className="flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-gray-100 px-4 py-2.5 text-[11.5px]">
+      {shown.map((s, i) => (
+        <li key={s.label} className="flex items-center gap-2">
+          {i > 0 && <span aria-hidden className="text-gray-300">→</span>}
+          <span className={
+            s.now ? 'font-semibold text-amber-800'
+              : s.done ? 'text-gray-700'
+                : 'text-gray-400'
+          }>
+            <span aria-hidden className="mr-1">{s.done ? '●' : '○'}</span>
+            {s.label}
+            {s.at && <> {formatDate(s.at)}</>}
+            {s.who && <span className="text-gray-500"> · {s.who}</span>}
+          </span>
+        </li>
+      ))}
+    </ol>
   )
 }

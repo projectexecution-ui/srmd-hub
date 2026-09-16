@@ -1,13 +1,14 @@
 import 'server-only'
 import { createClient } from '@/lib/supabase/server'
 import {
-  foldStock, outstandingReturnables, heldItemCount, type Movement, type StockRow,
+  foldStock, outstandingReturnables, heldItemCount, RETURNABLES_ON, type Movement, type StockRow,
   type ReturnableLine, type ReturnableRow, type Register, type Stage,
 } from './core'
 import type { RegisterSpec, RegisterFilter, RegisterRow } from './registers'
 import {
   groupProjects, isServiceScope, approversForRequest, type ProjectOpt, type ApproverKey,
 } from './core'
+import { duplicateNameGroups, type HealthInput, type ItemMove } from './desk'
 import { loadAliasMap, resolveAlias } from '@/lib/aliases'
 export type { ProjectOpt }
 
@@ -223,10 +224,22 @@ export interface EntryDetail extends EntryRow {
   inchargeName: string | null
   /** The three signature points the mind map asks for. Captured since the
    *  section shipped and, until now, displayed nowhere — which is the same as
-   *  not capturing them. */
+   *  not capturing them.
+   *
+   *  WHICH of them apply depends on the direction, and the screen decides —
+   *  see signaturesFor. An IN has no receiver: the person who received the
+   *  material IS the storekeeper who counted it in. */
   signatures: { security: Signature; incharge: Signature; receiver: Signature }
+  /** Who finished the entry, and when. On an issue this is the storekeeper who
+   *  handed the material out — the one act on an OUT that nothing else
+   *  records, because issueRequest stamps no signature column. */
+  completedBy: string | null
+  completedAt: string | null
   lines: Array<{ id: string; itemId: string; itemName: string; unit: string; qty: number; rate: number | null; amount: number | null; returnable: boolean }>
-  photos: Array<{ id: string; kind: string; path: string }>
+  /** A signed address, or null when signing failed — the strip then says
+   *  a photograph exists and could not be fetched, rather than showing a
+   *  broken picture. */
+  photos: Array<{ id: string; kind: string; path: string; url: string | null }>
   edits: Array<{ id: string; field: string; oldValue: string | null; newValue: string | null; changedAt: string; changedBy: string | null }>
 }
 
@@ -238,6 +251,7 @@ export async function loadEntry(id: string): Promise<EntryDetail | null> {
              securitySigner:security_signed_by ( full_name ),
              inchargeSigner:incharge_signed_by ( full_name ),
              receiverSigner:receiver_signed_by ( full_name ),
+             completer:completed_by ( full_name ),
              mio_entry_lines ( id, item_id, unit, qty, rate, amount, returnable, mio_items ( name ) ),
              mio_photos ( id, kind, path )`)
     .eq('id', id)
@@ -249,6 +263,25 @@ export async function loadEntry(id: string): Promise<EntryDetail | null> {
     .select('id, field, old_value, new_value, changed_at, profiles:changed_by ( full_name )')
     .eq('table_name', 'mio_entries').eq('row_id', id)
     .order('changed_at', { ascending: false })
+
+  /**
+   * The photographs, signed so they can actually be looked at.
+   *
+   * `mio-photos` is a PRIVATE bucket, so a stored path is not a web address —
+   * which is why every photograph taken since the camera was wired had been
+   * recorded and then shown on no screen at all. An hour is long enough to
+   * read an entry and short enough that a copied link is not a way around the
+   * bucket being private.
+   */
+  const paths = ((data.mio_photos as Array<Record<string, unknown>> | null) ?? [])
+    .map(p => p.path as string)
+  const signed = new Map<string, string>()
+  if (paths.length) {
+    const { data: urls } = await supabase.storage.from('mio-photos').createSignedUrls(paths, 3600)
+    for (const u of urls ?? []) {
+      if (u.path && u.signedUrl) signed.set(u.path, u.signedUrl)
+    }
+  }
 
   const lists = await loadLists()
   const rawLines = (data.mio_entry_lines as Array<Record<string, unknown>> | null) ?? []
@@ -287,6 +320,8 @@ export async function loadEntry(id: string): Promise<EntryDetail | null> {
     handedOverParty: (data.handed_over_party as string | null) ?? null,
     handedOverTo: (data.handed_over_to as string | null) ?? null,
     inchargeName: (data.incharge_name as string | null) ?? null,
+    completedBy: ((one(data.completer) as { full_name?: string } | null)?.full_name) ?? null,
+    completedAt: (data.completed_at as string | null) ?? null,
     signatures: {
       security: {
         who: (data.security_by as string | null)
@@ -315,7 +350,10 @@ export async function loadEntry(id: string): Promise<EntryDetail | null> {
       returnable: l.returnable === true,
     })),
     photos: ((data.mio_photos as Array<Record<string, unknown>> | null) ?? [])
-      .map(p => ({ id: p.id as string, kind: p.kind as string, path: p.path as string })),
+      .map(p => ({
+        id: p.id as string, kind: p.kind as string, path: p.path as string,
+        url: signed.get(p.path as string) ?? null,
+      })),
     edits: (edits ?? []).map(e => ({
       id: e.id as string,
       field: e.field as string,
@@ -343,6 +381,17 @@ export interface RequestRow {
   decisionNote: string | null
   /** Whose approval this is — from the disciplines on its lines. */
   approvers: ApproverKey[]
+  /** Which stores hold what is being asked for, so the approver can see it
+   *  can actually be met before saying yes. */
+  heldAt: Array<{ locationId: string; label: string; itemCount: number }>
+  /** When it left the store, and on which entry — the third step of the
+   *  timeline on the card. Null until the storekeeper has issued it. */
+  issuedAt: string | null
+  issuedEntryId: string | null
+  issuedEntryNo: string | null
+  /** When somebody at the far end signed for it — the fourth and last step. */
+  receivedAt: string | null
+  receivedBy: string | null
   lines: Array<{ id: string; itemId: string; itemName: string; unit: string; qty: number; issuedQty: number; returnable: boolean }>
 }
 
@@ -355,12 +404,69 @@ export async function loadRequests(opts: { projectId?: string | null; status?: s
              raiser:raised_by ( full_name ), decider:decided_by ( full_name ),
              mio_request_lines ( id, item_id, unit, qty, issued_qty, returnable,
                                  mio_items ( name, discipline:discipline_id ( code ) ) )`)
-    .order('raised_at', { ascending: false })
+    // An approver's queue reads OLDEST FIRST: the thing that has been waiting
+    // longest is the thing to do next, and a newest-first queue buries it.
+    // Every other list is a history, and histories read newest first.
+    .order('raised_at', { ascending: opts.status === 'pending' })
     .limit(200)
   if (opts.projectId) q = q.eq('project_id', opts.projectId)
   if (opts.status) q = q.eq('status', opts.status)
 
   const { data } = await q
+
+  /**
+   * Where the material actually is, per request.
+   *
+   * Aksha, 16 Sep 2026: "all data should show to the approver". Approving
+   * blind is approving a promise — Mayank could say yes to 4,111 SqFt that the
+   * store does not hold, and nobody finds out until the storekeeper opens it.
+   * Folding the ledger once here costs one query and answers "can this be
+   * met" on the card.
+   */
+  /**
+   * Where each request GOT TO — the issue entry it turned into, and whether
+   * anybody has signed for it at the far end.
+   *
+   * One query for every request on the page rather than one each. Aksha,
+   * 16 Sep 2026: the card should show a timeline, and a timeline whose third
+   * step is missing is just a status by another name.
+   */
+  const requestIds = (data ?? []).map(r => r.id as string)
+  const { data: issues } = requestIds.length
+    ? await supabase
+      .from('mio_entries')
+      .select('id, no, entry_at, request_id, receiver_signed_at, receiver:receiver_signed_by ( full_name )')
+      .in('request_id', requestIds)
+      .neq('stage', 'void')
+      .order('entry_at')
+    : { data: [] as Array<Record<string, unknown>> }
+
+  const issueOf = new Map<string, Record<string, unknown>>()
+  for (const e of issues ?? []) {
+    // The FIRST issue is when the material left; a part-issue followed by a
+    // second one should not keep resetting the date the site was served.
+    const k = e.request_id as string
+    if (!issueOf.has(k)) issueOf.set(k, e)
+  }
+
+  const [stock, lists] = await Promise.all([loadStock(), loadLists()])
+  const stockFor = (itemIds: readonly string[]) => {
+    const want = new Set(itemIds)
+    const byPlace = new Map<string, number>()
+    for (const row of stock) {
+      if (row.qty > 0 && row.locationId && want.has(row.itemId)) {
+        byPlace.set(row.locationId, (byPlace.get(row.locationId) ?? 0) + 1)
+      }
+    }
+    return [...byPlace.entries()]
+      .map(([locationId, itemCount]) => ({
+        locationId,
+        label: locationLabel(lists, locationId) ?? 'an unnamed place',
+        itemCount,
+      }))
+      .sort((a, b) => b.itemCount - a.itemCount || a.label.localeCompare(b.label))
+  }
+
   return (data ?? []).map(r => ({
     id: r.id as string,
     no: (r.no as string) ?? '',
@@ -375,6 +481,15 @@ export async function loadRequests(opts: { projectId?: string | null; status?: s
     decidedByName: ((r.decider as { full_name?: string } | null)?.full_name) ?? null,
     decidedAt: (r.decided_at as string | null) ?? null,
     decisionNote: (r.decision_note as string | null) ?? null,
+    heldAt: stockFor(
+      ((r.mio_request_lines as Array<Record<string, unknown>> | null) ?? [])
+        .map(l => l.item_id as string),
+    ),
+    issuedAt: (issueOf.get(r.id as string)?.entry_at as string | null) ?? null,
+    issuedEntryId: (issueOf.get(r.id as string)?.id as string | null) ?? null,
+    issuedEntryNo: (issueOf.get(r.id as string)?.no as string | null) ?? null,
+    receivedAt: (issueOf.get(r.id as string)?.receiver_signed_at as string | null) ?? null,
+    receivedBy: ((one(issueOf.get(r.id as string)?.receiver) as { full_name?: string } | null)?.full_name) ?? null,
     approvers: approversForRequest(
       ((r.mio_request_lines as Array<Record<string, unknown>> | null) ?? []).map(l => {
         const item = one(l.mio_items) as { discipline?: unknown } | null
@@ -487,22 +602,66 @@ export async function loadReturnables(projectId?: string | null): Promise<Return
  * back week after week, and tapping one beats spelling it — which matters most
  * for the person we are asking to type the least.
  */
-export async function loadRecentParties(limit = 6): Promise<string[]> {
+/**
+ * The shops to offer a guard before they search.
+ *
+ * IN4'S NAMES, not whatever was typed into an earlier entry. Aksha, 16 Sep
+ * 2026: "names should come as per out IN4 data". The chips used to be the most
+ * frequent party_name on past entries, which was free text — so they showed
+ * six spellings nobody could match back to a purchase order, and tapping one
+ * gave the storekeeper a name IN4 had never heard of.
+ *
+ * Recently seen first, because the same shop comes six times a week. Topped up
+ * with whoever has the most OPEN purchase orders — the best available guess at
+ * who is about to arrive when there is no history yet, which is exactly the
+ * position on day one.
+ */
+export async function loadRecentParties(limit = 6): Promise<SupplierOpt[]> {
   const supabase = await createClient()
-  const { data } = await supabase
-    .from('mio_entries')
-    .select('party_name')
-    .not('party_name', 'is', null)
-    .neq('stage', 'void')
-    .order('entry_at', { ascending: false })
-    .limit(120)
 
-  const count = new Map<string, number>()
-  for (const r of data ?? []) {
-    const name = (r.party_name as string | null)?.trim()
-    if (name) count.set(name, (count.get(name) ?? 0) + 1)
+  const [{ data: seen }, { data: open }] = await Promise.all([
+    supabase
+      .from('mio_entries')
+      .select('in4_party_id')
+      .not('in4_party_id', 'is', null)
+      .neq('stage', 'void')
+      .order('entry_at', { ascending: false })
+      .limit(120),
+    supabase
+      .from('in4_purchase_orders')
+      .select('supplier_id')
+      .eq('status', 'Approved')
+      .in('grn_status', ['No', 'Partial'])
+      .limit(400),
+  ])
+
+  const rank = new Map<number, number>()
+  const bump = (id: number | null, by: number) => {
+    if (id == null) return
+    rank.set(id, (rank.get(id) ?? 0) + by)
   }
-  return [...count.entries()].sort((a, b) => b[1] - a[1]).slice(0, limit).map(([n]) => n)
+  // A shop this gate has actually seen beats one that merely has paperwork.
+  for (const r of seen ?? []) bump(r.in4_party_id as number | null, 10)
+  for (const r of open ?? []) bump(r.supplier_id as number | null, 1)
+
+  const ids = [...rank.entries()].sort((a, b) => b[1] - a[1]).slice(0, limit).map(([id]) => id)
+  if (ids.length === 0) return []
+
+  const { data: parties } = await supabase
+    .from('in4_parties')
+    .select('id, name, city')
+    .eq('kind', 'supplier')
+    .in('id', ids)
+
+  const byId = new Map((parties ?? []).map(r => [r.id as number, r]))
+  return ids
+    .map(id => byId.get(id))
+    .filter(Boolean)
+    .map(r => ({
+      id: r!.id as number,
+      name: ((r!.name as string) ?? '').trim(),
+      hint: ((r!.city as string | null) ?? '').trim() || null,
+    }))
 }
 
 /* ── Purchase orders ────────────────────────────────────────────────────── */
@@ -699,7 +858,18 @@ export interface PoLine {
   name: string
   unit: string
   ordered: number
+  /** What IN4's own Goods Receipt Notes say has come in. */
   alreadyIn: number
+  /**
+   * What THIS section has counted in through the gate against the same line,
+   * not counting the entry being filled in now.
+   *
+   * Without it the form offered the whole order a second time on a second
+   * delivery — IN4's GRN quantity had not moved — which is how In: 16Sep26/001
+   * and /002 booked 34,862 SqFt against a 33,142 SqFt order on 16 Sep 2026.
+   * See checkReceipt in desk.ts for why the two figures are never added.
+   */
+  atGate: number
   rate: number
 }
 
@@ -729,7 +899,7 @@ export interface OrderDetail {
  * alias, projectId stays null and projectWhy says so, because a wrong project
  * booked silently is worse than a blank one: nobody goes looking for it.
  */
-export async function loadOrder(key: string): Promise<OrderDetail | null> {
+export async function loadOrder(key: string, exceptEntryId?: string | null): Promise<OrderDetail | null> {
   const id = Number(key)
   if (!Number.isFinite(id)) return null
   const supabase = await createClient()
@@ -742,7 +912,7 @@ export async function loadOrder(key: string): Promise<OrderDetail | null> {
 
   const [{ data: items }, party, { data: project }] = await Promise.all([
     supabase.from('in4_po_items')
-      .select('item_id, material_id, uom_id, base_po_qty, grn_qty, net_rate')
+      .select('item_id, material_id, uom_id, base_po_qty, grn_qty, net_rate, subproject_id')
       .eq('po_id', po.po_id),
     partyName(supabase, SUPPLIER, (po.supplier_id as number | null) ?? null),
     po.project_id
@@ -750,18 +920,75 @@ export async function loadOrder(key: string): Promise<OrderDetail | null> {
       : Promise.resolve({ data: null }),
   ])
 
+  /**
+   * What the gate has already counted against these order lines.
+   *
+   * Voided entries are left out — a struck-out entry took its stock back off
+   * the ledger, and it must not go on holding a purchase order closed.
+   */
+  const poItemIds = (items ?? []).map(i => i.item_id as number).filter(Boolean)
+  const gateSoFar = new Map<number, number>()
+  if (poItemIds.length) {
+    const { data: booked } = await supabase
+      .from('mio_entry_lines')
+      .select('in4_po_item_id, qty, mio_entries!inner ( id, stage )')
+      .in('in4_po_item_id', poItemIds)
+      .neq('mio_entries.stage', 'void')
+    for (const b of booked ?? []) {
+      const entry = one(b.mio_entries) as { id?: string } | null
+      if (exceptEntryId && entry?.id === exceptEntryId) continue
+      const k = b.in4_po_item_id as number
+      gateSoFar.set(k, (gateSoFar.get(k) ?? 0) + num(b.qty))
+    }
+  }
+
   const materialIds = [...new Set((items ?? []).map(i => i.material_id as number).filter(Boolean))]
   const { data: mats } = materialIds.length
     ? await supabase.from('in4_materials').select('id, name, uom').in('id', materialIds)
     : { data: [] as Array<{ id: number; name: string; uom: string }> }
   const byMat = new Map((mats ?? []).map(m => [m.id as number, m]))
-  const projectName = ((project as { name?: string } | null)?.name as string | null) ?? null
+  const headerProject = ((project as { name?: string } | null)?.name as string | null) ?? null
+
+  /**
+   * THE SUB-PROJECT IS THE REAL ANSWER.
+   *
+   * Aksha, 16 Sep 2026: "NGH is main project - this should capture exact
+   * project from the PO". He is right, and the precision is already in IN4 —
+   * just not on the header. PO/SRASSK/NGH/2026-27/87 says "New Guest House" at
+   * the top and "New Guest House B-Execution" on every line, and only the
+   * second is a place material actually goes.
+   *
+   * 95 of the 96 live orders carry exactly ONE sub-project across their lines,
+   * so this is nearly always unambiguous. Where an order spans two there is no
+   * single answer, and the header is the honest fallback — a parent the
+   * storekeeper narrows beats a child picked by coin toss.
+   *
+   * It also resolves MORE orders, not fewer: 37 of the live ones reach a hub
+   * project through the sub-project against 24 through the header, because the
+   * alias table was seeded from IN4's sub-project names in the first place.
+   */
+  const subIds = [...new Set(
+    (items ?? []).map(i => i.subproject_id as number | null).filter(Boolean),
+  )] as number[]
+  let subName: string | null = null
+  if (subIds.length === 1) {
+    const { data: sp } = await supabase
+      .from('in4_subprojects').select('name').eq('id', subIds[0]).maybeSingle()
+    subName = ((sp as { name?: string } | null)?.name as string | null) ?? null
+  }
+  const projectName = subName ?? headerProject
+
+  // Try the precise name first; fall back to the parent rather than nothing.
+  const resolved = await resolveHubProject(supabase, projectName)
+  const viaHeader = resolved.projectId == null && subName && headerProject
+    ? await resolveHubProject(supabase, headerProject)
+    : null
 
   return {
     no: (po.po_no as string) ?? '',
     party,
     projectName,
-    ...(await resolveHubProject(supabase, projectName)),
+    ...(viaHeader?.projectId ? viaHeader : resolved),
     date: (po.po_dt as string | null) ?? null,
     value: po.po_value == null ? null : num(po.po_value),
     status: po.status === 'Approved' ? null : (po.status as string | null),
@@ -774,6 +1001,7 @@ export async function loadOrder(key: string): Promise<OrderDetail | null> {
         unit: (m?.uom as string) ?? 'Nos',
         ordered: num(i.base_po_qty),
         alreadyIn: num(i.grn_qty),
+        atGate: gateSoFar.get(i.item_id as number) ?? 0,
         rate: num(i.net_rate),
       }
     }),
@@ -803,24 +1031,99 @@ async function resolveHubProject(
   }
 }
 
-export async function loadCounts(projectId?: string | null): Promise<{
-  toComplete: number; pendingRequests: number; returnablesOut: number; itemsHeld: number
-}> {
+export interface StoreCounts {
+  toComplete: number
+  pendingRequests: number
+  returnablesOut: number
+  itemsHeld: number
+  /** What the stock is worth at the last rate paid for each thing. */
+  stockValue: number
+  /** Stock rows with no rate at all — the reason stockValue understates. */
+  unpricedRows: number
+  /** Stock lines in hand. One item in two stores is two lines, which is why
+   *  this is not itemsHeld — the caveat has to say "x of y LINES". */
+  heldRows: number
+  /** Approved and waiting for the storekeeper to hand out. */
+  toIssue: number
+  /** Gone out and nobody at the site has signed for it. */
+  toReceive: number
+}
+
+export async function loadCounts(projectId?: string | null): Promise<StoreCounts> {
   const supabase = await createClient()
   const scoped = <T extends { eq: (c: string, v: string) => T }>(q: T) =>
     projectId ? q.eq('project_id', projectId) : q
 
-  const [gate, reqs, returnables, stock] = await Promise.all([
+  const [gate, reqs, issue, receive, returnables, stock] = await Promise.all([
     scoped(supabase.from('mio_entries').select('id', { count: 'exact', head: true }).eq('stage', 'gate') as never),
     scoped(supabase.from('mio_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending') as never),
-    loadReturnables(projectId ?? null),
+    scoped(supabase.from('mio_requests').select('id', { count: 'exact', head: true }).eq('status', 'approved') as never),
+    scoped(supabase.from('mio_entries').select('id', { count: 'exact', head: true }).eq('direction', 'out').is('receiver_signed_at', null).neq('stage', 'void') as never),
+    // Returnables are switched off, and the fold behind them is not free.
+    // Asking for a list nothing will show is the sort of query that makes a
+    // page slow for no reason anybody can see.
+    RETURNABLES_ON ? loadReturnables(projectId ?? null) : Promise.resolve([] as ReturnableRow[]),
     loadStock(),
   ])
+
+  const held = stock.filter(s => s.qty > 0)
   return {
     toComplete: (gate as { count: number | null }).count ?? 0,
     pendingRequests: (reqs as { count: number | null }).count ?? 0,
+    toIssue: (issue as { count: number | null }).count ?? 0,
+    toReceive: (receive as { count: number | null }).count ?? 0,
     returnablesOut: returnables.length,
     itemsHeld: heldItemCount(stock),
+    // Never a silent zero for a missing rate: the unpriced rows are counted
+    // separately so the screen can say the figure is understated.
+    stockValue: held.reduce((s, r) => s + (r.lastRate == null ? 0 : r.lastRate * r.qty), 0),
+    unpricedRows: held.filter(r => r.lastRate == null).length,
+    heldRows: held.length,
+  }
+}
+
+/**
+ * What the setup is still missing — the line across the top of the Overview.
+ *
+ * Aksha, 16 Sep 2026, replacing the grey "what is not built yet" box with it.
+ * Config belongs behind Masters; a gap that silently misroutes an approval is
+ * not config, it is a fault, and it belongs where he will see it.
+ *
+ * Every figure is counted here rather than typed into the screen, because a
+ * health line that goes stale is worse than none: it says "all clear" about a
+ * store that is not.
+ */
+export async function loadSetupHealth(): Promise<HealthInput> {
+  const supabase = await createClient()
+  const [items, stock, lists, { count: staff }, unassigned] = await Promise.all([
+    loadItems(),
+    loadStock(),
+    loadLists(),
+    supabase.from('mio_project_staff').select('id', { count: 'exact', head: true }).eq('is_active', true),
+    loadUnassignedStock(),
+  ])
+
+  const active = items.filter(i => i.isActive)
+  const held = new Set(stock.filter(s => s.qty > 0).map(s => s.itemId))
+  const rateOf = new Map<string, number | null>()
+  for (const s of stock) {
+    if (s.qty > 0 && s.lastRate != null) rateOf.set(s.itemId, s.lastRate)
+  }
+
+  // A site with no project is a shared warehouse — only a storekeeper can see
+  // it, which is right for the CT Warehouse and wrong for a site store.
+  const sites = listsOf(lists, 'location').filter(l => !l.parentId && l.isActive)
+
+  return {
+    itemsWithoutDiscipline: active.filter(i => !i.disciplineId).length,
+    duplicateNameGroups: duplicateNameGroups(active.map(i => ({ id: i.id, name: i.name }))).length,
+    staffAssigned: staff ?? 0,
+    // Only what is actually HELD: an item with no rate and no stock costs
+    // nothing and understates nothing.
+    itemsWithoutRate: [...held].filter(id => rateOf.get(id) == null
+      && active.find(i => i.id === id)?.lastRate == null).length,
+    locationsWithoutProject: sites.filter(s => !s.projectId).length,
+    unassignedStock: unassigned.length,
   }
 }
 
@@ -1088,4 +1391,252 @@ export async function loadAssignablePeople(): Promise<Array<{ id: string; name: 
     name: (r.full_name as string) || (r.email as string) || 'Someone',
     role: (r.role as string) ?? '',
   }))
+}
+
+/* ── One item's whole history ───────────────────────────────────────────── */
+
+export interface ItemCard {
+  id: string
+  name: string
+  unit: string
+  discipline: string | null
+  lastRate: number | null
+  in4MaterialId: number | null
+  isActive: boolean
+  /** Where it sits right now, and how much is on each shelf. */
+  at: Array<{ locationId: string | null; label: string; qty: number; value: number | null }>
+  /** Every change made to the item itself — rate, name, unit, discipline. */
+  edits: Array<{ id: string; field: string; oldValue: string | null; newValue: string | null; reason: string | null; changedAt: string; changedBy: string | null }>
+}
+
+/**
+ * A bin card — the oldest tool in a store, and the one that makes people
+ * believe the book.
+ *
+ * Aksha, 16 Sep 2026: "Item card". "Where did the 140 SqFt go?" had no answer
+ * without opening entries one by one. Every movement of one item, with the
+ * entry it came from, who did it and where it went.
+ *
+ * Read from the SAME ledger the stock screen folds, so the balance at the top
+ * of the card is the number on the stock page by construction.
+ */
+export async function loadItemCard(itemId: string): Promise<{ item: ItemCard; moves: ItemMove[] } | null> {
+  const supabase = await createClient()
+
+  const { data: row } = await supabase
+    .from('mio_items')
+    .select('id, name, unit, in4_material_id, last_rate, is_active, discipline:discipline_id ( name )')
+    .eq('id', itemId)
+    .maybeSingle()
+  if (!row) return null
+
+  const [{ data: moves }, { data: edits }, lists, stock] = await Promise.all([
+    supabase
+      .from('mio_movements')
+      .select(`id, kind, qty, rate, moved_at, location_id, note, entry_id,
+               entry:entry_id ( no, party_name, handed_over_to ),
+               project:project_id ( name ),
+               creator:created_by ( full_name )`)
+      .eq('item_id', itemId)
+      .order('moved_at'),
+    supabase
+      .from('mio_edits')
+      .select('id, field, old_value, new_value, reason, changed_at, profiles:changed_by ( full_name )')
+      .eq('table_name', 'mio_items').eq('row_id', itemId)
+      .order('changed_at', { ascending: false }),
+    loadLists(),
+    loadStock(),
+  ])
+
+  const mine = stock.filter(s => s.itemId === itemId)
+  const discipline = (one(row.discipline) as { name?: string } | null)?.name ?? null
+
+  return {
+    item: {
+      id: row.id as string,
+      name: (row.name as string) ?? '',
+      unit: (row.unit as string) ?? '',
+      discipline,
+      lastRate: row.last_rate == null ? null : num(row.last_rate),
+      in4MaterialId: (row.in4_material_id as number | null) ?? null,
+      isActive: row.is_active !== false,
+      at: mine
+        .filter(s => s.qty !== 0)
+        .map(s => ({
+          locationId: s.locationId,
+          label: locationLabel(lists, s.locationId) ?? 'Not placed',
+          qty: s.qty,
+          value: s.lastRate == null ? null : s.lastRate * s.qty,
+        }))
+        .sort((a, b) => b.qty - a.qty || a.label.localeCompare(b.label)),
+      edits: (edits ?? []).map(e => ({
+        id: e.id as string,
+        field: e.field as string,
+        oldValue: (e.old_value as string | null) ?? null,
+        newValue: (e.new_value as string | null) ?? null,
+        reason: (e.reason as string | null) ?? null,
+        changedAt: e.changed_at as string,
+        changedBy: ((one(e.profiles) as { full_name?: string } | null)?.full_name) ?? null,
+      })),
+    },
+    moves: (moves ?? []).map(m => {
+      const entry = one(m.entry) as { no?: string; party_name?: string; handed_over_to?: string } | null
+      const project = one(m.project) as { name?: string } | null
+      const creator = one(m.creator) as { full_name?: string } | null
+      return {
+        id: m.id as string,
+        kind: m.kind as ItemMove['kind'],
+        qty: num(m.qty),
+        rate: m.rate == null ? null : num(m.rate),
+        movedAt: m.moved_at as string,
+        entryId: (m.entry_id as string | null) ?? null,
+        entryNo: entry?.no ?? null,
+        // An IN names who brought it; an OUT names who took it. Both are "the
+        // other party", which is the column a bin card has always had.
+        party: entry?.party_name ?? entry?.handed_over_to ?? null,
+        project: project?.name ?? null,
+        place: locationLabel(lists, (m.location_id as string | null) ?? null),
+        who: creator?.full_name ?? null,
+        note: (m.note as string | null) ?? null,
+      }
+    }),
+  }
+}
+
+/* ── Waiting to be signed for at the far end ────────────────────────────── */
+
+export interface AwaitingReceipt {
+  id: string
+  no: string
+  requestNo: string | null
+  projectId: string | null
+  projectName: string | null
+  /** The store it came out of. */
+  fromLabel: string | null
+  issuedAt: string
+  issuedBy: string | null
+  handedOverTo: string | null
+  lines: Array<{ id: string; itemName: string; unit: string; qty: number }>
+}
+
+/**
+ * Material that has left the store and nobody has signed for.
+ *
+ * Aksha, 16 Sep 2026: "Where will the reciever do the entry - i cant see the
+ * page or section of the same". It existed — as a panel at the foot of one
+ * entry page, reachable only by already knowing the entry number. A step with
+ * no list is a step nobody does, which is why not one of the issues on record
+ * has ever been signed for.
+ *
+ * Scoped like everything else: a site sees what is coming to IT. The
+ * storekeeper sees all of it, because they are the one who has to chase it.
+ */
+export async function loadAwaitingReceipt(projectIds: readonly string[] | null): Promise<AwaitingReceipt[]> {
+  const supabase = await createClient()
+  let q = supabase
+    .from('mio_entries')
+    .select(`id, no, entry_at, project_id, location_id, handed_over_to, completed_at,
+             projects:project_id ( name ),
+             completer:completed_by ( full_name ),
+             request:request_id ( no ),
+             mio_entry_lines ( id, unit, qty, mio_items ( name ) )`)
+    .eq('direction', 'out')
+    .is('receiver_signed_at', null)
+    .neq('stage', 'void')
+    .order('entry_at', { ascending: true })
+    .limit(200)
+
+  // null means "everything" — the storekeeper and the heads.
+  if (projectIds) {
+    if (projectIds.length === 0) return []
+    q = q.in('project_id', projectIds)
+  }
+
+  const { data } = await q
+  const lists = await loadLists()
+
+  return (data ?? []).map(r => ({
+    id: r.id as string,
+    no: (r.no as string) ?? '',
+    requestNo: ((one(r.request) as { no?: string } | null)?.no) ?? null,
+    projectId: (r.project_id as string | null) ?? null,
+    projectName: ((one(r.projects) as { name?: string } | null)?.name) ?? null,
+    fromLabel: locationLabel(lists, (r.location_id as string | null) ?? null),
+    issuedAt: (r.completed_at as string | null) ?? (r.entry_at as string),
+    issuedBy: ((one(r.completer) as { full_name?: string } | null)?.full_name) ?? null,
+    handedOverTo: (r.handed_over_to as string | null) ?? null,
+    lines: ((r.mio_entry_lines as Array<Record<string, unknown>> | null) ?? []).map(l => ({
+      id: l.id as string,
+      itemName: ((one(l.mio_items) as { name?: string } | null)?.name) ?? '—',
+      unit: (l.unit as string) ?? '',
+      qty: num(l.qty),
+    })),
+  }))
+}
+
+/* ── Stock that belongs to nobody ───────────────────────────────────────── */
+
+export interface UnassignedStock {
+  itemId: string
+  itemName: string
+  unit: string
+  locationId: string | null
+  where: string
+  qty: number
+  /** How many movements carry this line, so the screen can say what it moves. */
+  movements: number
+}
+
+/**
+ * Stock whose movements carry no project.
+ *
+ * Aksha, 16 Sep 2026, on his own rule that stock belongs to a project wherever
+ * it is stored: "i will do that assignment - give me Bulk selector to assign -
+ * so i can do - just flag me which all are pending to do".
+ *
+ * Every one of the opening rows loaded from Odoo is in here, because Odoo
+ * tracked a LOCATION and never a project. Material arriving through the gate
+ * since then carries its project from the purchase order, so this list only
+ * ever shrinks — it is a backlog, not a leak.
+ *
+ * Grouped to (item, place) rather than listed per movement: that is the line a
+ * person sees on the stock screen, and assigning a project to half a shelf is
+ * not a thing anybody wants to do.
+ */
+export async function loadUnassignedStock(): Promise<UnassignedStock[]> {
+  const supabase = await createClient()
+  const [{ data }, items, lists] = await Promise.all([
+    supabase
+      .from('mio_movements')
+      .select('item_id, location_id, qty')
+      .is('project_id', null)
+      .limit(5000),
+    loadItems(),
+    loadLists(),
+  ])
+
+  const byItem = new Map(items.map(i => [i.id, i]))
+  const rows = new Map<string, UnassignedStock>()
+  for (const m of data ?? []) {
+    const itemId = m.item_id as string
+    const locationId = (m.location_id as string | null) ?? null
+    const k = `${itemId}::${locationId ?? ''}`
+    const row = rows.get(k) ?? {
+      itemId,
+      itemName: byItem.get(itemId)?.name ?? 'Unknown item',
+      unit: byItem.get(itemId)?.unit ?? '',
+      locationId,
+      where: locationLabel(lists, locationId) ?? 'Not placed',
+      qty: 0,
+      movements: 0,
+    }
+    row.qty += num(m.qty)
+    row.movements += 1
+    rows.set(k, row)
+  }
+
+  return [...rows.values()]
+    // Nothing left on the shelf is nothing to assign.
+    .filter(r => r.qty !== 0)
+    .sort((a, b) => a.where.localeCompare(b.where) || a.itemName.localeCompare(b.itemName))
 }

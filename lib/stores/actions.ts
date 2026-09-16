@@ -5,8 +5,10 @@ import { createClient } from '@/lib/supabase/server'
 import { getMyProfile } from '@/lib/auth'
 import {
   entryNo, checkIssue, checkReturn, createsStock, approversForRequest, disciplineFromIn4Type,
-  type Register,
+  canCorrectEntry, canVoidEntry, routeRequest, approverLabel, type Register,
 } from './core'
+import { isCorrectable } from './desk'
+import { crossProjectOn, CROSS_PROJECT_KEY } from './settings'
 import { loadStock, loadReturnables } from './queries'
 import { formatINR } from '@/lib/utils'
 import {
@@ -231,6 +233,36 @@ export async function raiseRequest(input: RequestInput): Promise<Result<{ id: st
   if (!input.projectId) return fail('Pick a project.')
   if (lines.length === 0) return fail('Add at least one item.')
 
+  /**
+   * WHERE IT GOES, decided before it is written.
+   *
+   * Aksha, 16 Sep 2026, changing the mind map, which put MA/KK on every
+   * request: own-family stock needs no approval and lands on the storekeeper;
+   * approval is the price of borrowing from ANOTHER family. Asked whether
+   * anybody signs off on an own-family request, he chose "Nobody — straight to
+   * the storekeeper".
+   */
+  const borrowing = !!input.fromProjectId
+  const crossOn = await crossProjectOn()
+
+  // The disciplines decide WHO approves, when anybody does — Civil and
+  // Finishes are Mayank's, MEP is Kanti's, and a request holding both is
+  // legitimately for both. The mapping is the code on the discipline row, so
+  // it is Aksha's to change in Masters rather than mine to compile in.
+  const { data: disc } = await supabase
+    .from('mio_items')
+    .select('discipline:discipline_id ( code )')
+    .in('id', lines.map(l => l.itemId))
+  const codes = (disc ?? []).map(r => {
+    const d = Array.isArray(r.discipline) ? r.discipline[0] : r.discipline
+    return (d as { code?: string } | null)?.code ?? null
+  })
+
+  const route = routeRequest({
+    crossProjectOn: crossOn, isCrossProject: borrowing, disciplineCodes: codes,
+  })
+  if (route.status === 'blocked') return fail(route.why)
+
   const { count } = await supabase.from('mio_requests').select('id', { count: 'exact', head: true })
   const no = `REQ/${String((count ?? 0) + 1).padStart(4, '0')}`
 
@@ -244,12 +276,15 @@ export async function raiseRequest(input: RequestInput): Promise<Result<{ id: st
       needed_by: input.neededBy || null,
       remarks: input.remarks?.trim() || null,
       raised_by: profile.id,
+      status: route.status,
+      // Nobody approved an own-family request, and the card must not imply
+      // somebody did. The reason stands in for a name.
+      decision_note: route.status === 'approved' ? route.why : null,
+      decided_at: route.status === 'approved' ? new Date().toISOString() : null,
     })
     .select('id, no')
     .single()
   if (error) return fail(explain(error, 'raise the request'))
-
-  const borrowing = !!input.fromProjectId
   const { error: lineErr } = await supabase.from('mio_request_lines').insert(
     lines.map(l => ({
       request_id: data.id, item_id: l.itemId, unit: l.unit, qty: l.qty,
@@ -258,25 +293,53 @@ export async function raiseRequest(input: RequestInput): Promise<Result<{ id: st
   )
   if (lineErr) return fail(explain(lineErr, 'save the request lines'))
 
-  // Who this one belongs to depends on WHAT is on it: Civil and Finishes are
-  // Mayank's, MEP is Kanti's, and a request holding both is legitimately for
-  // both. The mapping is the code on the discipline row, so it is Aksha's to
-  // change in Masters rather than mine to compile in.
-  const { data: disc } = await supabase
-    .from('mio_items')
-    .select('discipline:discipline_id ( code )')
-    .in('id', input.lines.map(l => l.itemId))
-  const codes = (disc ?? []).map(r => {
-    const d = Array.isArray(r.discipline) ? r.discipline[0] : r.discipline
-    return (d as { code?: string } | null)?.code ?? null
-  })
+  // Only a request that is actually WAITING on somebody is announced to them.
+  // Telling Mayank about a request that went straight to the storekeeper is
+  // how a notification becomes something people learn to ignore.
+  if (route.status === 'pending') {
+    await notifyRequestPending({
+      requestId: data.id as string, no, projectName: null,
+      lineCount: lines.length, approvers: route.approvers, actorId: profile.id,
+    })
+  }
 
-  await notifyRequestPending({
-    requestId: data.id as string, no, projectName: null,
-    lineCount: input.lines.length, approvers: approversForRequest(codes), actorId: profile.id,
-  })
   revalidatePath('/stores')
-  return done(`${no} sent to Mayank / Kanti for approval.`, { id: data.id as string, no })
+  return done(
+    route.status === 'pending'
+      ? `${no} sent to ${approverLabel(route.approvers)} for approval.`
+      : `${no} is with the storekeeper. ${route.why}`,
+    { id: data.id as string, no },
+  )
+}
+
+/* ── The one switch an admin owns ───────────────────────────────────────── */
+
+/**
+ * Turn borrowing from another project on or off.
+ *
+ * Aksha, 16 Sep 2026: "i want to know about if i want to make toggle Cross
+ * Project request admin should be able to on and off the same whenever
+ * requred". One switch, and it changes a whole behaviour rather than storing a
+ * value — see lib/stores/settings.ts for what moves with it.
+ *
+ * Admin, founder and head only: it decides whether material can leave a
+ * project's stock for somebody else's site, which is not a storekeeper's call.
+ */
+export async function setCrossProject(on: boolean): Promise<Result> {
+  const profile = await me()
+  if (!canVoidEntry(profile.role)) {
+    return fail('Only a head or an admin can switch borrowing between projects on or off.')
+  }
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('app_settings')
+    .upsert({ key: CROSS_PROJECT_KEY, value: on ? 'on' : 'off' }, { onConflict: 'key' })
+  if (error) return fail(explain(error, 'save the setting'))
+
+  revalidatePath('/stores')
+  return done(on
+    ? 'Borrowing between projects is ON. Those requests now go to Mayank or Kanti first, and what is borrowed has to come back.'
+    : 'Borrowing between projects is OFF. Each site asks for its own family’s stock, and it goes straight to the storekeeper.')
 }
 
 export async function decideRequest(requestId: string, approve: boolean, note?: string): Promise<Result> {
@@ -541,6 +604,8 @@ export async function confirmReceipt(input: {
   entryId: string
   toLocationId?: string | null
   note?: string
+  /** Who actually took delivery, when it was not the person signing. */
+  receivedBy?: string
 }): Promise<Result> {
   const profile = await me()
   const supabase = await createClient()
@@ -558,9 +623,12 @@ export async function confirmReceipt(input: {
     .update({
       receiver_signed_by: profile.id,
       receiver_signed_at: new Date().toISOString(),
-      handed_over_to: profile.full_name ?? profile.email,
+      handed_over_to: input.receivedBy?.trim() || profile.full_name || profile.email,
       to_location_id: input.toLocationId || null,
-      remarks: input.note?.trim() || null,
+      // Only WRITE a note when one was typed. Setting it unconditionally
+      // wiped whatever the storekeeper had put in remarks at issue time —
+      // signing for a delivery should not delete what was said about it.
+      ...(input.note?.trim() ? { remarks: input.note.trim() } : {}),
       stage: 'closed',
     })
     .eq('id', input.entryId)
@@ -571,12 +639,6 @@ export async function confirmReceipt(input: {
 }
 
 /* ── Corrections — Aksha, 13 Sep 2026: "yes", entries are editable ──────── */
-
-const FIELD_LABELS: Record<string, string> = {
-  vehicle_no: 'Vehicle number', driver_name: 'Driver name', driver_mobile: 'Driver mobile',
-  driver_licence: 'Driver licence', party_name: 'Party', remarks: 'Remarks',
-  handed_over_to: 'Handed over to', handed_over_party: 'Handed over party', po_wo_no: 'Purchase order number',
-}
 
 /**
  * Correct a saved entry, keeping what it said before.
@@ -589,15 +651,25 @@ export async function correctEntry(
   entryId: string, field: string, newValue: string, reason?: string,
 ): Promise<Result> {
   const profile = await me()
+  if (!canCorrectEntry(profile.role)) {
+    return fail('Only the people who record entries — Security, the storekeeper, or a head — can correct one.')
+  }
   const supabase = await createClient()
 
-  if (!(field in FIELD_LABELS)) return fail('That field cannot be corrected here.')
+  // The direction decides which fields exist and what they are called, so the
+  // entry is read first and the field checked against ITS list.
+  const { data: head } = await supabase
+    .from('mio_entries').select('id, no, direction, stage').eq('id', entryId).maybeSingle()
+  if (!head) return fail('That entry no longer exists.')
 
-  // The column is chosen at runtime from FIELD_LABELS, so the generated types
-  // cannot name it — hence the cast. The `field in FIELD_LABELS` guard above
-  // is what keeps this from being a way to read an arbitrary column.
+  const spec = isCorrectable(head.direction as 'in' | 'out', field)
+  if (!spec) return fail('That field cannot be corrected here.')
+
+  // The column is chosen at runtime from the list above, so the generated
+  // types cannot name it — hence the cast. isCorrectable is what keeps this
+  // from being a way to read or write an arbitrary column.
   const { data: entry } = await supabase
-    .from('mio_entries').select(`id, no, ${field}`).eq('id', entryId).maybeSingle()
+    .from('mio_entries').select(`id, ${field}`).eq('id', entryId).maybeSingle()
   if (!entry) return fail('That entry no longer exists.')
 
   const oldValue = (entry as unknown as Record<string, unknown>)[field]
@@ -608,19 +680,51 @@ export async function correctEntry(
   const { error } = await supabase.from('mio_entries').update({ [field]: newText }).eq('id', entryId)
   if (error) return fail(explain(error, 'save the correction'))
 
+  /**
+   * THE LEDGER FOLLOWS THE CORRECTION.
+   *
+   * `mio_movements` carries its own project_id and location_id, copied from
+   * the entry when the stock was created. Correcting the entry alone would
+   * leave the entry saying NGH B and the stock screen still showing the
+   * material under NGH — two answers to one question, which is exactly what
+   * folding stock from the ledger was meant to prevent.
+   *
+   * A voided entry has no movements and a vendor IN never made any, so this
+   * is a no-op on both rather than a special case.
+   */
+  let moved = 0
+  if (spec.movesLedger) {
+    const { data: rows, error: mvErr } = await supabase
+      .from('mio_movements')
+      .update({ [field]: newText })
+      .eq('entry_id', entryId)
+      .select('id')
+    if (mvErr) {
+      // The entry is already corrected; say what did not follow rather than
+      // pretending the whole thing worked or rolling back a saved fact.
+      return fail(`${spec.label} was corrected, but the stock did not move with it: ${explain(mvErr, 'move the stock')}`)
+    }
+    moved = (rows ?? []).length
+  }
+
   await supabase.from('mio_edits').insert({
-    table_name: 'mio_entries', row_id: entryId, field: FIELD_LABELS[field],
+    table_name: 'mio_entries', row_id: entryId, field: spec.label,
     old_value: oldText, new_value: newText, reason: reason?.trim() || null, changed_by: profile.id,
   })
 
   revalidatePath('/stores')
-  return done(`${FIELD_LABELS[field]} corrected. The old value is kept on the entry.`)
+  return done(moved > 0
+    ? `${spec.label} corrected, and ${moved} stock line${moved === 1 ? '' : 's'} moved with it. The old value is kept.`
+    : `${spec.label} corrected. The old value is kept on the entry.`)
 }
 
 /** Recorded in error. Kept and marked, never deleted — and its movements go,
  *  so a mistaken entry cannot leave phantom stock behind. */
 export async function voidEntry(entryId: string, reason: string): Promise<Result> {
   const profile = await me()
+  if (!canVoidEntry(profile.role)) {
+    return fail('Voiding takes the stock back off the ledger, so it is left to a head or an admin. Ask one of them, or correct the entry instead.')
+  }
   const supabase = await createClient()
   if (!reason?.trim()) return fail('Say why it is being voided.')
 
@@ -685,30 +789,127 @@ export async function setListActive(id: string, isActive: boolean): Promise<Resu
  * A storekeeper must be able to do this at the gate: if something arrives that
  * IN4 has never carried, refusing to record it would stop the lorry.
  */
+/** What an item can be changed on, and what to call it in the history. */
+const ITEM_FIELDS: Record<string, string> = {
+  name: 'Name',
+  unit: 'Unit',
+  discipline_id: 'Discipline',
+  last_rate: 'Rate',
+}
+
+/**
+ * Add an item, or change one — and keep what it said before.
+ *
+ * Aksha, 16 Sep 2026: "What about Items rate where can i change if i need also
+ * i will need all the data should be recorded and what all changes is done to
+ * that item should also come". The action has always accepted a rate; nothing
+ * ever offered one, and nothing recorded a change.
+ *
+ * TWO THINGS IT NO LONGER DOES. It used to write every column on an update,
+ * so editing a name would blank the IN4 link, the discipline and the rate of
+ * anything that did not re-send them — 14 items are linked to IN4 materials
+ * and 667 carry a discipline, all of it silently losable. Only fields actually
+ * passed are touched now.
+ *
+ * And every change is written to `mio_edits` beside the gate entries', so the
+ * item card can show who changed a rate and when. A rate that moves with no
+ * name against it is a rate nobody can defend in a review.
+ */
 export async function saveItem(input: {
   id?: string | null
   name: string
-  unit: string
+  unit?: string
   in4MaterialId?: number | null
   disciplineId?: string | null
   lastRate?: number | null
-}): Promise<Result<{ id: string }>> {
+  /** Why — optional, and the thing that makes the history readable later. */
+  reason?: string
+}): Promise<Result<{ id: string; changed: string[] }>> {
+  const profile = await me()
+  if (!canCorrectEntry(profile.role)) {
+    return fail('Only the people who keep the store can add or change an item.')
+  }
   const supabase = await createClient()
   if (!input.name?.trim()) return fail('Give the item a name.')
 
-  const row = {
-    name: input.name.trim(), unit: input.unit?.trim() || 'Nos',
-    in4_material_id: input.in4MaterialId ?? null,
-    discipline_id: input.disciplineId || null,
-    last_rate: input.lastRate ?? null,
+  /* ── New item ─────────────────────────────────────────────────────────── */
+  if (!input.id) {
+    const { data, error } = await supabase
+      .from('mio_items')
+      .insert({
+        name: input.name.trim(),
+        unit: input.unit?.trim() || 'Nos',
+        in4_material_id: input.in4MaterialId ?? null,
+        discipline_id: input.disciplineId || null,
+        last_rate: input.lastRate ?? null,
+      })
+      .select('id').single()
+    if (error) return fail(explain(error, 'save the item'))
+    revalidatePath('/stores')
+    return done(`${input.name.trim()} added.`, { id: data.id as string, changed: [] })
   }
-  const { data, error } = input.id
-    ? await supabase.from('mio_items').update(row).eq('id', input.id).select('id').single()
-    : await supabase.from('mio_items').insert(row).select('id').single()
+
+  /* ── Changing one ─────────────────────────────────────────────────────── */
+  const { data: before } = await supabase
+    .from('mio_items')
+    .select('id, name, unit, discipline_id, last_rate')
+    .eq('id', input.id).maybeSingle()
+  if (!before) return fail('That item no longer exists.')
+
+  // Only what was actually sent, and only where it actually differs.
+  const wanted: Record<string, unknown> = { name: input.name.trim() }
+  if (input.unit !== undefined) wanted.unit = input.unit?.trim() || 'Nos'
+  if (input.disciplineId !== undefined) wanted.discipline_id = input.disciplineId || null
+  if (input.lastRate !== undefined) wanted.last_rate = input.lastRate
+
+  const patch: Record<string, unknown> = {}
+  const edits: Array<{ field: string; oldValue: string | null; newValue: string | null }> = []
+  for (const [col, next] of Object.entries(wanted)) {
+    const prev = (before as Record<string, unknown>)[col]
+    const same = prev == null && next == null
+      ? true
+      : String(prev ?? '') === String(next ?? '')
+    if (same) continue
+    patch[col] = next
+    edits.push({
+      field: ITEM_FIELDS[col] ?? col,
+      oldValue: prev == null ? null : String(prev),
+      newValue: next == null ? null : String(next),
+    })
+  }
+
+  if (edits.length === 0) return fail('Nothing changed.')
+
+  const { error } = await supabase.from('mio_items').update(patch).eq('id', input.id)
   if (error) return fail(explain(error, 'save the item'))
 
+  // Names rather than ids in the history where a name exists — "Discipline:
+  // 3f2a… → 91bc…" is not a record anybody can read in six months.
+  const ids = edits
+    .filter(e => e.field === 'Discipline')
+    .flatMap(e => [e.oldValue, e.newValue])
+    .filter(Boolean) as string[]
+  const names = new Map<string, string>()
+  if (ids.length) {
+    const { data: rows } = await supabase.from('mio_lists').select('id, name').in('id', ids)
+    for (const r of rows ?? []) names.set(r.id as string, r.name as string)
+  }
+
+  await supabase.from('mio_edits').insert(edits.map(e => ({
+    table_name: 'mio_items',
+    row_id: input.id,
+    field: e.field,
+    old_value: e.oldValue == null ? null : names.get(e.oldValue) ?? e.oldValue,
+    new_value: e.newValue == null ? null : names.get(e.newValue) ?? e.newValue,
+    reason: input.reason?.trim() || null,
+    changed_by: profile.id,
+  })))
+
   revalidatePath('/stores')
-  return done(input.id ? 'Saved.' : `${row.name} added.`, { id: data.id as string })
+  return done(
+    `${edits.map(e => e.field).join(' and ')} changed. The old value is kept.`,
+    { id: input.id, changed: edits.map(e => e.field) },
+  )
 }
 
 /**
@@ -844,4 +1045,54 @@ export async function unassignStaff(id: string): Promise<Result> {
 
   revalidatePath('/stores/masters')
   return done('Removed.')
+}
+
+/* ── Saying whose stock it is ───────────────────────────────────────────── */
+
+/**
+ * Attach a project to stock that carries none.
+ *
+ * Aksha's rule, 16 Sep 2026: stock belongs to a PROJECT and can sit in any
+ * warehouse — "PO of NGH B Belongs to NGH PRoject - so Eng of NGH Project can
+ * call for NGH A,B,C etc Stock". Everything loaded from Odoo arrived without
+ * one, because Odoo tracked the shelf and never the project.
+ *
+ * It writes the project onto the MOVEMENTS, not onto a separate table, so the
+ * fold keeps being the single source of what is held and whose it is. Only
+ * rows that still carry no project are touched — running it twice cannot
+ * reassign stock somebody has already placed, and two people working down the
+ * list cannot overwrite each other.
+ */
+export async function assignStockProject(input: {
+  lines: Array<{ itemId: string; locationId: string | null }>
+  projectId: string
+}): Promise<Result<{ moved: number }>> {
+  const profile = await me()
+  if (!canCorrectEntry(profile.role)) {
+    return fail('Only the people who keep the store can say whose stock it is.')
+  }
+  if (!input.projectId) return fail('Pick the project this stock belongs to.')
+  const lines = (input.lines ?? []).filter(l => l.itemId)
+  if (lines.length === 0) return fail('Tick at least one line first.')
+
+  const supabase = await createClient()
+  let moved = 0
+  for (const l of lines) {
+    let q = supabase
+      .from('mio_movements')
+      .update({ project_id: input.projectId })
+      .eq('item_id', l.itemId)
+      .is('project_id', null)
+    q = l.locationId ? q.eq('location_id', l.locationId) : q.is('location_id', null)
+
+    const { data, error } = await q.select('id')
+    if (error) return fail(explain(error, 'assign the stock'))
+    moved += (data ?? []).length
+  }
+
+  revalidatePath('/stores')
+  return done(
+    `${moved} stock movement${moved === 1 ? '' : 's'} now belong${moved === 1 ? 's' : ''} to that project.`,
+    { moved },
+  )
 }

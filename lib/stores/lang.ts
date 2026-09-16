@@ -20,6 +20,7 @@
 export const T = {
   /* ── The gate wizard ──────────────────────────────────────────────────── */
   gateTitle:      'Vehicle at the gate',
+  gateWhoRecords: 'Security, or you if not there',
   next:           'Next',
   back:           'Back',
   save:           'Save',

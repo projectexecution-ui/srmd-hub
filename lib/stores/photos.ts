@@ -129,3 +129,24 @@ export function photoPath(entryId: string, kind: PhotoKind, name: string): strin
     .replace(/^-+|-+$/g, '').slice(-32) || 'photo'
   return `entries/${entryId}/${kind}/${Date.now()}-${stem}.${safeExt}`
 }
+
+/**
+ * Signing for material at the far end.
+ *
+ * The map's last two lines of SRM Out: "SRM Engg receives the materails &
+ * checks & Signs" and "Capture where the materials are being stored". Aksha,
+ * 16 Sep 2026, asking for the section: "the Site head recieving cycle (his pic
+ * and confirmation and place where he kept)".
+ *
+ * One photograph, and it is the SAME question the storekeeper answers at the
+ * other end — where did you put it. That is what makes "where is it" have an
+ * answer at both ends of the journey rather than only at the store.
+ */
+export const RECEIPT_SLOTS: readonly PhotoSlot[] = [
+  {
+    kind: 'location',
+    label: 'Photo of where you put it',
+    hint: 'At the site — so the next person can find it',
+    required: true,
+  },
+]

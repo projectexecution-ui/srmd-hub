@@ -1,33 +1,118 @@
 import Link from 'next/link'
-import { ArrowDownToLine, ArrowUpFromLine } from 'lucide-react'
-import { loadCounts, loadEntries, loadItems, loadLists, storableLocations } from '@/lib/stores/queries'
+import { redirect } from 'next/navigation'
+import { ArrowDownToLine, ArrowUpFromLine, AlertTriangle, CheckCircle2, Wrench } from 'lucide-react'
+import {
+  loadCounts, loadEntries, loadItems, loadLists, loadRequests, loadSetupHealth, storableLocations,
+} from '@/lib/stores/queries'
+import { getMyProfile } from '@/lib/auth'
 import { Tile, StageChip, RegisterChip } from './ui'
-import { formatDate, formatNumber } from '@/lib/utils'
-import { fmtQty, RETURNABLES_ON } from '@/lib/stores/core'
+import { formatDate, formatINR, formatNumber } from '@/lib/utils'
+import {
+  fmtQty, RETURNABLES_ON, approverLabel, canOpenStoreTab, homeStoreTab, storeTabHref,
+} from '@/lib/stores/core'
+import { mostUrgent, setupHealth, type Waiting } from '@/lib/stores/desk'
 
 export const dynamic = 'force-dynamic'
 
 /**
  * The overview. Aksha's V1 rule: every tile carries a live count of what is
  * waiting, so the landing page answers "is anything on me?" without a click.
+ *
+ * Three things were added on 16 Sep 2026, from the Round Two preview:
+ *   · one amber line naming the single most overdue thing (the tiles count,
+ *     but counting four things equally does not say which one is on fire)
+ *   · what the stock is worth, with the caveat that makes the figure honest
+ *   · a setup-health line where the "what is not built yet" box used to be
+ *
+ * The grey box went because it was a developer's note on a manager's screen.
+ * What replaced it is the same size and says something he can act on.
  */
 export default async function StoresHome() {
-  const [counts, recent, lists, items] = await Promise.all([
-    loadCounts(), loadEntries({ limit: 40 }), loadLists(), loadItems(),
+  // The section's own front door. Somebody whose job does not include the
+  // overview is taken to the screen that does, rather than refused at it.
+  const profile = await getMyProfile()
+  if (!canOpenStoreTab(profile?.role, 'overview')) {
+    redirect(storeTabHref(homeStoreTab(profile?.role)))
+  }
+
+  const [counts, recent, lists, items, pending, waitingIn, health] = await Promise.all([
+    loadCounts(),
+    loadEntries({ limit: 40 }),
+    loadLists(),
+    loadItems(),
+    loadRequests({ status: 'pending' }),
+    loadEntries({ stage: 'gate', limit: 50 }),
+    loadSetupHealth(),
   ])
 
   const places = storableLocations(lists).length
   const setupDone = places > 0 && items.length > 0
+  const notes = setupHealth(health)
+
+  /* Everything waiting on anybody, on one scale, so the worst can be named. */
+  const waiting: Waiting[] = [
+    ...pending.map(r => ({
+      kind: 'request' as const,
+      no: r.no,
+      href: '/stores/requests?status=pending',
+      since: r.raisedAt,
+      dueDay: r.neededBy,
+      what: whatWasAsked(r),
+      who: approverLabel(r.approvers),
+    })),
+    ...waitingIn.map(e => ({
+      kind: 'gate' as const,
+      no: e.no,
+      href: `/stores/gate/${e.id}`,
+      since: e.entryAt,
+      what: `${e.partyName ?? 'A vehicle'} is at the gate, uncounted`,
+      who: 'the storekeeper',
+    })),
+  ]
+  const urgent = mostUrgent(waiting)
 
   return (
     <div className="space-y-6">
-      <div className={`grid grid-cols-2 gap-3 ${RETURNABLES_ON ? 'lg:grid-cols-4' : 'lg:grid-cols-3'}`}>
+      {/* One line, and only the worst one. A banner that lists five things is
+          a second table. */}
+      {urgent ? (
+        <Link
+          href={urgent.href}
+          className="flex flex-wrap items-center gap-2.5 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 hover:bg-amber-100/70 min-h-[44px]"
+        >
+          <AlertTriangle className="h-4.5 w-4.5 shrink-0 text-amber-700" strokeWidth={2.2} />
+          <p className="text-[13px] text-amber-950 min-w-0">
+            <span className="font-mono font-bold">{urgent.no}</span>{' '}
+            {urgent.line}
+          </p>
+          <span className="ml-auto text-[12.5px] font-bold text-amber-900 whitespace-nowrap">Open →</span>
+        </Link>
+      ) : (
+        <p className="flex items-center gap-2.5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-[13px] text-emerald-900">
+          <CheckCircle2 className="h-4.5 w-4.5 shrink-0 text-emerald-700" strokeWidth={2.2} />
+          Nothing is waiting on anybody — every vehicle has been counted in and every request is answered.
+        </p>
+      )}
+
+      <div className={`grid grid-cols-2 gap-3 ${RETURNABLES_ON ? 'lg:grid-cols-5' : 'lg:grid-cols-4'}`}>
         <Tile href="/stores/gate" label="Waiting on storekeeper" count={counts.toComplete}
           sub="Vehicles recorded at the gate, not yet counted in" tone="amber" />
         <Tile href="/stores/requests?status=pending" label="Requests to approve" count={counts.pendingRequests}
           sub="With Mayank / Kanti" tone="blue" />
         <Tile href="/stores/stock" label="Items held" count={counts.itemsHeld}
           sub="Distinct items with stock on hand" tone="emerald" />
+        {/* The figure management asks for, with the reason it is low. Putting
+            it on the page without the caveat would be worse than leaving it at
+            the bottom of a 749-row table, which is where it was. */}
+        <Tile
+          href="/stores/stock"
+          label="Stock we hold"
+          value={formatINR(counts.stockValue)}
+          sub={counts.unpricedRows > 0
+            ? `Understated — ${formatNumber(counts.unpricedRows, 0)} of ${formatNumber(counts.heldRows, 0)} lines have no rate`
+            : 'Every line has a rate'}
+          tone={counts.unpricedRows > 0 ? 'slate' : 'emerald'}
+        />
       </div>
 
       {!setupDone && (
@@ -79,17 +164,44 @@ export default async function StoresHome() {
         />
       </div>
 
-      <div className="rounded-lg border border-gray-200 bg-gray-50/60 p-4">
-        <p className="text-[12.5px] font-bold text-gray-800">What is not built yet</p>
-        <ul className="text-[12.5px] text-gray-600 mt-1.5 space-y-1 list-disc pl-5">
-          <li>Photos at the gate — the table and the bucket exist; the camera is not wired until you settle
-            how long pictures are kept (query 5).</li>
-          <li>Security’s check and video confirmation before a load is driven out.</li>
-          <li>Notifications — nobody is told when a vehicle is waiting or a request needs approving.</li>
-        </ul>
-      </div>
+      {/* Where the "what is not built yet" box used to be. Only what is wrong
+          is listed, and each thing links to where it is fixed — a health line
+          that cannot be acted on is decoration. */}
+      {notes.length > 0 && (
+        <div className="rounded-lg border border-gray-200 bg-gray-50/70 px-4 py-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Wrench className="h-4 w-4 shrink-0 text-gray-500" strokeWidth={2.2} />
+            <p className="text-[12.5px] font-bold text-gray-800">Setup</p>
+            <Link href="/stores/masters" className="ml-auto text-[12.5px] font-semibold text-indigo-700 hover:underline">
+              Open Masters →
+            </Link>
+          </div>
+          <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1.5">
+            {notes.map(n => (
+              <li key={n.key} className="text-[12.5px]">
+                <Link
+                  href={n.href}
+                  className={`hover:underline ${n.serious ? 'font-semibold text-amber-900' : 'text-gray-600'}`}
+                >
+                  {n.serious && <span aria-hidden className="mr-1">●</span>}
+                  {n.text}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   )
+}
+
+/** What a request is for, short enough to sit in one line of a banner. */
+function whatWasAsked(r: Awaited<ReturnType<typeof loadRequests>>[number]): string {
+  const first = r.lines[0]
+  const where = r.projectName ? ` for ${r.projectName}` : ''
+  if (!first) return `a request${where}`
+  if (r.lines.length === 1) return `${first.itemName}, ${fmtQty(first.qty)} ${first.unit}${where}`
+  return `${first.itemName} and ${r.lines.length - 1} more${where}`
 }
 
 /**
