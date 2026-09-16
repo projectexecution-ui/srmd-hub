@@ -47,6 +47,7 @@ export function EntryDetailPanels({
             </span>
           )}
           <span className="ml-auto text-[12px] text-gray-500">{formatDateTime(entry.entryAt)}</span>
+          <SlipButtons entry={entry} />
         </div>
 
         <dl className="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-3 mt-4">
@@ -63,6 +64,25 @@ export function EntryDetailPanels({
           <Cell label="Handed over to" value={entry.handedOverTo} />
           <Cell label="Remarks" value={entry.remarks} />
         </dl>
+
+        {/* The photographs. Taken since the camera was wired, recorded
+            against every entry — and shown on NO screen, because the bucket is
+            private and a stored path is not a web address. A photograph nobody
+            can look at is the same as one nobody took. */}
+        {entry.photos.length > 0 && (
+          <div className="mt-5 pt-4 border-t border-gray-100">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-2.5">
+              Photographs ({entry.photos.length})
+            </p>
+            <ul className="flex flex-wrap gap-2.5">
+              {entry.photos.map(p => (
+                <li key={p.id}>
+                  <Shot photo={p} />
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {/* The mind map's signature points. Shown, not just stored — an entry
             whose signatures are invisible is an entry nobody has signed. */}
@@ -328,6 +348,101 @@ function Corrections({ entry, onDone }: { entry: EntryDetail; onDone: () => void
           </p>
         </div>
       )}
+    </div>
+  )
+}
+
+/**
+ * One photograph or video from the entry.
+ *
+ * A video is not shown as a thumbnail — a poster frame would need decoding it
+ * — so it is named and opens in its own tab. What matters on this screen is
+ * that it EXISTS and can be reached; watching it is a deliberate act.
+ */
+function Shot({ photo }: { photo: EntryDetail['photos'][number] }) {
+  const label = PHOTO_WORDS[photo.kind] ?? photo.kind
+  const isVideo = /\.(mp4|mov|webm)$/i.test(photo.path)
+
+  if (!photo.url) {
+    return (
+      <div className="w-[104px] rounded-lg border border-dashed border-gray-300 bg-gray-50 p-2 text-center">
+        <p className="text-[11px] font-semibold text-gray-600">{label}</p>
+        <p className="text-[10.5px] text-gray-400 mt-0.5">could not be fetched</p>
+      </div>
+    )
+  }
+
+  return (
+    <a
+      href={photo.url} target="_blank" rel="noopener noreferrer"
+      className="block w-[104px] rounded-lg border border-gray-200 overflow-hidden hover:border-indigo-300 hover:shadow-sm"
+    >
+      {isVideo ? (
+        <span className="flex h-[78px] items-center justify-center bg-gray-900 text-white text-[11px] font-semibold">
+          ▶ video
+        </span>
+      ) : (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={photo.url} alt={label} className="h-[78px] w-full object-cover" loading="lazy" />
+      )}
+      <span className="block px-1.5 py-1 text-[10.5px] font-semibold text-gray-600 truncate">{label}</span>
+    </a>
+  )
+}
+
+/** What each kind of photograph is called, in the words the field screens use
+ *  rather than the database's own. */
+const PHOTO_WORDS: Record<string, string> = {
+  challan: 'The papers',
+  item: 'The material',
+  location: 'Where it was put',
+  video: 'The load',
+}
+
+/**
+ * The slip that travels with the lorry.
+ *
+ * Share hands the PDF to whatever the phone shares with — WhatsApp, in
+ * practice. On a laptop there is nothing to share to, so both buttons
+ * download, and the second is hidden rather than offered and doing the same
+ * thing as the first.
+ */
+function SlipButtons({ entry }: { entry: EntryDetail }) {
+  const [busy, setBusy] = useState(false)
+  const canShare = typeof navigator !== 'undefined' && 'canShare' in navigator
+
+  const print = async (share: boolean) => {
+    setBusy(true)
+    try {
+      const { exportEntrySlip } = await import('@/lib/stores/export')
+      const facts: Array<[string, string]> = []
+      if (entry.partyName) facts.push([entry.direction === 'in' ? 'Brought by' : 'Handed to', entry.partyName])
+      if (entry.vehicleNo) facts.push(['Vehicle', entry.vehicleNo])
+      if (entry.driverName) facts.push(['Driver', entry.driverName])
+      if (entry.poWoNo) facts.push(['Purchase order', entry.poWoNo])
+      if (entry.handedOverTo) facts.push(['Handed over to', entry.handedOverTo])
+
+      await exportEntrySlip({
+        no: entry.no,
+        kind: entry.direction === 'in' ? 'Material In' : 'Material Out',
+        linked: entry.linkedNo,
+        when: formatDateTime(entry.entryAt),
+        from: entry.direction === 'out' ? entry.locationName : (entry.partyName ?? null),
+        to: entry.direction === 'out' ? (entry.projectName ?? null) : entry.locationName,
+        facts,
+        lines: entry.lines.map(l => ({ name: l.itemName, qty: l.qty, unit: l.unit })),
+        // The map's own three, in its own order.
+        signatures: ['Sign of Security', 'Sign of SRM Incharge', 'Sign of Receiver'],
+      }, share)
+    } finally { setBusy(false) }
+  }
+
+  if (entry.lines.length === 0) return null
+
+  return (
+    <div className="flex gap-2">
+      <Btn kind="ghost" busy={busy} onClick={() => print(false)}>Print slip</Btn>
+      {canShare && <Btn kind="ghost" busy={busy} onClick={() => print(true)}>Share</Btn>}
     </div>
   )
 }

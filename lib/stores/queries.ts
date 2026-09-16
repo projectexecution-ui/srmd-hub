@@ -227,7 +227,10 @@ export interface EntryDetail extends EntryRow {
    *  not capturing them. */
   signatures: { security: Signature; incharge: Signature; receiver: Signature }
   lines: Array<{ id: string; itemId: string; itemName: string; unit: string; qty: number; rate: number | null; amount: number | null; returnable: boolean }>
-  photos: Array<{ id: string; kind: string; path: string }>
+  /** A signed address, or null when signing failed — the strip then says
+   *  a photograph exists and could not be fetched, rather than showing a
+   *  broken picture. */
+  photos: Array<{ id: string; kind: string; path: string; url: string | null }>
   edits: Array<{ id: string; field: string; oldValue: string | null; newValue: string | null; changedAt: string; changedBy: string | null }>
 }
 
@@ -250,6 +253,25 @@ export async function loadEntry(id: string): Promise<EntryDetail | null> {
     .select('id, field, old_value, new_value, changed_at, profiles:changed_by ( full_name )')
     .eq('table_name', 'mio_entries').eq('row_id', id)
     .order('changed_at', { ascending: false })
+
+  /**
+   * The photographs, signed so they can actually be looked at.
+   *
+   * `mio-photos` is a PRIVATE bucket, so a stored path is not a web address —
+   * which is why every photograph taken since the camera was wired had been
+   * recorded and then shown on no screen at all. An hour is long enough to
+   * read an entry and short enough that a copied link is not a way around the
+   * bucket being private.
+   */
+  const paths = ((data.mio_photos as Array<Record<string, unknown>> | null) ?? [])
+    .map(p => p.path as string)
+  const signed = new Map<string, string>()
+  if (paths.length) {
+    const { data: urls } = await supabase.storage.from('mio-photos').createSignedUrls(paths, 3600)
+    for (const u of urls ?? []) {
+      if (u.path && u.signedUrl) signed.set(u.path, u.signedUrl)
+    }
+  }
 
   const lists = await loadLists()
   const rawLines = (data.mio_entry_lines as Array<Record<string, unknown>> | null) ?? []
@@ -316,7 +338,10 @@ export async function loadEntry(id: string): Promise<EntryDetail | null> {
       returnable: l.returnable === true,
     })),
     photos: ((data.mio_photos as Array<Record<string, unknown>> | null) ?? [])
-      .map(p => ({ id: p.id as string, kind: p.kind as string, path: p.path as string })),
+      .map(p => ({
+        id: p.id as string, kind: p.kind as string, path: p.path as string,
+        url: signed.get(p.path as string) ?? null,
+      })),
     edits: (edits ?? []).map(e => ({
       id: e.id as string,
       field: e.field as string,
