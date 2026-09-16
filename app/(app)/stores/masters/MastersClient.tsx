@@ -1,6 +1,6 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useState, useTransition } from 'react'
 import { saveListRow, setListActive, saveItem } from '@/lib/stores/actions'
 import type { ListRow, ItemRow, ProjectOpt, StaffRow } from '@/lib/stores/queries'
@@ -34,7 +34,20 @@ export function MastersClient({
   people: Array<{ id: string; name: string; role: string }>
 }) {
   const router = useRouter()
-  const [openKind, setOpenKind] = useState<Kind | 'items' | 'staff'>('location')
+  /**
+   * Which list is open is in the ADDRESS, not just in this component.
+   *
+   * Aksha, 16 Sep 2026: "i want to know where can i assign the Project to Eng
+   * and etc where is the desk located". It was the eighth tab behind a
+   * horizontal scroll, and nothing could link to it — the setup-health line on
+   * the Overview pointed here and then opened Storage locations, which is the
+   * same buried-config failure as the language toggle he could not find.
+   */
+  const params = useSearchParams()
+  const asked = params.get('list') as Kind | 'items' | 'staff' | null
+  const [picked, setPicked] = useState<Kind | 'items' | 'staff' | null>(null)
+  const openKind = picked ?? asked ?? 'location'
+  const setOpenKind = (k: Kind | 'items' | 'staff') => setPicked(k)
 
   return (
     <div className="space-y-4">
