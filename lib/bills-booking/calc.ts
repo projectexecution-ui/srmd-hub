@@ -193,6 +193,8 @@ export interface WoHistory {
   deadCount: number
 }
 
+import type { LadderBill } from './abstract'
+
 const DEAD = new Set(['cancelled', 'reversed'])
 
 export function woHistory(certs: CertMoney[], orderedGross: number): WoHistory {
@@ -235,4 +237,21 @@ export function woHistory(certs: CertMoney[], orderedGross: number): WoHistory {
     paid: r2(live.reduce((s, r) => s + r.paid, 0)),
     deadCount: rows.length - live.length,
   }
+}
+
+/** The bills raised on this order BEFORE the one being looked at, oldest first.
+ *
+ *  This is what the abstract sheet's Previous columns are built from, so the
+ *  sheet and the bills panel put the same RA number on the same bill — see
+ *  earlierColumns in abstract.ts for why that had drifted.
+ *
+ *  A bill IN4 has not certified yet is the newest by definition: nothing is
+ *  after it, so every live bill on the order is earlier than it. */
+export function earlierBillsOn(h: WoHistory, certificateId: number | null): LadderBill[] {
+  const oldestFirst = [...h.rows].reverse()
+  const mine = certificateId == null ? undefined
+    : oldestFirst.find(r => r.certificateId === certificateId)?.ra
+  return oldestFirst
+    .filter(r => !r.dead && (mine == null || r.ra < mine))
+    .map(r => ({ ra: r.ra, invoiceNo: r.invoiceNo, on: r.on, certified: r.certified }))
 }

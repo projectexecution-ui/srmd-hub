@@ -11,6 +11,7 @@ import { priceAbstract, type MakerLine, type RatePick } from '@/lib/bills-bookin
 import { formatINR, formatINRCompact, formatNumber, formatDate } from '@/lib/utils'
 import { Particular, ExpandAll } from './Particular'
 import { shortenBoq } from '@/lib/bills-booking/shorten'
+import type { EarlierBill } from '@/lib/bills-booking/abstract'
 
 /** The Abstract Sheet, filled in CT Hub.
  *
@@ -50,8 +51,11 @@ export function AbstractMaker({ billId, woNo, vendor, work, seed, gst: gstPick, 
    *  Aksha, 15 Sep 2026: "all RA bills should show not only previous Bill
    *  total". A lump tells you how much came before but not which bill it came
    *  on, and on a running account that is the thing being checked: whether
-   *  this bill is re-measuring what an earlier one already claimed. */
-  earlierBills?: Array<{ billNo: string | null; on: string | null }>
+   *  this bill is re-measuring what an earlier one already claimed.
+   *
+   *  The RA numbers are the register's own — see EarlierBill — so a column
+   *  headed RA-4 is the bill the "Bills on …" panel calls RA-4. */
+  earlierBills?: EarlierBill[]
   /** What IN4's own abstract for this bill totals, when it has one. Shown as a
    *  single reconciling line — NOT as a second table, which is what confused
    *  Aksha: two panels, both titled "Abstract sheet". */
@@ -102,6 +106,7 @@ export function AbstractMaker({ billId, woNo, vendor, work, seed, gst: gstPick, 
   // Kept with their ORIGINAL position, so the label stays RA-4 and not RA-1 —
   // renumbering them would make the legend lie.
   const shownBills = earlierBills.map((b, i) => ({ ...b, i })).slice(rolled)
+  const unmeasured = earlierBills.filter(b => !b.measured).length
   const prevCols = (rolled > 0 ? 1 : 0) + Math.max(shownBills.length, earlierBills.length === 0 ? 1 : 0)
   const hidden = useMemo(() => seed.filter(l => shortenBoq(l.particular).shortened).length, [seed])
 
@@ -161,7 +166,8 @@ export function AbstractMaker({ billId, woNo, vendor, work, seed, gst: gstPick, 
             {earlierBills.map((b, i) => (
               <span key={i} className={i < rolled ? 'text-gray-400' : undefined}>
                 {i > 0 && '  ·  '}
-                <b>RA-{i + 1}</b> {b.billNo ?? '—'}{b.on ? ` (${formatDate(b.on)})` : ''}
+                <b>{b.label ?? 'Abstract'}</b> {b.billNo ?? '—'}{b.on ? ` (${formatDate(b.on)})` : ''}
+                {!b.measured && <span className="text-gray-400"> · no sheet</span>}
               </span>
             ))}
           </span>
@@ -176,6 +182,14 @@ export function AbstractMaker({ billId, woNo, vendor, work, seed, gst: gstPick, 
               : 'Fold earlier bills'}
           </button>
         </div>
+      )}
+      {unmeasured > 0 && (
+        <p className="border-b border-gray-100 bg-amber-50/70 px-4 py-1.5 text-[11px] text-amber-900">
+          <b>{unmeasured} of these {unmeasured === 1 ? 'bills has' : 'bills have'} no measurement sheet in IN4.</b>{' '}
+          {unmeasured === 1 ? 'Its' : 'Their'} column is blank and {unmeasured === 1 ? 'its' : 'their'} quantity is
+          not in Prev Amt or Cum Qty — the money on {unmeasured === 1 ? 'that bill' : 'those bills'} is on the
+          bills panel below, the measurement was never abstracted.
+        </p>
       )}
       <div className="flex items-center justify-end border-b border-gray-100 px-4 py-1.5">
         <ExpandAll on={expandAll} onToggle={() => setExpandAll(v => !v)} n={hidden} />
@@ -198,7 +212,7 @@ export function AbstractMaker({ billId, woNo, vendor, work, seed, gst: gstPick, 
               {rolled > 0 && (
                 <Th g="prev">
                   <button type="button" onClick={() => setView('all')}
-                          title={`Open: ${earlierBills.slice(0, rolled).map((b, i) => `RA-${i + 1} ${b.billNo ?? ''}`).join(' · ')}`}
+                          title={`Open: ${earlierBills.slice(0, rolled).map(b => `${b.label ?? 'Abstract'} ${b.billNo ?? ''}`).join(' · ')}`}
                           className="inline-flex items-center gap-0.5 font-bold uppercase tracking-wide text-amber-900 hover:text-indigo-700">
                     Earlier ({rolled})
                     <ChevronDown className="h-2.5 w-2.5 -rotate-90" />
@@ -207,7 +221,14 @@ export function AbstractMaker({ billId, woNo, vendor, work, seed, gst: gstPick, 
               )}
               {shownBills.map(b => (
                 <Th key={b.i} g="prev">
-                  <span title={`${b.billNo ?? 'earlier bill'}${b.on ? ` · ${formatDate(b.on)}` : ''}`}>RA-{b.i + 1}</span>
+                  {/* A bill with no abstract in IN4 still gets its column — it
+                      is on the register and part of the running account — but
+                      greyed, so an empty cell reads as "never measured" rather
+                      than "measured as nothing". */}
+                  <span className={b.measured ? undefined : 'font-normal text-amber-700/60'}
+                        title={`${b.billNo ?? 'earlier bill'}${b.on ? ` · ${formatDate(b.on)}` : ''}${b.measured ? '' : ' — no measurement sheet in IN4'}`}>
+                    {b.label ?? 'Abs'}
+                  </span>
                 </Th>
               ))}
               {earlierBills.length === 0 && <Th g="prev">Prev Qty</Th>}

@@ -155,6 +155,11 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
   // than "₹NaN" when the figure is not set yet.
   const money = formatINR
 
+  const mineRa = calc?.mineCert
+    ? calc.history.rows.find(r => r.certificateId === calc.mineCert!.certificateId)?.ra
+    : undefined
+  const raLabel = mineRa ? `RA-${mineRa}` : ((bill.ra_no as string | null) ?? 'RA')
+
   return (
     <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-5">
       <PageHeader title={vendor} back="/bills-booking"
@@ -214,6 +219,14 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
             CT Hub has lines            → the maker, editable
             else IN4 already has one    → IN4's, read-only (below)
             else                        → the maker, blank, to fill */}
+      {/* The badge says what the bills panel says.
+          Aksha, 15 Sep 2026: "can u see there are so many RA - but the Abstract
+          only shownh 2 or 3 RA". Half of that was the columns; the other half
+          was this badge, which read RA-10 on a bill the register calls RA-5.
+          `ra_no` is only what somebody typed at entry — it was wrong on all eight
+          worked examples — so where IN4 has certified the bill, IN4's own
+          position in the running account wins, and the badge and the columns
+          can no longer disagree. */}
       {maker && (
         <AbstractMaker
           billId={bill.id as string}
@@ -224,7 +237,7 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
           gst={bill.gst_pct != null ? { ...maker.gst, pct: bill.gst_pct as number } : maker.gst}
           retention={bill.retention_pct != null ? { ...maker.retention, pct: bill.retention_pct as number } : maker.retention}
           canEdit={!fromIn4 && canEdit && openStages.includes(bill.current_stage as string)}
-          raLabel={(bill.ra_no as string | null) ?? 'RA'}
+          raLabel={raLabel}
           ownSheet={maker.ownSheet}
           in4Total={calc?.sheet?.thisBill ?? null}
           source={fromIn4 ? 'in4' : 'ct'}

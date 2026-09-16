@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { billLadder, woHistory, type CertMoney, type BillLadder, type WoHistory } from './calc'
-import { buildAbstractSheet, type AbstractSheet, type AbstractLine, type BoqLine } from './abstract'
+import { billLadder, woHistory, earlierBillsOn, type CertMoney, type BillLadder, type WoHistory } from './calc'
+import { buildAbstractSheet, type AbstractSheet, type AbstractLine, type BoqLine, type LadderBill } from './abstract'
 import { seedLines, pickRate, type MakerLine, type RatePick } from './maker'
 import { buildGrnSheet, advancePosition, type GrnSheet, type AdvancePosition } from './purchase'
 
@@ -147,12 +147,20 @@ export async function loadBillCalc(
   // Head, CT Head and Atm Head see the real measurement while the bill is still
   // with them, and the Site Head never types the sheet twice.
   const sheetKey = mineCert?.invoiceNo ?? bill.billNo
+
+  // The bills raised on this order BEFORE this one, oldest first, exactly as
+  // the "Bills on …" panel numbers them — that is what the sheet's Previous
+  // columns are built from, so the two agree on what RA-4 means.
+  //
+  const ladder = earlierBillsOn(history, mineCert?.certificateId ?? null)
+
   const sheet = sheetKey
     ? await loadAbstractSheet(sb, {
         woNo, invoiceNo: sheetKey,
         // No certificate yet means no figure to reconcile against, and the
         // sheet must say so rather than implying a match.
         certified: mineCert?.certified ?? null,
+        ladder,
       }).catch(() => null)
     : null
 
@@ -391,7 +399,7 @@ async function loadGrnSheet(
  *  for rather than showing an empty panel. */
 export async function loadAbstractSheet(
   sb: SupabaseClient,
-  opts: { woNo: string; invoiceNo: string | null; certified: number | null },
+  opts: { woNo: string; invoiceNo: string | null; certified: number | null; ladder?: LadderBill[] },
 ): Promise<AbstractSheet | null> {
   const key = opts.invoiceNo?.trim()
   if (!key) return null
@@ -442,7 +450,7 @@ export async function loadAbstractSheet(
     orderedAmt: Number(b.amt ?? 0),
   }))
 
-  return buildAbstractSheet(mine, earlier, boq, opts.certified)
+  return buildAbstractSheet(mine, earlier, boq, opts.certified, opts.ladder ?? [])
 }
 
 /* ── the maker ───────────────────────────────────────────────────────────── */

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildAbstractSheet, type AbstractLine, type BoqLine } from './abstract'
+import { buildAbstractSheet, earlierColumns, type AbstractLine, type BoqLine, type LadderBill } from './abstract'
 
 /** Real measurement, read from the mirror on 14 Sep 2026 — work order 1537,
  *  WO/SRASSK/NGH/2025-26/271, waterproofing, NGH B.
@@ -153,3 +153,85 @@ describe('every earlier bill as its own column', () => {
     for (const r of s.rows) expect(r.history).toEqual([])
   })
 })
+
+/** Aksha, 15 Sep 2026: "can u see there are so many RA - but the Abstract only
+ *  shownh 2 or 3 RA".
+ *
+ *  Real shape, read off WO/SRET/WH/2025-26/210 on 15 Sep 2026. Nine bills on
+ *  the register; seven abstracts, because IN4 answered the first three bills
+ *  with ONE sheet numbered "RU-WH-CV/01,02 & 03":
+ *
+ *      RA-1  RU-WH-CV/01  ENP/…/181   31,27,174  ┐
+ *      RA-2  RU-WH-CV/02  ENP/…/182    3,89,879  ├ one abstract, 70,09,244
+ *      RA-3  RU-WH-CV/03  ENP/…/183   34,92,189  ┘
+ *      RA-4  RU-WH-CV/04  ENP/…/268   75,05,440    Abs/…/217
+ *
+ *  Building the columns out of the abstracts alone gave two columns headed
+ *  RA-1 and RA-2 — and the second of those is the bill the register calls
+ *  RA-4. */
+describe('the earlier columns come from the bill register', () => {
+  const LADDER: LadderBill[] = [
+    { ra: 1, invoiceNo: 'RU-WH-CV/01', on: '2025-09-16', certified: 3127174 },
+    { ra: 2, invoiceNo: 'RU-WH-CV/02', on: '2025-09-16', certified: 389879.48 },
+    { ra: 3, invoiceNo: 'RU-WH-CV/03', on: '2025-09-16', certified: 3492189.42 },
+    { ra: 4, invoiceNo: 'RU-WH-CV/04', on: '2025-10-15', certified: 7505440.32 },
+  ]
+  const LUMPED: AbstractLine[] = [
+    line({ abstractId: 1502, abstractNo: 'Abs/SRET/WH/2025-26/176', billNo: 'RU-WH-CV/01,02 & 03', on: '2025-09-11', itemId: 12221, qty: 40, rate: 896, amt: 4000000 }),
+    line({ abstractId: 1502, abstractNo: 'Abs/SRET/WH/2025-26/176', billNo: 'RU-WH-CV/01,02 & 03', on: '2025-09-11', itemId: 12222, qty: 30, rate: 875, amt: 3009243 }),
+  ]
+  const FOURTH: AbstractLine[] = [
+    line({ abstractId: 1589, abstractNo: 'Abs/SRET/WH/2025-26/217', billNo: 'RU-WH-CV/04', on: '2025-10-10', itemId: 12221, qty: 20, rate: 896, amt: 7505440 }),
+  ]
+
+  it('numbers a column the way the bills panel numbers it', () => {
+    const { columns } = earlierColumns([...LUMPED, ...FOURTH], LADDER)
+    expect(columns.map(c => c.label)).toEqual(['RA-1–3', 'RA-4'])
+  })
+
+  it('merges a run only when the money adds up, never by reading the text', () => {
+    // Same abstract, same "01,02 & 03" wording, but a total that matches no run
+    // of bills. It is then its own column with NO RA number — an invented one
+    // would put it in a sequence the register does not have it in.
+    const wrong = LUMPED.map(l => ({ ...l, amt: 11 }))
+    const { columns } = earlierColumns([...wrong, ...FOURTH], LADDER)
+    expect(columns.map(c => c.label)).toEqual([null, 'RA-1', 'RA-2', 'RA-3', 'RA-4'])
+  })
+
+  it('keeps a column for a bill IN4 never abstracted, and says so', () => {
+    const { columns } = earlierColumns(FOURTH, LADDER)
+    expect(columns.map(c => c.label)).toEqual(['RA-1', 'RA-2', 'RA-3', 'RA-4'])
+    expect(columns.map(c => c.measured)).toEqual([false, false, false, true])
+    // The unmeasured ones still carry the contractor's bill number off the
+    // certificate, so the column is identifiable.
+    expect(columns[0].billNo).toBe('RU-WH-CV/01')
+  })
+
+  it('puts the lumped abstract quantity under the merged column', () => {
+    const s = buildAbstractSheet(
+      [line({ abstractId: 1779, billNo: 'RU-WH-CV/05', on: '2025-11-25', itemId: 12221, qty: 7, rate: 896, amt: 6272 })],
+      [...LUMPED, ...FOURTH], BOQ, null, LADDER)
+    expect(s.earlierBills.map(b => b.label)).toEqual(['RA-1–3', 'RA-4'])
+    const row = s.rows.find(r => r.itemId === 12221)!
+    expect(row.history).toEqual([40, 20])
+    expect(s.unmeasured).toBe(0)
+  })
+
+  it('counts the bills with no sheet, because their qty is missing from Cum', () => {
+    const s = buildAbstractSheet(
+      [line({ abstractId: 1779, billNo: 'RU-WH-CV/05', on: '2025-11-25', itemId: 12221, qty: 7, rate: 896, amt: 6272 })],
+      FOURTH, BOQ, null, LADDER)
+    expect(s.unmeasured).toBe(3)
+    expect(s.rows[0].history).toHaveLength(4)
+  })
+
+  it('falls back to a column per abstract when no register is passed', () => {
+    const s = buildAbstractSheet(THIRD_BILL, [...SECOND, ...FIRST], BOQ, null)
+    expect(s.earlierBills.map(b => b.billNo)).toEqual(['KP362SRA51', 'KP362SRA06'])
+    expect(s.earlierBills.map(b => b.label)).toEqual([null, null])
+  })
+})
+
+const THIRD_BILL: AbstractLine[] = [
+  line({ abstractId: 2600, abstractNo: 'Abs/…/99', billNo: 'KP362SRA09', on: '2026-07-02', itemId: 12221, qty: 5, rate: 896, amt: 4480 }),
+]

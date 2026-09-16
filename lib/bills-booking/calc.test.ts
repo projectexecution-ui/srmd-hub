@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { billLadder, woHistory, type CertMoney } from './calc'
+import { billLadder, woHistory, type CertMoney, earlierBillsOn } from './calc'
 
 /** The figures below are REAL, read out of the mirror on 14 Sep 2026 — work
  *  order 1537, WO/SRASSK/NGH/2025-26/271, Kasturi Projects, NGH B. Pinning the
@@ -216,5 +216,60 @@ describe('the certificates behind the live examples', () => {
     expect(amountOf(l, 'Gross bill')).toBe(1791475)
     expect(l.stillOwed).toBe(38169)
     expect(l.reconciles).toBe(true)
+  })
+})
+
+/** Aksha, 15 Sep 2026: "can u see there are so many RA - but the Abstract only
+ *  shownh 2 or 3 RA".
+ *
+ *  The nine bills on WO/SRET/WH/2025-26/210, read off the mirror on 15 Sep
+ *  2026 — all Paid, and the ladder the abstract sheet's Previous columns are
+ *  built from. Three of them share a creation date, which is exactly the case
+ *  the ordering has to get right. */
+describe('the bills before this one', () => {
+  const WH210 = [
+    [1584, '2025-09-16', 'RU-WH-CV/01', 3127174, 3690065.32],
+    [1585, '2025-09-16', 'RU-WH-CV/02', 389879.48, 460057.78],
+    [1586, '2025-09-16', 'RU-WH-CV/03', 3492189.42, 4120783.52],
+    [1742, '2025-10-15', 'RU-WH-CV/04', 7505440.32, 8856419.58],
+    [1880, '2025-11-27', 'RU-WH-CV/05', 3335866.38, 3936322.32],
+    [1883, '2025-11-27', 'RU-WH-CV/06', 2115494.52, 2496283.54],
+    [2135, '2026-01-16', 'RU-WH-CV/07', 1117932, 1319159.76],
+    [2454, '2026-04-03', 'RU-WH-CV/08', 4295866.38, 5069122.32],
+    [2795, '2026-06-18', 'RU-WH-CV/09', 1298777.61, 1532557.57],
+  ].map(([certificateId, createdOn, invoiceNo, certified, gross]) => ({
+    certificateId, createdOn, invoiceNo, certified, gross,
+    displayNo: null, statusName: 'Paid',
+    retention: 0, advanceRecovery: 0, recoveries: 0, deductions: 0, paid: gross, outstanding: 0,
+  })) as CertMoney[]
+
+  const H = woHistory(WH210, 31480771.73)
+
+  it('numbers them the way the bills panel does', () => {
+    expect(earlierBillsOn(H, null).map(b => [b.ra, b.invoiceNo]))
+      .toEqual([[1, 'RU-WH-CV/01'], [2, 'RU-WH-CV/02'], [3, 'RU-WH-CV/03'], [4, 'RU-WH-CV/04'],
+                [5, 'RU-WH-CV/05'], [6, 'RU-WH-CV/06'], [7, 'RU-WH-CV/07'], [8, 'RU-WH-CV/08'],
+                [9, 'RU-WH-CV/09']])
+  })
+
+  it('stops at the bill being looked at', () => {
+    // RA-9 is the last of the nine, so eight came before it — the six abstracts
+    // that answer them are what Aksha expected to see and did not.
+    expect(earlierBillsOn(H, 2795).map(b => b.ra)).toEqual([1, 2, 3, 4, 5, 6, 7, 8])
+    // And RA-5 genuinely has only four before it.
+    expect(earlierBillsOn(H, 1880).map(b => b.ra)).toEqual([1, 2, 3, 4])
+    expect(earlierBillsOn(H, 1584)).toEqual([])
+  })
+
+  it('treats a bill not yet certified as the newest', () => {
+    // Nothing in IN4 is after a bill IN4 has not seen, so all nine are earlier.
+    expect(earlierBillsOn(H, null)).toHaveLength(9)
+  })
+
+  it('leaves out a cancelled bill, which holds no RA number', () => {
+    const withDead = woHistory(
+      [...WH210, { ...WH210[0], certificateId: 9999, createdOn: '2026-07-01', invoiceNo: 'X', statusName: 'Cancelled' }],
+      31480771.73)
+    expect(earlierBillsOn(withDead, null).map(b => b.invoiceNo)).not.toContain('X')
   })
 })
