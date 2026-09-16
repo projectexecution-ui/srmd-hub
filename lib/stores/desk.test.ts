@@ -3,7 +3,7 @@ import {
   istDay, daysSince, daysOverdue, waitedFor, overdueWord, mostUrgent,
   setupHealth, duplicateNameGroups, checkReceipt, overReceiptNote, receiptLabel,
   searchStock, groupStockByDiscipline, groupStockByStore, stockWorth, itemHistory, moveWord,
-  stockLines, NO_DISCIPLINE, type StockLine, type Waiting, type ItemMove,
+  stockLines, signaturesFor, NO_DISCIPLINE, type StockLine, type Waiting, type ItemMove,
 } from './desk'
 
 const NOW = new Date('2026-09-16T07:30:00.000Z') // 13:00 IST
@@ -429,5 +429,82 @@ describe('the over-receipt warning does not cry wolf', () => {
       .toBe('Ordered 100 Nos · 80 already in (IN4)')
     expect(receiptLabel({ ordered: 100, alreadyIn: 0, atGate: 0 }, 'Nos'))
       .toBe('Ordered 100 Nos · 0 already in')
+  })
+})
+
+describe('which signatures an entry can actually have', () => {
+  // Aksha, 16 Sep 2026, on a finished IN: "what does the reciever means ??? -
+  // i dont know this cycle is closed - why its showing". It could never be
+  // signed: the receipt step only runs on an OUT.
+  const none = { who: null, at: null }
+  const sig = (who: string, at: string) => ({ who, at })
+
+  it('gives an IN two signatures, and never a receiver', () => {
+    const slots = signaturesFor('in', {
+      security: sig('projectexecution', '2026-09-16T14:30:00.000Z'),
+      incharge: sig('projectexecution', '2026-09-16T15:15:00.000Z'),
+      receiver: none, completedBy: 'projectexecution', completedAt: '2026-09-16T15:15:00.000Z',
+    })
+    expect(slots.map(s => s.key)).toEqual(['security', 'incharge'])
+    expect(slots.every(s => s.at)).toBe(true)
+  })
+
+  it('leaves a completed IN with nothing hollow on it', () => {
+    const slots = signaturesFor('in', {
+      security: sig('Security — Gate 1', '2026-09-13T09:55:00.000Z'),
+      incharge: sig('Yunus', '2026-09-15T04:10:00.000Z'),
+      receiver: none, completedBy: 'Yunus', completedAt: '2026-09-15T04:10:00.000Z',
+    })
+    expect(slots.filter(s => !s.at)).toEqual([])
+  })
+
+  it('gives an OUT the storekeeper and the site, and no box for the unbuilt gate check', () => {
+    const slots = signaturesFor('out', {
+      security: none, incharge: none, receiver: none,
+      completedBy: 'projectexecution', completedAt: '2026-09-15T14:53:00.000Z',
+    })
+    expect(slots.map(s => s.key)).toEqual(['incharge', 'receiver'])
+    // Security's check before a load leaves is parked, so it gets no slot at
+    // all — a box for a step nobody built is the same lie in reverse.
+    expect(slots.map(s => s.key)).not.toContain('security')
+  })
+
+  it('finds who issued it even though an issue signs no column', () => {
+    const slots = signaturesFor('out', {
+      security: none, incharge: none, receiver: none,
+      completedBy: 'Yunus', completedAt: '2026-09-15T14:53:00.000Z',
+    })
+    expect(slots[0].who).toBe('Yunus')
+    expect(slots[0].at).toBe('2026-09-15T14:53:00.000Z')
+  })
+
+  it('uses the return’s own signature when there is one', () => {
+    const slots = signaturesFor('out', {
+      security: sig('Yunus', '2026-09-12T11:51:00.000Z'), incharge: none, receiver: none,
+      completedBy: 'somebody else', completedAt: '2026-09-12T11:51:00.000Z',
+    })
+    expect(slots[0].who).toBe('Yunus')
+  })
+
+  it('says what a waiting receiver is waiting FOR, not that a step is missing', () => {
+    const slots = signaturesFor('out', {
+      security: none, incharge: none, receiver: none,
+      completedBy: 'Yunus', completedAt: '2026-09-15T14:53:00.000Z',
+    })
+    const recv = slots.find(s => s.key === 'receiver')!
+    expect(recv.at).toBeNull()
+    expect(recv.waitingFor).toContain('signs below')
+    // The stale line that survived the receipt step being built.
+    expect(recv.waitingFor).not.toContain('No receipt step')
+  })
+
+  it('says what each signature MEANS', () => {
+    for (const d of ['in', 'out'] as const) {
+      for (const s of signaturesFor(d, {
+        security: none, incharge: none, receiver: none, completedBy: null, completedAt: null,
+      })) {
+        expect(s.what.length).toBeGreaterThan(15)
+      }
+    }
   })
 })

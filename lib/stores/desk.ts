@@ -527,3 +527,98 @@ export function stockLines(
     }
   })
 }
+
+/* ── Which signatures an entry actually has ─────────────────────────────── */
+
+export interface SignedSlot {
+  key: 'security' | 'incharge' | 'receiver'
+  /** Who they are. */
+  label: string
+  /** What signing it MEANS — the thing the box was missing. */
+  what: string
+  who: string | null
+  at: string | null
+  /** What to say while it is unsigned. */
+  waitingFor: string
+}
+
+export interface SignatureInput {
+  security: { who: string | null; at: string | null }
+  incharge: { who: string | null; at: string | null }
+  receiver: { who: string | null; at: string | null }
+  /** Who finished the entry — the storekeeper, on an issue. */
+  completedBy: string | null
+  completedAt: string | null
+}
+
+/**
+ * Which signatures an entry can actually have, and what each one means.
+ *
+ * Aksha, 16 Sep 2026, looking at a finished IN: "what does the reciever means
+ * ??? - i dont know this cycle is closed - why its showing am i missing
+ * something". He was not missing anything. The box could never be signed.
+ *
+ * All three were shown on every entry regardless of direction, and the
+ * receipt step only ever runs on an OUT — so every completed IN carried a
+ * hollow "Receiver · Not signed" saying a finished entry was unfinished. Its
+ * hint was stale on top of that: it read "No receipt step yet", written before
+ * the receipt step existed and never changed when it was built.
+ *
+ * What is true:
+ *
+ *   IN   two people. Security recorded the vehicle; the storekeeper counted
+ *        the material in. The map's "Sign of Receiver" on the in-side IS the
+ *        storekeeper — the SRMD person receiving from the vendor — so showing
+ *        a third box shows one person twice.
+ *
+ *   OUT  two people. The storekeeper issued it out of the store, and somebody
+ *        at the far end signs for it. Security's check before a load leaves is
+ *        the map's third, and it is NOT BUILT — it is the branch Aksha parked
+ *        on 16 Sep — so no box is drawn for it. A box for an unbuilt step is
+ *        the same lie in the other direction.
+ */
+export function signaturesFor(
+  direction: 'in' | 'out',
+  s: SignatureInput,
+): SignedSlot[] {
+  if (direction === 'in') {
+    return [
+      {
+        key: 'security',
+        label: 'Security',
+        what: 'recorded the vehicle at the gate',
+        who: s.security.who, at: s.security.at,
+        waitingFor: 'Not recorded',
+      },
+      {
+        key: 'incharge',
+        label: 'Storekeeper',
+        what: 'counted the material in and took it into stock',
+        who: s.incharge.who, at: s.incharge.at,
+        waitingFor: 'Not counted in yet',
+      },
+    ]
+  }
+
+  // An issue stamps no signature column, only completed_by — and a return
+  // stamps the security one. Either way it is the person who handed it out.
+  const issuedWho = s.incharge.who ?? s.security.who ?? s.completedBy
+  const issuedAt = s.incharge.at ?? s.security.at ?? s.completedAt
+
+  return [
+    {
+      key: 'incharge',
+      label: 'Storekeeper',
+      what: 'issued the material out of the store',
+      who: issuedWho, at: issuedAt,
+      waitingFor: 'Not issued yet',
+    },
+    {
+      key: 'receiver',
+      label: 'Received on site',
+      what: 'checked what arrived and signed for it',
+      who: s.receiver.who, at: s.receiver.at,
+      waitingFor: 'Waiting — whoever takes delivery signs below',
+    },
+  ]
+}

@@ -224,8 +224,17 @@ export interface EntryDetail extends EntryRow {
   inchargeName: string | null
   /** The three signature points the mind map asks for. Captured since the
    *  section shipped and, until now, displayed nowhere — which is the same as
-   *  not capturing them. */
+   *  not capturing them.
+   *
+   *  WHICH of them apply depends on the direction, and the screen decides —
+   *  see signaturesFor. An IN has no receiver: the person who received the
+   *  material IS the storekeeper who counted it in. */
   signatures: { security: Signature; incharge: Signature; receiver: Signature }
+  /** Who finished the entry, and when. On an issue this is the storekeeper who
+   *  handed the material out — the one act on an OUT that nothing else
+   *  records, because issueRequest stamps no signature column. */
+  completedBy: string | null
+  completedAt: string | null
   lines: Array<{ id: string; itemId: string; itemName: string; unit: string; qty: number; rate: number | null; amount: number | null; returnable: boolean }>
   /** A signed address, or null when signing failed — the strip then says
    *  a photograph exists and could not be fetched, rather than showing a
@@ -242,6 +251,7 @@ export async function loadEntry(id: string): Promise<EntryDetail | null> {
              securitySigner:security_signed_by ( full_name ),
              inchargeSigner:incharge_signed_by ( full_name ),
              receiverSigner:receiver_signed_by ( full_name ),
+             completer:completed_by ( full_name ),
              mio_entry_lines ( id, item_id, unit, qty, rate, amount, returnable, mio_items ( name ) ),
              mio_photos ( id, kind, path )`)
     .eq('id', id)
@@ -310,6 +320,8 @@ export async function loadEntry(id: string): Promise<EntryDetail | null> {
     handedOverParty: (data.handed_over_party as string | null) ?? null,
     handedOverTo: (data.handed_over_to as string | null) ?? null,
     inchargeName: (data.incharge_name as string | null) ?? null,
+    completedBy: ((one(data.completer) as { full_name?: string } | null)?.full_name) ?? null,
+    completedAt: (data.completed_at as string | null) ?? null,
     signatures: {
       security: {
         who: (data.security_by as string | null)
