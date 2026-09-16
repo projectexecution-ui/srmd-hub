@@ -10,6 +10,7 @@ import {
 import { formatDate, formatDateTime } from '@/lib/utils'
 import type { RequestRow, ProjectOpt } from '@/lib/stores/queries'
 import { SearchableSelect } from '@/components/ui/searchable-select'
+import { daysSince, daysOverdue, overdueWord, waitedFor } from '@/lib/stores/desk'
 import { ISSUE_SLOTS, missingPhotos } from '@/lib/stores/photos'
 import { PhotoCapture, type Shot } from '../PhotoCapture'
 import { uploadEntryPhotos } from '../upload-photos'
@@ -297,6 +298,11 @@ function RequestCard({
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null)
   const [note, setNote] = useState('')
   const [issuing, setIssuing] = useState(false)
+  // Only a request somebody still has to act on has "been waiting" — a closed
+  // one waited once, and saying so now is history, not a prompt.
+  const open = req.status === 'pending' || req.status === 'approved'
+  const waiting = open ? daysSince(req.raisedAt) : null
+  const late = open ? overdueWord(daysOverdue(req.neededBy)) : null
   // Start at the store that actually holds this request. The screen already
   // knows — it prints "140 is held in another location" under the line — so
   // making the storekeeper go and find that place by hand is asking them to
@@ -330,6 +336,21 @@ function RequestCard({
         {req.status === 'pending' && (
           <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10.5px] font-semibold text-amber-900">
             {approverLabel(req.approvers)}
+          </span>
+        )}
+        {/* How long it has been sitting there. Every pending card looked
+            identical whether it was raised an hour ago or nine days ago —
+            Aksha, 16 Sep 2026, 11. */}
+        {waiting != null && (
+          <span className={`rounded-full px-2 py-0.5 text-[10.5px] font-bold ${
+            waiting >= 3 ? 'bg-rose-100 text-rose-800' : 'bg-gray-100 text-gray-600'
+          }`}>
+            waiting {waitedFor(waiting)}
+          </span>
+        )}
+        {late != null && (
+          <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10.5px] font-bold text-rose-800">
+            needed {formatDate(req.neededBy!)} — {late}
           </span>
         )}
         <span className="text-[12.5px] text-gray-700">{req.projectName}</span>
@@ -407,8 +428,11 @@ function RequestCard({
           label="Needed by"
           value={req.neededBy ? formatDate(req.neededBy) : null}
           empty="no date"
+          tone={late ? 'bad' : undefined}
         />
       </dl>
+
+      <Timeline req={req} />
 
       {req.decisionNote && (
         <p className="px-4 py-2 text-[12.5px] text-gray-700 bg-gray-50 border-t border-gray-100">
@@ -501,5 +525,65 @@ function RequestCard({
         )}
       </div>
     </div>
+  )
+}
+
+/**
+ * Where a request has got to: raised → approved → issued → received.
+ *
+ * Four steps, each with a name and a date, and the ones that have not happened
+ * shown as hollow rather than hidden. Aksha, 16 Sep 2026: "The request card
+ * tells the time". A status word says where it IS; this says how it got there
+ * and what is left — which is the question an engineer actually opens the
+ * screen with.
+ */
+function Timeline({ req }: { req: RequestRow }) {
+  const steps: Array<{ label: string; who: string | null; at: string | null; done: boolean; now?: boolean }> = [
+    { label: 'Raised', who: req.raisedByName, at: req.raisedAt, done: true },
+    {
+      label: req.status === 'rejected' ? 'Rejected' : 'Approved',
+      who: req.decidedByName ?? (req.status === 'pending' ? approverLabel(req.approvers) : null),
+      at: req.decidedAt,
+      done: !!req.decidedAt,
+      now: req.status === 'pending',
+    },
+    {
+      label: 'Issued',
+      who: req.issuedEntryNo,
+      at: req.issuedAt,
+      done: !!req.issuedAt,
+      now: req.status === 'approved',
+    },
+    {
+      label: 'Received',
+      who: req.receivedBy,
+      at: req.receivedAt,
+      done: !!req.receivedAt,
+      now: !!req.issuedAt && !req.receivedAt,
+    },
+  ]
+
+  // A rejected request never goes any further, and drawing two hollow steps
+  // after it suggests it is still on its way.
+  const shown = req.status === 'rejected' ? steps.slice(0, 2) : steps
+
+  return (
+    <ol className="flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-gray-100 px-4 py-2.5 text-[11.5px]">
+      {shown.map((s, i) => (
+        <li key={s.label} className="flex items-center gap-2">
+          {i > 0 && <span aria-hidden className="text-gray-300">→</span>}
+          <span className={
+            s.now ? 'font-semibold text-amber-800'
+              : s.done ? 'text-gray-700'
+                : 'text-gray-400'
+          }>
+            <span aria-hidden className="mr-1">{s.done ? '●' : '○'}</span>
+            {s.label}
+            {s.at && <> {formatDate(s.at)}</>}
+            {s.who && <span className="text-gray-500"> · {s.who}</span>}
+          </span>
+        </li>
+      ))}
+    </ol>
   )
 }

@@ -347,6 +347,14 @@ export interface RequestRow {
   /** Which stores hold what is being asked for, so the approver can see it
    *  can actually be met before saying yes. */
   heldAt: Array<{ locationId: string; label: string; itemCount: number }>
+  /** When it left the store, and on which entry — the third step of the
+   *  timeline on the card. Null until the storekeeper has issued it. */
+  issuedAt: string | null
+  issuedEntryId: string | null
+  issuedEntryNo: string | null
+  /** When somebody at the far end signed for it — the fourth and last step. */
+  receivedAt: string | null
+  receivedBy: string | null
   lines: Array<{ id: string; itemId: string; itemName: string; unit: string; qty: number; issuedQty: number; returnable: boolean }>
 }
 
@@ -359,7 +367,10 @@ export async function loadRequests(opts: { projectId?: string | null; status?: s
              raiser:raised_by ( full_name ), decider:decided_by ( full_name ),
              mio_request_lines ( id, item_id, unit, qty, issued_qty, returnable,
                                  mio_items ( name, discipline:discipline_id ( code ) ) )`)
-    .order('raised_at', { ascending: false })
+    // An approver's queue reads OLDEST FIRST: the thing that has been waiting
+    // longest is the thing to do next, and a newest-first queue buries it.
+    // Every other list is a history, and histories read newest first.
+    .order('raised_at', { ascending: opts.status === 'pending' })
     .limit(200)
   if (opts.projectId) q = q.eq('project_id', opts.projectId)
   if (opts.status) q = q.eq('status', opts.status)
@@ -375,6 +386,32 @@ export async function loadRequests(opts: { projectId?: string | null; status?: s
    * Folding the ledger once here costs one query and answers "can this be
    * met" on the card.
    */
+  /**
+   * Where each request GOT TO — the issue entry it turned into, and whether
+   * anybody has signed for it at the far end.
+   *
+   * One query for every request on the page rather than one each. Aksha,
+   * 16 Sep 2026: the card should show a timeline, and a timeline whose third
+   * step is missing is just a status by another name.
+   */
+  const requestIds = (data ?? []).map(r => r.id as string)
+  const { data: issues } = requestIds.length
+    ? await supabase
+      .from('mio_entries')
+      .select('id, no, entry_at, request_id, receiver_signed_at, receiver:receiver_signed_by ( full_name )')
+      .in('request_id', requestIds)
+      .neq('stage', 'void')
+      .order('entry_at')
+    : { data: [] as Array<Record<string, unknown>> }
+
+  const issueOf = new Map<string, Record<string, unknown>>()
+  for (const e of issues ?? []) {
+    // The FIRST issue is when the material left; a part-issue followed by a
+    // second one should not keep resetting the date the site was served.
+    const k = e.request_id as string
+    if (!issueOf.has(k)) issueOf.set(k, e)
+  }
+
   const [stock, lists] = await Promise.all([loadStock(), loadLists()])
   const stockFor = (itemIds: readonly string[]) => {
     const want = new Set(itemIds)
@@ -411,6 +448,11 @@ export async function loadRequests(opts: { projectId?: string | null; status?: s
       ((r.mio_request_lines as Array<Record<string, unknown>> | null) ?? [])
         .map(l => l.item_id as string),
     ),
+    issuedAt: (issueOf.get(r.id as string)?.entry_at as string | null) ?? null,
+    issuedEntryId: (issueOf.get(r.id as string)?.id as string | null) ?? null,
+    issuedEntryNo: (issueOf.get(r.id as string)?.no as string | null) ?? null,
+    receivedAt: (issueOf.get(r.id as string)?.receiver_signed_at as string | null) ?? null,
+    receivedBy: ((one(issueOf.get(r.id as string)?.receiver) as { full_name?: string } | null)?.full_name) ?? null,
     approvers: approversForRequest(
       ((r.mio_request_lines as Array<Record<string, unknown>> | null) ?? []).map(l => {
         const item = one(l.mio_items) as { discipline?: unknown } | null
