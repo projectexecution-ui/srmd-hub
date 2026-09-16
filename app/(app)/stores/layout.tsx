@@ -52,7 +52,12 @@ export default async function StoresLayout({ children }: { children: React.React
 
       <StoresNav
         tabs={tabs}
-        counts={{ gate: counts.toComplete, requests: counts.pendingRequests }}
+        counts={{
+          gate: counts.toComplete,
+          requests: counts.pendingRequests,
+          issue: counts.toIssue,
+          receive: counts.toReceive,
+        }}
       />
       {children}
     </div>

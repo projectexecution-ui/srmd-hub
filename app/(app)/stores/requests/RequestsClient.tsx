@@ -27,6 +27,7 @@ const newLine = (): Line => ({ key: `r${++seq}`, itemId: '', unit: '', qty: '', 
 
 export function RequestsClient({
   requests, projects, items, locations, modes, stock, recentItemIds = [], scopeNote = null,
+  mode = 'ask',
 }: {
   requests: RequestRow[]
   projects: ProjectOpt[]
@@ -38,12 +39,23 @@ export function RequestsClient({
   recentItemIds?: readonly string[]
   /** Why this person can raise for nothing, when that is the case. */
   scopeNote?: string | null
+  /**
+   * Which job this screen is doing. Aksha, 16 Sep 2026: "i would like Issue as
+   * a seperate section ( of Storekeeper so its easy to make out" — one screen
+   * was asking, approving AND handing out, which is three jobs and three
+   * different people.
+   *
+   * A flag rather than a second component on purpose: the issue form carries
+   * the stock checks, and a copy of those is a copy that drifts.
+   */
+  mode?: 'ask' | 'issue'
 }) {
   const router = useRouter()
   const rows: StockRow[] = stock.map(s => ({ ...s, lastRate: null, lastMovedAt: null }))
 
   return (
     <div className="space-y-6">
+      {mode === 'ask' && (
       <Section
         title="Ask for material"
         note="Stock is shown while asking, so nobody requests what is not there"
@@ -53,15 +65,16 @@ export function RequestsClient({
           : <RaiseForm projects={projects} items={items} stock={rows} locations={locations}
               recentItemIds={recentItemIds} onDone={() => router.refresh()} />}
       </Section>
+      )}
 
-      <Section title="Requests">
+      <Section title={mode === 'issue' ? 'Approved, waiting to go out' : 'Your requests'}>
         {requests.length === 0 ? (
           <Empty title="No requests here" hint="Raise one above and it will appear for approval." />
         ) : (
           <div className="space-y-3">
             {requests.map(r => (
               <RequestCard key={r.id} req={r} locations={locations} modes={modes} stock={rows}
-                onDone={() => router.refresh()} />
+                mode={mode} onDone={() => router.refresh()} />
             ))}
           </div>
         )}
@@ -289,10 +302,10 @@ function Fact({
 /* ── One request ────────────────────────────────────────────────────────── */
 
 function RequestCard({
-  req, locations, modes, stock, onDone,
+  req, locations, modes, stock, mode, onDone,
 }: {
   req: RequestRow; locations: Array<{ id: string; label: string }>; modes: Opt[]
-  stock: StockRow[]; onDone: () => void
+  stock: StockRow[]; mode: 'ask' | 'issue'; onDone: () => void
 }) {
   const [pending, start] = useTransition()
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null)
@@ -459,7 +472,7 @@ function RequestCard({
           </div>
         )}
 
-        {req.status === 'approved' && (
+        {req.status === 'approved' && mode === 'issue' && (
           issuing ? (
             <div className="space-y-3">
               <div className="grid sm:grid-cols-3 gap-3">

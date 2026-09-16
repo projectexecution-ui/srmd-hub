@@ -1043,6 +1043,10 @@ export interface StoreCounts {
   /** Stock lines in hand. One item in two stores is two lines, which is why
    *  this is not itemsHeld — the caveat has to say "x of y LINES". */
   heldRows: number
+  /** Approved and waiting for the storekeeper to hand out. */
+  toIssue: number
+  /** Gone out and nobody at the site has signed for it. */
+  toReceive: number
 }
 
 export async function loadCounts(projectId?: string | null): Promise<StoreCounts> {
@@ -1050,9 +1054,11 @@ export async function loadCounts(projectId?: string | null): Promise<StoreCounts
   const scoped = <T extends { eq: (c: string, v: string) => T }>(q: T) =>
     projectId ? q.eq('project_id', projectId) : q
 
-  const [gate, reqs, returnables, stock] = await Promise.all([
+  const [gate, reqs, issue, receive, returnables, stock] = await Promise.all([
     scoped(supabase.from('mio_entries').select('id', { count: 'exact', head: true }).eq('stage', 'gate') as never),
     scoped(supabase.from('mio_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending') as never),
+    scoped(supabase.from('mio_requests').select('id', { count: 'exact', head: true }).eq('status', 'approved') as never),
+    scoped(supabase.from('mio_entries').select('id', { count: 'exact', head: true }).eq('direction', 'out').is('receiver_signed_at', null).neq('stage', 'void') as never),
     // Returnables are switched off, and the fold behind them is not free.
     // Asking for a list nothing will show is the sort of query that makes a
     // page slow for no reason anybody can see.
@@ -1064,6 +1070,8 @@ export async function loadCounts(projectId?: string | null): Promise<StoreCounts
   return {
     toComplete: (gate as { count: number | null }).count ?? 0,
     pendingRequests: (reqs as { count: number | null }).count ?? 0,
+    toIssue: (issue as { count: number | null }).count ?? 0,
+    toReceive: (receive as { count: number | null }).count ?? 0,
     returnablesOut: returnables.length,
     itemsHeld: heldItemCount(stock),
     // Never a silent zero for a missing rate: the unpriced rows are counted
@@ -1475,4 +1483,75 @@ export async function loadItemCard(itemId: string): Promise<{ item: ItemCard; mo
       }
     }),
   }
+}
+
+/* ── Waiting to be signed for at the far end ────────────────────────────── */
+
+export interface AwaitingReceipt {
+  id: string
+  no: string
+  requestNo: string | null
+  projectId: string | null
+  projectName: string | null
+  /** The store it came out of. */
+  fromLabel: string | null
+  issuedAt: string
+  issuedBy: string | null
+  handedOverTo: string | null
+  lines: Array<{ id: string; itemName: string; unit: string; qty: number }>
+}
+
+/**
+ * Material that has left the store and nobody has signed for.
+ *
+ * Aksha, 16 Sep 2026: "Where will the reciever do the entry - i cant see the
+ * page or section of the same". It existed — as a panel at the foot of one
+ * entry page, reachable only by already knowing the entry number. A step with
+ * no list is a step nobody does, which is why not one of the issues on record
+ * has ever been signed for.
+ *
+ * Scoped like everything else: a site sees what is coming to IT. The
+ * storekeeper sees all of it, because they are the one who has to chase it.
+ */
+export async function loadAwaitingReceipt(projectIds: readonly string[] | null): Promise<AwaitingReceipt[]> {
+  const supabase = await createClient()
+  let q = supabase
+    .from('mio_entries')
+    .select(`id, no, entry_at, project_id, location_id, handed_over_to, completed_at,
+             projects:project_id ( name ),
+             completer:completed_by ( full_name ),
+             request:request_id ( no ),
+             mio_entry_lines ( id, unit, qty, mio_items ( name ) )`)
+    .eq('direction', 'out')
+    .is('receiver_signed_at', null)
+    .neq('stage', 'void')
+    .order('entry_at', { ascending: true })
+    .limit(200)
+
+  // null means "everything" — the storekeeper and the heads.
+  if (projectIds) {
+    if (projectIds.length === 0) return []
+    q = q.in('project_id', projectIds)
+  }
+
+  const { data } = await q
+  const lists = await loadLists()
+
+  return (data ?? []).map(r => ({
+    id: r.id as string,
+    no: (r.no as string) ?? '',
+    requestNo: ((one(r.request) as { no?: string } | null)?.no) ?? null,
+    projectId: (r.project_id as string | null) ?? null,
+    projectName: ((one(r.projects) as { name?: string } | null)?.name) ?? null,
+    fromLabel: locationLabel(lists, (r.location_id as string | null) ?? null),
+    issuedAt: (r.completed_at as string | null) ?? (r.entry_at as string),
+    issuedBy: ((one(r.completer) as { full_name?: string } | null)?.full_name) ?? null,
+    handedOverTo: (r.handed_over_to as string | null) ?? null,
+    lines: ((r.mio_entry_lines as Array<Record<string, unknown>> | null) ?? []).map(l => ({
+      id: l.id as string,
+      itemName: ((one(l.mio_items) as { name?: string } | null)?.name) ?? '—',
+      unit: (l.unit as string) ?? '',
+      qty: num(l.qty),
+    })),
+  }))
 }

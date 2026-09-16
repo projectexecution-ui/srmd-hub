@@ -706,11 +706,11 @@ describe('who sees which screen', () => {
   })
 
   it('gives the storekeeper what they actually hold and hand out', () => {
-    expect(roleStoreTabs('store_manager')).toEqual(['gate', 'requests', 'stock'])
+    expect(roleStoreTabs('store_manager')).toEqual(['gate', 'requests', 'issue', 'receive', 'stock'])
   })
 
   it('gives an engineer the asking, not the store’s books', () => {
-    expect(roleStoreTabs('engineer')).toEqual(['requests', 'stock'])
+    expect(roleStoreTabs('engineer')).toEqual(['requests', 'receive', 'stock'])
   })
 
   it('lets Mayank reach the requests he is mailed about', () => {
@@ -722,7 +722,7 @@ describe('who sees which screen', () => {
 
   it('gives the people who run it everything', () => {
     for (const role of ['admin', 'founder', 'head']) {
-      expect(roleStoreTabs(role)).toEqual(['overview', 'gate', 'requests', 'stock', 'reports', 'masters'])
+      expect(roleStoreTabs(role)).toEqual(['overview', 'gate', 'requests', 'issue', 'receive', 'stock', 'reports', 'masters'])
     }
   })
 
@@ -761,7 +761,7 @@ describe('who sees which screen', () => {
         expect(visibleStoreTabs(role)).toEqual([])
         expect(canOpenStoreTab(role, 'gate')).toBe(false)
       }
-      expect(visibleStoreTabs('admin')).toHaveLength(6)
+      expect(visibleStoreTabs('admin')).toHaveLength(8)
     }
   })
 })

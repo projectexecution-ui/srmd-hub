@@ -61,7 +61,8 @@ export function canSeeStores(role: string | null | undefined): boolean {
 
 /* ── Which screens are whose ────────────────────────────────────────────── */
 
-export type StoreTab = 'overview' | 'gate' | 'requests' | 'stock' | 'reports' | 'masters'
+export type StoreTab =
+  | 'overview' | 'gate' | 'requests' | 'issue' | 'receive' | 'stock' | 'reports' | 'masters'
 
 /**
  * Who sees which screen — Aksha, 16 Sep 2026: "Role-aware tabs, one status
@@ -80,7 +81,16 @@ export type StoreTab = 'overview' | 'gate' | 'requests' | 'stock' | 'reports' | 
 const TAB_ROLES: Record<StoreTab, readonly string[]> = {
   overview: ['admin', 'founder', 'head'],
   gate:     ['admin', 'founder', 'head', 'security', 'store_manager'],
+  // Asking and following — the site's screen, and the approvers'.
   requests: ['admin', 'founder', 'head', 'backoffice', 'store_manager', 'engineer'],
+  // Handing it out. Aksha, 16 Sep 2026: "i would like Issue as a seperate
+  // section ( of Storekeeper so its easy to make out" — one screen was doing
+  // three jobs, which is why it read as confusing.
+  issue:    ['admin', 'founder', 'head', 'store_manager'],
+  // Signing for it at the far end. This existed only as a panel buried at the
+  // foot of one entry page, which is exactly why he could not find it:
+  // "Where will the reciever do the entry - i cant see the page or section".
+  receive:  ['admin', 'founder', 'head', 'store_manager', 'engineer'],
   stock:    ['admin', 'founder', 'head', 'backoffice', 'store_manager', 'engineer'],
   reports:  ['admin', 'founder', 'head', 'backoffice'],
   masters:  ['admin', 'founder', 'head'],
@@ -88,7 +98,7 @@ const TAB_ROLES: Record<StoreTab, readonly string[]> = {
 
 /** Reading order, which is also the order of the nav. */
 export const STORE_TABS: readonly StoreTab[] =
-  ['overview', 'gate', 'requests', 'stock', 'reports', 'masters']
+  ['overview', 'gate', 'requests', 'issue', 'receive', 'stock', 'reports', 'masters']
 
 /**
  * What this JOB needs, before asking whether the section is open yet.
@@ -136,6 +146,8 @@ export const STORE_TAB_LABEL: Record<StoreTab, string> = {
   overview: 'Overview',
   gate: 'Gate register',
   requests: 'Requests',
+  issue: 'To issue',
+  receive: 'Received at site',
   stock: 'Stock',
   reports: 'Reports',
   masters: 'Masters',

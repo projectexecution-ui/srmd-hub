@@ -542,6 +542,8 @@ export async function confirmReceipt(input: {
   entryId: string
   toLocationId?: string | null
   note?: string
+  /** Who actually took delivery, when it was not the person signing. */
+  receivedBy?: string
 }): Promise<Result> {
   const profile = await me()
   const supabase = await createClient()
@@ -559,9 +561,12 @@ export async function confirmReceipt(input: {
     .update({
       receiver_signed_by: profile.id,
       receiver_signed_at: new Date().toISOString(),
-      handed_over_to: profile.full_name ?? profile.email,
+      handed_over_to: input.receivedBy?.trim() || profile.full_name || profile.email,
       to_location_id: input.toLocationId || null,
-      remarks: input.note?.trim() || null,
+      // Only WRITE a note when one was typed. Setting it unconditionally
+      // wiped whatever the storekeeper had put in remarks at issue time —
+      // signing for a delivery should not delete what was said about it.
+      ...(input.note?.trim() ? { remarks: input.note.trim() } : {}),
       stage: 'closed',
     })
     .eq('id', input.entryId)
