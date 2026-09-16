@@ -38,7 +38,7 @@ export function RequestsClient({
   scopeNote?: string | null
 }) {
   const router = useRouter()
-  const rows: StockRow[] = stock.map(s => ({ ...s, lastRate: null }))
+  const rows: StockRow[] = stock.map(s => ({ ...s, lastRate: null, lastMovedAt: null }))
 
   return (
     <div className="space-y-6">

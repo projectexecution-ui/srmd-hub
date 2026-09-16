@@ -1,15 +1,13 @@
-import Link from 'next/link'
 import {
   loadStock, loadItems, loadLists, storableLocations, locationLabel, loadMyProjectIds, listsOf,
 } from '@/lib/stores/queries'
 import { getMyProfile } from '@/lib/auth'
-import {
-  fmtQty, stockScopeFor, visibleLocationIds, emptyScopeReason,
-} from '@/lib/stores/core'
-import { formatINR } from '@/lib/utils'
-import { Section, Empty, Scroller, th, thNum, td, tdNum } from '../ui'
+import { stockScopeFor, visibleLocationIds, emptyScopeReason } from '@/lib/stores/core'
+import { stockLines } from '@/lib/stores/desk'
+import { formatDate } from '@/lib/utils'
+import { Section, Empty } from '../ui'
 import { OpeningStockForm } from './OpeningStockForm'
-import { ByStore, type StoreGroup } from './ByStore'
+import { StockClient } from './StockClient'
 import { guardStoreTab } from '../guard'
 
 export const dynamic = 'force-dynamic'
@@ -27,15 +25,18 @@ export const dynamic = 'force-dynamic'
  * for eleven sites; hiding ten of them would stop them working. An engineer is
  * asking for their own site and has no business browsing another project's
  * shelves.
+ *
+ * The ARRANGING — search, the discipline groups, the two views, the export —
+ * all lives in StockClient and lib/stores/desk.ts. This page reads, scopes,
+ * and hands over.
  */
 export default async function StockPage({
   searchParams,
-}: { searchParams: Promise<{ asOn?: string; by?: string }> }) {
+}: { searchParams: Promise<{ asOn?: string }> }) {
   const blocked = await guardStoreTab('stock')
   if (blocked) return blocked
 
-  const { asOn, by } = await searchParams
-  const byStore = by === 'store'
+  const { asOn } = await searchParams
   const valid = asOn && /^\d{4}-\d{2}-\d{2}$/.test(asOn) ? asOn : undefined
 
   const profile = await getMyProfile()
@@ -44,65 +45,37 @@ export default async function StockPage({
 
   const [stock, items, lists] = await Promise.all([loadStock(valid), loadItems(), loadLists()])
   const byItem = new Map(items.map(i => [i.id, i]))
-  const allPlaces = storableLocations(lists)
+  const locationRows = listsOf(lists, 'location')
+  const byLocation = new Map(locationRows.map(l => [l.id, l]))
+  const disciplineName = new Map(listsOf(lists, 'discipline').map(d => [d.id, d.name]))
 
   const allowed = new Set(visibleLocationIds(
     scope,
-    listsOf(lists, 'location').map(l => ({ id: l.id, parentId: l.parentId, projectId: l.projectId })),
+    locationRows.map(l => ({ id: l.id, parentId: l.parentId, projectId: l.projectId })),
   ))
-  const places = allPlaces.filter(l => allowed.has(l.id))
+  const places = storableLocations(lists).filter(l => allowed.has(l.id))
   const scopeNote = emptyScopeReason(scope, places.length)
 
-  const rows = stock
-    .filter(s => scope.kind === 'all' || (s.locationId != null && allowed.has(s.locationId)))
-    .map(s => ({
-      ...s,
-      name: byItem.get(s.itemId)?.name ?? 'Unknown item',
-      unit: byItem.get(s.itemId)?.unit ?? '',
-      where: locationLabel(lists, s.locationId) ?? 'Not placed',
-    }))
-    .sort((a, b) => a.name.localeCompare(b.name) || a.where.localeCompare(b.where))
-
-  const value = rows.reduce((s, r) => s + (r.lastRate ?? 0) * r.qty, 0)
-
-  // The same fold, grouped by the place instead of the item — so the two
-  // views can never disagree about a quantity.
-  const placeById = new Map(listsOf(lists, 'location').map(l => [l.id, l]))
-  const groups: StoreGroup[] = (() => {
-    const by = new Map<string, StoreGroup>()
-    for (const r of rows) {
-      if (r.qty <= 0 || !r.locationId) continue
-      const spot = placeById.get(r.locationId)
-      const spotName = spot?.name ?? 'Unnamed place'
-      const siteName = spot?.parentName ?? spotName
-      const g = by.get(r.locationId) ?? {
-        siteName, spotName, label: r.where,
-        items: [], totalItems: 0, totalValue: 0, hasUnpriced: false,
-      }
-      const v = r.lastRate == null ? null : r.lastRate * r.qty
-      g.items.push({ name: r.name, unit: r.unit, qty: r.qty, value: v })
-      g.totalItems += 1
-      g.totalValue += v ?? 0
-      if (v == null) g.hasUnpriced = true
-      by.set(r.locationId, g)
-    }
-    return [...by.values()]
-      .map(g => ({ ...g, items: g.items.sort((a, b) => a.name.localeCompare(b.name)) }))
-      .sort((a, b) => a.siteName.localeCompare(b.siteName) || a.spotName.localeCompare(b.spotName))
-  })()
-
-  const tab = (key: string) =>
-    `rounded-lg px-3 py-2 text-[12.5px] font-semibold min-h-[44px] inline-flex items-center ${
-      (key === 'store') === byStore
-        ? 'bg-indigo-700 text-white'
-        : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
-    }`
+  const lines = stockLines(
+    stock.filter(s => scope.kind === 'all' || (s.locationId != null && allowed.has(s.locationId))),
+    {
+      name: id => byItem.get(id)?.name ?? 'Unknown item',
+      unit: id => byItem.get(id)?.unit ?? '',
+      discipline: id => disciplineName.get(byItem.get(id)?.disciplineId ?? '') ?? null,
+      where: id => locationLabel(lists, id) ?? 'Not placed',
+      // The site a spot hangs off, for the store view's bands. A spot with no
+      // parent IS its own site — some places are a single shed.
+      site: id => (id ? byLocation.get(id)?.parentName ?? byLocation.get(id)?.name ?? 'Not placed' : 'Not placed'),
+    },
+  )
 
   return (
     <div className="space-y-6">
       <Section
         title="Stock"
-        note={valid ? `As on ${valid} — the same fold, stopped earlier` : 'Right now, folded from every movement'}
+        note={valid
+          ? `As on ${formatDate(valid)} — the same fold, stopped earlier`
+          : 'Right now, folded from every movement'}
         right={
           <form className="flex items-end gap-2" action="/stores/stock">
             <label className="block">
@@ -116,7 +89,7 @@ export default async function StockPage({
           </form>
         }
       >
-        {rows.length === 0 ? (
+        {lines.length === 0 ? (
           <Empty
             // A scoped reader seeing nothing is a different fact from an empty
             // store, and telling them the store is empty would be a lie.
@@ -125,61 +98,12 @@ export default async function StockPage({
               ?? 'Stock arrives two ways: through the gate, or as an opening balance below. Until there is some, nothing can be issued — an item can only be picked from stock.'}
           />
         ) : (
-          <>
-            {/* Two ways to read the same fold: "where is the cement" and
-                "what is in the NGH B store". Aksha, 16 Sep 2026: "Stock as per
-                Warehouse location is not showing". */}
-            <div className="flex flex-wrap gap-1.5 mb-3">
-              <Link href={valid ? `/stores/stock?asOn=${valid}` : '/stores/stock'} className={tab('item')}>
-                By item
-              </Link>
-              <Link
-                href={valid ? `/stores/stock?asOn=${valid}&by=store` : '/stores/stock?by=store'}
-                className={tab('store')}
-              >
-                By store
-              </Link>
-            </div>
-
-            {byStore ? <ByStore groups={groups} /> : (
-            <Scroller min={680}>
-              <table className="w-full border-collapse">
-                <thead>
-                  <tr>
-                    <th className={th}>Item</th>
-                    <th className={th}>Where</th>
-                    <th className={thNum}>In hand</th>
-                    <th className={th}>Unit</th>
-                    <th className={thNum}>Last rate</th>
-                    <th className={thNum}>Value</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map(r => (
-                    <tr key={`${r.itemId}-${r.locationId}`} className={r.qty <= 0 ? 'opacity-55' : ''}>
-                      <td className={td}>{r.name}</td>
-                      <td className={td}>{r.where}</td>
-                      <td className={`${tdNum} font-semibold ${r.qty < 0 ? 'text-rose-700' : ''}`}>{fmtQty(r.qty)}</td>
-                      <td className={td}>{r.unit}</td>
-                      <td className={tdNum}>{r.lastRate == null ? '—' : formatINR(r.lastRate)}</td>
-                      <td className={tdNum}>{r.lastRate == null ? '—' : formatINR(r.lastRate * r.qty)}</td>
-                    </tr>
-                  ))}
-                  <tr className="bg-gray-50">
-                    <td className={`${td} font-bold`} colSpan={5}>Value of what we hold</td>
-                    <td className={`${tdNum} font-bold`}>{formatINR(value)}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </Scroller>
-            )}
-            {rows.some(r => r.qty < 0) && (
-              <p className="text-[12px] text-rose-800 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">
-                A negative balance means more went out than ever came in — usually an opening quantity that was
-                never set. It is shown rather than hidden, because hiding it is how a store stops being believed.
-              </p>
-            )}
-          </>
+          <StockClient
+            lines={lines}
+            places={places.map(l => ({ id: l.id, label: locationLabel(lists, l.id) ?? l.name }))}
+            period={valid ? `As on ${formatDate(valid)}` : 'Right now'}
+            scopeNote={scope.kind === 'all' ? null : 'Your own projects only'}
+          />
         )}
       </Section>
 

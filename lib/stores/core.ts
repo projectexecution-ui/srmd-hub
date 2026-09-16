@@ -205,6 +205,15 @@ export interface StockRow {
   qty: number
   /** Last rate seen on an inbound movement — what it cost, not an average. */
   lastRate: number | null
+  /**
+   * When this shelf last changed. Folded here rather than queried separately,
+   * because a "last moved" read off a different query can disagree with the
+   * balance beside it — and a stock screen whose two columns disagree is one
+   * nobody checks twice.
+   *
+   * Null only for a row folded from nothing, which cannot happen today.
+   */
+  lastMovedAt: string | null
 }
 
 const key = (itemId: string, locationId: string | null) => `${itemId}::${locationId ?? ''}`
@@ -225,9 +234,12 @@ export function foldStock(movements: readonly Movement[], asOn?: string): StockR
   for (const m of ordered) {
     if (new Date(m.movedAt).getTime() > cut) continue
     const k = key(m.itemId, m.locationId)
-    const row = by.get(k) ?? { itemId: m.itemId, locationId: m.locationId, qty: 0, lastRate: null }
+    const row = by.get(k)
+      ?? { itemId: m.itemId, locationId: m.locationId, qty: 0, lastRate: null, lastMovedAt: null }
     row.qty += m.qty
     if (m.qty > 0 && m.rate != null) row.lastRate = m.rate
+    // `ordered` is sorted oldest first, so the last one seen is the latest.
+    row.lastMovedAt = m.movedAt
     by.set(k, row)
   }
   // A line that went in and fully out leaves a zero row. Keep it — "we hold

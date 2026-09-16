@@ -292,6 +292,9 @@ export interface StockLine {
   locationId: string | null
   /** "CT Warehouse (Yunus) → Stock" */
   where: string
+  /** The two halves of `where`, so the store view can band by site. */
+  site: string
+  spot: string
   qty: number
   lastRate: number | null
   /** qty × rate, or null when there is no rate — never a silent zero. */
@@ -356,6 +359,46 @@ export function groupStockByDiscipline(rows: readonly StockLine[]): StockGroup[]
 }
 
 export const NO_DISCIPLINE = 'No discipline'
+
+export interface StoreGroup {
+  site: string
+  spot: string
+  label: string
+  rows: StockLine[]
+  items: number
+  value: number
+  unpriced: boolean
+}
+
+/**
+ * The same lines grouped by the PLACE instead of the item.
+ *
+ * The item view answers "where is the cement"; this answers "what is in the
+ * NGH B store", which is the question asked by somebody standing in one — at a
+ * stock count, or when deciding whether a request can be met from there. The
+ * map asks for it too, under Total Stock Reports: "Storage Location Wise".
+ *
+ * Both views are built from ONE filtered list, so a search narrows them
+ * identically and the two can never disagree about a quantity.
+ */
+export function groupStockByStore(rows: readonly StockLine[]): StoreGroup[] {
+  const by = new Map<string, StockLine[]>()
+  for (const r of rows) {
+    if (r.qty <= 0 || !r.locationId) continue
+    by.set(r.locationId, [...(by.get(r.locationId) ?? []), r])
+  }
+  return [...by.values()]
+    .map(rs => ({
+      site: rs[0].site,
+      spot: rs[0].spot,
+      label: rs[0].where,
+      rows: [...rs].sort((a, b) => a.name.localeCompare(b.name)),
+      items: new Set(rs.map(r => r.itemId)).size,
+      value: rs.reduce((s, r) => s + (r.value ?? 0), 0),
+      unpriced: rs.some(r => r.value == null),
+    }))
+    .sort((a, b) => a.site.localeCompare(b.site) || a.spot.localeCompare(b.spot))
+}
 
 /** What the whole list is worth, and whether that figure can be trusted. */
 export function stockWorth(rows: readonly StockLine[]): { value: number; unpriced: number } {
@@ -422,19 +465,28 @@ export function stockLines(
     unit: (itemId: string) => string
     discipline: (itemId: string) => string | null
     where: (locationId: string | null) => string
-    lastMovedAt?: (itemId: string, locationId: string | null) => string | null
+    /** The site a spot sits in, for the store view's bands. */
+    site?: (locationId: string | null) => string
   },
 ): StockLine[] {
-  return stock.map(s => ({
-    itemId: s.itemId,
-    name: look.name(s.itemId),
-    unit: look.unit(s.itemId),
-    locationId: s.locationId,
-    where: look.where(s.locationId),
-    qty: s.qty,
-    lastRate: s.lastRate,
-    value: s.lastRate == null ? null : s.lastRate * s.qty,
-    discipline: look.discipline(s.itemId),
-    lastMovedAt: look.lastMovedAt?.(s.itemId, s.locationId) ?? null,
-  }))
+  return stock.map(s => {
+    const where = look.where(s.locationId)
+    const site = look.site?.(s.locationId) ?? where
+    return {
+      itemId: s.itemId,
+      name: look.name(s.itemId),
+      unit: look.unit(s.itemId),
+      locationId: s.locationId,
+      where,
+      site,
+      // "CT Warehouse (Yunus) → Stock" minus its site is "Stock". Four places
+      // are called that, which is why the spot is never shown on its own.
+      spot: where.startsWith(`${site} → `) ? where.slice(site.length + 3) : where,
+      qty: s.qty,
+      lastRate: s.lastRate,
+      value: s.lastRate == null ? null : s.lastRate * s.qty,
+      discipline: look.discipline(s.itemId),
+      lastMovedAt: s.lastMovedAt,
+    }
+  })
 }

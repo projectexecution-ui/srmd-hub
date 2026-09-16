@@ -8,7 +8,7 @@ import type { RegisterSpec, RegisterFilter, RegisterRow } from './registers'
 import {
   groupProjects, isServiceScope, approversForRequest, type ProjectOpt, type ApproverKey,
 } from './core'
-import { duplicateNameGroups, type HealthInput } from './desk'
+import { duplicateNameGroups, type HealthInput, type ItemMove } from './desk'
 import { loadAliasMap, resolveAlias } from '@/lib/aliases'
 export type { ProjectOpt }
 
@@ -1268,4 +1268,98 @@ export async function loadAssignablePeople(): Promise<Array<{ id: string; name: 
     name: (r.full_name as string) || (r.email as string) || 'Someone',
     role: (r.role as string) ?? '',
   }))
+}
+
+/* ── One item's whole history ───────────────────────────────────────────── */
+
+export interface ItemCard {
+  id: string
+  name: string
+  unit: string
+  discipline: string | null
+  lastRate: number | null
+  in4MaterialId: number | null
+  isActive: boolean
+  /** Where it sits right now, and how much is on each shelf. */
+  at: Array<{ locationId: string | null; label: string; qty: number; value: number | null }>
+}
+
+/**
+ * A bin card — the oldest tool in a store, and the one that makes people
+ * believe the book.
+ *
+ * Aksha, 16 Sep 2026: "Item card". "Where did the 140 SqFt go?" had no answer
+ * without opening entries one by one. Every movement of one item, with the
+ * entry it came from, who did it and where it went.
+ *
+ * Read from the SAME ledger the stock screen folds, so the balance at the top
+ * of the card is the number on the stock page by construction.
+ */
+export async function loadItemCard(itemId: string): Promise<{ item: ItemCard; moves: ItemMove[] } | null> {
+  const supabase = await createClient()
+
+  const { data: row } = await supabase
+    .from('mio_items')
+    .select('id, name, unit, in4_material_id, last_rate, is_active, discipline:discipline_id ( name )')
+    .eq('id', itemId)
+    .maybeSingle()
+  if (!row) return null
+
+  const [{ data: moves }, lists, stock] = await Promise.all([
+    supabase
+      .from('mio_movements')
+      .select(`id, kind, qty, rate, moved_at, location_id, note, entry_id,
+               entry:entry_id ( no, party_name, handed_over_to ),
+               project:project_id ( name ),
+               creator:created_by ( full_name )`)
+      .eq('item_id', itemId)
+      .order('moved_at'),
+    loadLists(),
+    loadStock(),
+  ])
+
+  const mine = stock.filter(s => s.itemId === itemId)
+  const discipline = (one(row.discipline) as { name?: string } | null)?.name ?? null
+
+  return {
+    item: {
+      id: row.id as string,
+      name: (row.name as string) ?? '',
+      unit: (row.unit as string) ?? '',
+      discipline,
+      lastRate: row.last_rate == null ? null : num(row.last_rate),
+      in4MaterialId: (row.in4_material_id as number | null) ?? null,
+      isActive: row.is_active !== false,
+      at: mine
+        .filter(s => s.qty !== 0)
+        .map(s => ({
+          locationId: s.locationId,
+          label: locationLabel(lists, s.locationId) ?? 'Not placed',
+          qty: s.qty,
+          value: s.lastRate == null ? null : s.lastRate * s.qty,
+        }))
+        .sort((a, b) => b.qty - a.qty || a.label.localeCompare(b.label)),
+    },
+    moves: (moves ?? []).map(m => {
+      const entry = one(m.entry) as { no?: string; party_name?: string; handed_over_to?: string } | null
+      const project = one(m.project) as { name?: string } | null
+      const creator = one(m.creator) as { full_name?: string } | null
+      return {
+        id: m.id as string,
+        kind: m.kind as ItemMove['kind'],
+        qty: num(m.qty),
+        rate: m.rate == null ? null : num(m.rate),
+        movedAt: m.moved_at as string,
+        entryId: (m.entry_id as string | null) ?? null,
+        entryNo: entry?.no ?? null,
+        // An IN names who brought it; an OUT names who took it. Both are "the
+        // other party", which is the column a bin card has always had.
+        party: entry?.party_name ?? entry?.handed_over_to ?? null,
+        project: project?.name ?? null,
+        place: locationLabel(lists, (m.location_id as string | null) ?? null),
+        who: creator?.full_name ?? null,
+        note: (m.note as string | null) ?? null,
+      }
+    }),
+  }
 }

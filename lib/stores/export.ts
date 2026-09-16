@@ -12,7 +12,8 @@
  */
 import { fmtQty } from './core'
 import { qtyLine, type RegisterGroup, type RegisterTotals } from './registers'
-import { formatINR } from '@/lib/utils'
+import type { StockLine } from './desk'
+import { formatINR, formatDate } from '@/lib/utils'
 
 export interface ExportSpec {
   title: string
@@ -173,6 +174,157 @@ async function toPdf(spec: ExportSpec) {
   }
   doc.setFont('helvetica', 'normal').setFontSize(7).setTextColor(130)
   doc.text('Quantities are totalled within each unit, never across.', 32, y + (spec.grand.amountPartial && money ? 36 : 24))
+
+  doc.save(fileName(spec.title, 'pdf'))
+}
+
+/* ── Stock — the map's fifth report, on paper ───────────────────────────── */
+
+export interface StockExportGroup {
+  label: string
+  rows: readonly StockLine[]
+  items: number
+  value: number
+  unpriced: boolean
+}
+
+export interface StockExportSpec {
+  /** "Stock by item" or "Stock by store" — whichever is on screen. */
+  title: string
+  /** "As on 31 Aug 2026" or "Right now" — never blank. */
+  period: string
+  /** What was searched or filtered, so the page says what it is a page OF. */
+  notes: string[]
+  groups: StockExportGroup[]
+  grand: { lines: number; items: number; value: number; unpriced: boolean }
+}
+
+const STOCK_HEADERS = ['Item', 'Where', 'In hand', 'Unit', 'Last rate', 'Value', 'Last moved']
+
+/**
+ * The map lists Total Stock among its five reports — "Select Period · Select
+ * Disciplines · Storage Location Wise" — and it was the one that existed only
+ * as a screen. Aksha, 16 Sep 2026: a stock statement is the thing the HOD asks
+ * to hold.
+ *
+ * Built from the SAME grouped rows the screen renders, for the same reason the
+ * register export is: a column added to one cannot go missing from the other.
+ */
+export async function exportStock(as: 'xlsx' | 'pdf', spec: StockExportSpec): Promise<void> {
+  if (as === 'xlsx') return stockToExcel(spec)
+  return stockToPdf(spec)
+}
+
+const when = (at: string | null) => (at ? formatDate(at) : '—')
+
+async function stockToExcel(spec: StockExportSpec) {
+  const XLSX = await import('xlsx')
+  const rows: Array<Array<string | number | null>> = []
+
+  rows.push([spec.title])
+  rows.push([spec.period])
+  if (spec.notes.length) rows.push([spec.notes.join(' · ')])
+  rows.push([])
+  rows.push(STOCK_HEADERS)
+
+  for (const g of spec.groups) {
+    rows.push([g.label])
+    for (const r of g.rows) {
+      // Raw numbers, so the column can still be added up — which is the only
+      // reason anybody asks for Excel rather than the PDF.
+      rows.push([r.name, r.where, r.qty, r.unit, r.lastRate, r.value, when(r.lastMovedAt)])
+    }
+    rows.push([`${g.label} — ${g.items} item${g.items === 1 ? '' : 's'}`, '', '', '', '', g.value, ''])
+    rows.push([])
+  }
+
+  rows.push([`TOTAL — ${spec.grand.items} items · ${spec.grand.lines} lines`, '', '', '', '', spec.grand.value, ''])
+  if (spec.grand.unpriced) {
+    rows.push([])
+    rows.push(['The ₹ total is understated — some lines have no known rate.'])
+  }
+
+  const ws = XLSX.utils.aoa_to_sheet(rows)
+  ws['!cols'] = [{ wch: 46 }, { wch: 30 }, { wch: 12 }, { wch: 8 }, { wch: 12 }, { wch: 14 }, { wch: 13 }]
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, spec.title.slice(0, 31))
+  XLSX.writeFile(wb, fileName(spec.title, 'xlsx'))
+}
+
+async function stockToPdf(spec: StockExportSpec) {
+  const { jsPDF } = await import('jspdf')
+  const autoTable = (await import('jspdf-autotable')).default
+
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' })
+  const W = doc.internal.pageSize.getWidth()
+
+  doc.setFillColor(...NAVY)
+  doc.rect(0, 0, W, 54, 'F')
+  doc.setTextColor(255).setFont('helvetica', 'bold').setFontSize(15)
+  doc.text(spec.title.toUpperCase(), 32, 24)
+  doc.setFont('helvetica', 'normal').setFontSize(9)
+  doc.text(spec.period, 32, 40)
+  if (spec.notes.length) doc.text(spec.notes.join('   ·   '), W - 32, 40, { align: 'right' })
+
+  const body: Array<Array<string>> = []
+  for (const g of spec.groups) {
+    body.push([`__GROUP__${g.label}`, `${g.items} item${g.items === 1 ? '' : 's'}`, '', '', '',
+      g.value > 0 ? formatINR(g.value) + (g.unpriced ? ' *' : '') : '—', ''])
+    for (const r of g.rows) {
+      body.push([r.name, r.where, fmtQty(r.qty), r.unit,
+        r.lastRate == null ? '—' : formatINR(r.lastRate),
+        r.value == null ? '—' : formatINR(r.value),
+        when(r.lastMovedAt)])
+    }
+  }
+
+  autoTable(doc, {
+    startY: 68,
+    head: [STOCK_HEADERS],
+    body,
+    theme: 'grid',
+    styles: { fontSize: 7.5, cellPadding: 3, overflow: 'linebreak', textColor: [30, 35, 45] },
+    headStyles: { fillColor: NAVY, textColor: 255, fontStyle: 'bold', fontSize: 7.5 },
+    alternateRowStyles: { fillColor: [252, 252, 253] },
+    columnStyles: {
+      0: { cellWidth: 250 }, 1: { cellWidth: 150 },
+      2: { halign: 'right', cellWidth: 60 }, 3: { cellWidth: 40 },
+      4: { halign: 'right', cellWidth: 60 }, 5: { halign: 'right', cellWidth: 74 },
+      6: { cellWidth: 62 },
+    },
+    didParseCell: (d) => {
+      const raw = d.row.raw as unknown as Array<string> | undefined
+      const first = String(raw?.[0] ?? '')
+      if (first.startsWith('__GROUP__')) {
+        d.cell.styles.fillColor = PAPER
+        d.cell.styles.fontStyle = 'bold'
+        d.cell.styles.fontSize = 8
+        if (d.column.index === 0) d.cell.text = [first.replace('__GROUP__', '')]
+      }
+    },
+    didDrawPage: () => {
+      const h = doc.internal.pageSize.getHeight()
+      doc.setFontSize(7).setTextColor(130)
+      doc.text(`CT Hub · Material In & Out · printed ${stamp()}`, 32, h - 16)
+      doc.text(`Page ${doc.getNumberOfPages()}`, W - 32, h - 16, { align: 'right' })
+    },
+  })
+
+  const y = ((doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? 68) + 14
+  doc.setFillColor(...NAVY)
+  doc.rect(32, y - 11, W - 64, 20, 'F')
+  doc.setTextColor(255).setFont('helvetica', 'bold').setFontSize(9)
+  doc.text(`TOTAL — ${spec.grand.items} items · ${spec.grand.lines} lines`, 40, y + 2)
+  doc.text(spec.grand.value > 0 ? formatINR(spec.grand.value) : '—', W - 40, y + 2, { align: 'right' })
+
+  if (spec.grand.unpriced) {
+    doc.setFont('helvetica', 'normal').setFontSize(7.5).setTextColor(150, 80, 20)
+    doc.text('* The ₹ total is understated — some lines have no known rate. Odoo carried none.',
+      32, y + 24)
+  }
+  doc.setFont('helvetica', 'normal').setFontSize(7).setTextColor(130)
+  doc.text('Folded from every movement in the register — the same figure the screen shows.',
+    32, y + (spec.grand.unpriced ? 36 : 24))
 
   doc.save(fileName(spec.title, 'pdf'))
 }

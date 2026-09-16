@@ -455,7 +455,7 @@ describe('isServiceScope — what never takes a delivery', () => {
 
 describe('bestIssueLocation — which store to issue out of', () => {
   const s = (itemId: string, locationId: string, qty: number): StockRow =>
-    ({ itemId, locationId, qty, lastRate: null })
+    ({ itemId, locationId, qty, lastRate: null, lastMovedAt: null })
 
   const STOCK = [
     s('tile-a', 'yunus', 0),
@@ -763,5 +763,41 @@ describe('who sees which screen', () => {
       }
       expect(visibleStoreTabs('admin')).toHaveLength(6)
     }
+  })
+})
+
+describe('the fold remembers when a shelf last changed', () => {
+  it('carries the latest movement, not the first', () => {
+    const rows = foldStock([
+      mv({ itemId: 'i1', qty: 320, movedAt: '2026-08-26T00:00:00.000Z', kind: 'opening' }),
+      mv({ itemId: 'i1', qty: -10, movedAt: '2026-09-11T11:55:00.000Z' }),
+    ])
+    expect(rows[0].lastMovedAt).toBe('2026-09-11T11:55:00.000Z')
+  })
+
+  it('does not depend on the order the rows came back in', () => {
+    const rows = foldStock([
+      mv({ itemId: 'i1', qty: -10, movedAt: '2026-09-11T11:55:00.000Z' }),
+      mv({ itemId: 'i1', qty: 320, movedAt: '2026-08-26T00:00:00.000Z', kind: 'opening' }),
+    ])
+    expect(rows[0].lastMovedAt).toBe('2026-09-11T11:55:00.000Z')
+  })
+
+  it('stops where the "as on" figure stops, so the date matches the balance', () => {
+    const rows = foldStock([
+      mv({ itemId: 'i1', qty: 320, movedAt: '2026-08-26T00:00:00.000Z', kind: 'opening' }),
+      mv({ itemId: 'i1', qty: -10, movedAt: '2026-09-11T11:55:00.000Z' }),
+    ], '2026-09-01')
+    expect(rows[0].qty).toBe(320)
+    expect(rows[0].lastMovedAt).toBe('2026-08-26T00:00:00.000Z')
+  })
+
+  it('keeps each shelf’s own date, not the item’s', () => {
+    const rows = foldStock([
+      mv({ itemId: 'i1', locationId: 'L1', qty: 100, movedAt: '2026-08-01T00:00:00.000Z' }),
+      mv({ itemId: 'i1', locationId: 'L2', qty: 50, movedAt: '2026-09-14T00:00:00.000Z' }),
+    ])
+    expect(rows.find(r => r.locationId === 'L1')?.lastMovedAt).toBe('2026-08-01T00:00:00.000Z')
+    expect(rows.find(r => r.locationId === 'L2')?.lastMovedAt).toBe('2026-09-14T00:00:00.000Z')
   })
 })

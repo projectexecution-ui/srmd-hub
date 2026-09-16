@@ -2,14 +2,15 @@ import { describe, it, expect } from 'vitest'
 import {
   istDay, daysSince, daysOverdue, waitedFor, overdueWord, mostUrgent,
   setupHealth, duplicateNameGroups, checkReceipt, overReceiptNote,
-  searchStock, groupStockByDiscipline, stockWorth, itemHistory, moveWord,
+  searchStock, groupStockByDiscipline, groupStockByStore, stockWorth, itemHistory, moveWord,
   stockLines, NO_DISCIPLINE, type StockLine, type Waiting, type ItemMove,
 } from './desk'
 
 const NOW = new Date('2026-09-16T07:30:00.000Z') // 13:00 IST
 
 const line = (o: Partial<StockLine> & { itemId: string; name: string }): StockLine => ({
-  unit: 'Nos', locationId: 'L1', where: 'CT Warehouse (Yunus) → Stock', qty: 10,
+  unit: 'Nos', locationId: 'L1', where: 'CT Warehouse (Yunus) → Stock',
+  site: 'CT Warehouse (Yunus)', spot: 'Stock', qty: 10,
   lastRate: null, value: null, discipline: 'Plumbing', lastMovedAt: null, ...o,
 })
 
@@ -280,10 +281,10 @@ describe('the stock list', () => {
 
   it('builds its lines from the fold, so nothing is rounded twice', () => {
     const built = stockLines(
-      [{ itemId: 'a', locationId: 'L1', qty: 381, lastRate: 98.04 }],
+      [{ itemId: 'a', locationId: 'L1', qty: 381, lastRate: 98.04, lastMovedAt: '2026-08-26T00:00:00.000Z' }],
       {
         name: () => '110mm PVC TEE', unit: () => 'Units', discipline: () => 'Plumbing',
-        where: () => 'NGH A → Stock', lastMovedAt: () => '2026-08-26T00:00:00.000Z',
+        where: () => 'NGH A → Stock', site: () => 'NGH A',
       },
     )
     expect(built[0].value).toBeCloseTo(98.04 * 381, 6)
@@ -291,7 +292,7 @@ describe('the stock list', () => {
   })
 
   it('leaves value null, not zero, when the fold found no rate', () => {
-    const built = stockLines([{ itemId: 'a', locationId: null, qty: 5, lastRate: null }], {
+    const built = stockLines([{ itemId: 'a', locationId: null, qty: 5, lastRate: null, lastMovedAt: null }], {
       name: () => 'X', unit: () => 'Nos', discipline: () => null, where: () => 'Not placed',
     })
     expect(built[0].value).toBeNull()
@@ -340,5 +341,54 @@ describe('one item’s history', () => {
 
   it('is empty, not broken, for an item that has never moved', () => {
     expect(itemHistory([])).toEqual([])
+  })
+})
+
+describe('the same lines, grouped by the place they are in', () => {
+  const at = (itemId: string, name: string, locationId: string, where: string, qty: number, value: number | null = null) =>
+    line({
+      itemId, name, locationId, where, qty, value,
+      site: where.split(' → ')[0], spot: where.split(' → ')[1] ?? where,
+    })
+
+  const rows = [
+    at('a', 'Roff Extrofix', 'L1', 'CT Warehouse (Yunus) → Container 1', 320, 243_200),
+    at('b', 'PVC TEE', 'L1', 'CT Warehouse (Yunus) → Container 1', 40),
+    at('a', 'Roff Extrofix', 'L2', 'CT Warehouse (Yunus) → Stock', 10, 7_600),
+    at('c', 'Simero Ferro White', 'L3', 'NGH B → Warehouse-NGH', 4_774, 250_635),
+  ]
+
+  it('gives one group per place, not per site', () => {
+    expect(groupStockByStore(rows).map(g => g.label)).toEqual([
+      'CT Warehouse (Yunus) → Container 1',
+      'CT Warehouse (Yunus) → Stock',
+      'NGH B → Warehouse-NGH',
+    ])
+  })
+
+  it('bands by site, in the order a person says the place', () => {
+    expect(groupStockByStore(rows).map(g => g.site)).toEqual([
+      'CT Warehouse (Yunus)', 'CT Warehouse (Yunus)', 'NGH B',
+    ])
+    expect(groupStockByStore(rows)[0].spot).toBe('Container 1')
+  })
+
+  it('leaves out what is not there — a zero balance is not in a store', () => {
+    const withZero = [...rows, at('d', 'Gone', 'L1', 'CT Warehouse (Yunus) → Container 1', 0)]
+    expect(groupStockByStore(withZero).find(g => g.label.endsWith('Container 1'))?.rows).toHaveLength(2)
+  })
+
+  it('says a place’s value understates when something in it has no rate', () => {
+    const g = groupStockByStore(rows)
+    expect(g[0].unpriced).toBe(true)
+    expect(g[2].unpriced).toBe(false)
+    expect(g[2].value).toBe(250_635)
+  })
+
+  it('agrees with the item view about every quantity, because it is the same list', () => {
+    const byItem = groupStockByDiscipline(rows).flatMap(g => g.rows)
+    const byStore = groupStockByStore(rows).flatMap(g => g.rows)
+    const total = (rs: typeof rows) => rs.reduce((s, r) => s + r.qty, 0)
+    expect(total(byStore)).toBe(total(byItem.filter(r => r.qty > 0 && r.locationId)))
   })
 })
