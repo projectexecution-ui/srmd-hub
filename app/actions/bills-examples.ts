@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
-import { requireBillsWrite } from '@/lib/bills-booking/access'
+import { requireBillsAdmin } from '@/lib/bills-booking/access'
 import { loadPickList } from '@/lib/bills-booking/wo-picker'
 import { loadBookingMaps } from '@/lib/bills-booking/desks'
 import { resolveBooking } from '@/lib/bills-booking/booking'
@@ -27,7 +27,7 @@ import { EXAMPLE_PLANS, buildExamples } from '@/lib/bills-booking/examples'
  * and count the money at the same time.
  */
 export async function seedExamples(): Promise<{ ok: boolean; error?: string; made?: number; skipped?: number }> {
-  await requireBillsWrite()
+  await requireBillsAdmin()
   const supabase = await createClient()
 
   const { count } = await supabase
@@ -69,7 +69,7 @@ export async function seedExamples(): Promise<{ ok: boolean; error?: string; mad
 /** Remove every example bill, its history and its documents. One button,
  *  because "then we decide to remove" has to mean one click, not archaeology. */
 export async function clearExamples(): Promise<{ ok: boolean; error?: string; removed?: number }> {
-  await requireBillsWrite()
+  await requireBillsAdmin()
   const supabase = await createClient()
 
   const { data, error } = await supabase.rpc('bb_rpc_clear_examples')

@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { requireBillsAccess } from '@/lib/bills-booking/access'
+import { requireBillsAdmin } from '@/lib/bills-booking/access'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { loadDeskCoverage, type DeskCoverage } from '@/lib/bills-booking/desks'
@@ -21,7 +21,7 @@ export const dynamic = 'force-dynamic'
  *  Gaps sort to the top and the biggest gap sorts first, because the list is a
  *  worklist rather than a directory. */
 export default async function DesksPage() {
-  await requireBillsAccess()
+  await requireBillsAdmin()
   const supabase = await createClient()
 
   let rows: DeskCoverage[]

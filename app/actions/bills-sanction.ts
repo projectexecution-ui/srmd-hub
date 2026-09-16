@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
-import { requireBillsWrite } from '@/lib/bills-booking/access'
+import { requireBillsAdmin } from '@/lib/bills-booking/access'
 
 /**
  * Record the Atm Head's sanction on one IN4 certificate.
@@ -28,7 +28,7 @@ export async function sanctionCertificate(input: {
   certificateId: number
   note?: string | null
 }): Promise<{ ok: boolean; error?: string; amount?: number }> {
-  await requireBillsWrite()
+  await requireBillsAdmin()
   const supabase = await createClient()
 
   const { data: me } = await supabase.auth.getUser()

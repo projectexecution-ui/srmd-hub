@@ -71,9 +71,18 @@ export function WhoHolds({ desks, summary }: { desks: DeskHold[]; summary: HoldS
 
       <div className="space-y-2">
         {desks.map(d => (
-          <div key={d.stage} className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+          // The card takes the colour of its worst bill: amber past the desk's
+          // turnaround, rose past double it. Aksha, 16 Sep 2026, screen A —
+          // "who is holding things up" answered by looking, not asking.
+          <div key={d.stage} className={`overflow-hidden rounded-xl border bg-white ${
+            d.tone === 'late' ? 'border-rose-300 ring-1 ring-rose-200'
+              : d.tone === 'warn' ? 'border-amber-300'
+                : 'border-gray-200'}`}>
             {/* Who has to act, and how much is sitting with them */}
-            <div className="flex items-start gap-3 border-b border-gray-100 bg-gray-50/70 px-3 py-2">
+            <div className={`flex items-start gap-3 border-b px-3 py-2 ${
+              d.tone === 'late' ? 'border-rose-100 bg-rose-50/50'
+                : d.tone === 'warn' ? 'border-amber-100 bg-amber-50/50'
+                  : 'border-gray-100 bg-gray-50/70'}`}>
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-1.5">
                   <span className="text-[13px] font-bold text-gray-900">{d.label}</span>

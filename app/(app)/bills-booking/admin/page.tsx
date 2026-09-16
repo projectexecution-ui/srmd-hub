@@ -1,86 +1,79 @@
-import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { requireBillsAccess } from '@/lib/bills-booking/access'
+import { redirect } from 'next/navigation'
 import { PageHeader } from '@/components/PageHeader'
-import { Card } from '@/components/ui/card'
-import { Landmark } from 'lucide-react'
 import { personName } from '@/lib/utils'
-import { DeskMembersEditor, type DeskState } from './DeskMembersEditor'
+import { DeskGrid, type GridRow } from './DeskGrid'
 import { Examples } from './Examples'
 import { DESKS } from '@/lib/bills-booking/desk-list'
+import { loadDeskCoverage } from '@/lib/bills-booking/desks'
 export { DESKS }
 
 export const dynamic = 'force-dynamic'
 
-
+/** Who sits at which desk — Aksha, 16 Sep 2026, screen C: "Build it".
+ *
+ *  The old page listed each desk with a default team and per-CT-project
+ *  overrides. It could not name a Site Head for the 32 IN4 sub-projects that
+ *  have no CT Hub project — most of the money — and it showed nothing about
+ *  the Atm Head. This is one grid: every sub-project that carries a work order
+ *  down the side, every desk across the top, the Atm Head beside them, and a
+ *  suggest button that fills the blanks from what the hub already knows. */
 export default async function BillsDesksPage() {
-  await requireBillsAccess()
+  const me = await requireBillsAccess()
+  if (!me.isAdmin) redirect('/bills-booking')
   const supabase = await createClient()
 
-  const [{ data: users }, { data: projects }, { data: members }, { data: heads }] = await Promise.all([
+  const [{ data: users }, { data: members }, coverage, { data: examples }] = await Promise.all([
     supabase.from('profiles').select('id, full_name, name, email').eq('is_active', true).order('full_name'),
-    supabase.from('projects').select('id, code, name, parent_project_id').is('archived_at', null).order('code'),
-    supabase.from('bb_desk_members').select('desk, project_id, user_id'),
-    // The FK has to be named. cc_project_approvers points at profiles TWICE —
-    // user_id and assigned_by — so a bare `profiles(...)` embed is ambiguous
-    // and PostgREST refuses it rather than guessing. Same class of failure as
-    // the `vendors(name)` embed that 404'd every bill: invisible to TypeScript,
-    // invisible to the build, and invisible to any check run in SQL.
-    supabase.from('cc_project_approvers')
-      .select('user_id, profiles!cc_project_approvers_user_id_fkey(full_name, email)')
-      .eq('role', 'head'),
+    supabase.from('bb_desk_members').select('desk, project_id, in4_subproject_id, user_id'),
+    loadDeskCoverage(supabase),
+    supabase.from('bb_bills').select('id, bill_no, work').eq('is_example', true).order('bill_no'),
   ])
 
-  // The walkthrough bills, so the list below can link straight to each one.
-  const { data: examples } = await supabase
-    .from('bb_bills').select('id, bill_no, work').eq('is_example', true).order('bill_no')
-  const exampleRows = (examples ?? []).map(e => ({
-    id: e.id as string,
-    billNo: e.bill_no as string | null,
-    title: (e.work as string | null) ?? '',
-  }))
-
-  const initial: Record<string, DeskState> = {}
-  for (const d of DESKS) initial[d.key] = { global: [], overrides: {} }
+  const global: Record<string, string[]> = {}
+  const bySub = new Map<number, Record<string, string[]>>()
   for (const m of members ?? []) {
-    const st = initial[m.desk as string]
-    if (!st) continue
-    if (m.project_id == null) st.global.push(m.user_id as string)
-    else (st.overrides[m.project_id as string] ??= []).push(m.user_id as string)
+    const desk = m.desk as string
+    if (m.in4_subproject_id != null) {
+      const sid = m.in4_subproject_id as number
+      const rec = bySub.get(sid) ?? {}
+      ;(rec[desk] ??= []).push(m.user_id as string)
+      bySub.set(sid, rec)
+    } else if (m.project_id == null) {
+      (global[desk] ??= []).push(m.user_id as string)
+    }
+    // Per-CT-project overrides from the old screen are still honoured by the
+    // resolver; they are not drawn here, because the row is the sub-project.
   }
 
-  const atmNames = [...new Set((heads ?? []).map(h => {
-    const p = Array.isArray(h.profiles) ? h.profiles[0] : h.profiles
-    return (p?.full_name || p?.email || '') as string
-  }).filter(Boolean))].sort()
+  const rows: GridRow[] = coverage.map(c => ({
+    subprojectId: c.subprojectId,
+    name: c.subprojectName,
+    projectCode: c.projectName,
+    wos: c.wos,
+    members: bySub.get(c.subprojectId) ?? {},
+    atmHeadId: c.atmSource === 'desk' ? (c.atmHeads[0]?.id ?? null) : null,
+    ccHeads: c.atmSource === 'project' ? c.atmHeads.map(p => p.id) : [],
+  }))
+
+  const exampleRows = (examples ?? []).map(e => ({
+    id: e.id as string, billNo: e.bill_no as string | null, title: (e.work as string | null) ?? '',
+  }))
 
   return (
-    <div className="p-4 md:p-6 max-w-3xl mx-auto space-y-5">
-      <PageHeader title="Bills desks" back="/bills-booking"
-        subtitle="Who works each desk. Add a default team for all projects, and override per project. Any member of a desk can act." />
+    <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-5">
+      <PageHeader title="Who sits at which desk" back="/bills-booking"
+        subtitle="One grid. A blank cell is a desk nobody holds — the move gate and the notifier both read this table." />
 
-      <Examples existing={exampleRows.length} live={exampleRows} />
-
-      <DeskMembersEditor
+      <DeskGrid
+        rows={rows}
+        global={global}
+        people={(users ?? []).map(u => ({ id: u.id as string, name: personName(u.full_name as string | null, u.name as string | null, u.email as string | null) }))}
         desks={DESKS as unknown as { key: string; label: string }[]}
-        users={(users ?? []).map(u => ({ id: u.id as string, name: personName(u.full_name as string | null, u.name as string | null, u.email as string | null) }))}
-        projects={(projects ?? []).map(p => ({ id: p.id as string, code: p.code as string, name: p.name as string, parent_project_id: p.parent_project_id as string | null }))}
-        initial={initial}
       />
 
-      <Card className="p-4">
-        <div className="flex items-start gap-2.5">
-          <Landmark className="mt-0.5 h-4 w-4 shrink-0 text-indigo-600" />
-          <div>
-            <p className="text-sm font-semibold text-gray-800">Atm Heads</p>
-            <p className="mt-0.5 text-[13px] text-gray-600">
-              The Atm-approval and IN4 stages route to <b>all</b> the project&apos;s Atm Heads (any can approve) — managed in the Internal Estimate roster.
-              {atmNames.length > 0 && <> Current: {atmNames.join(', ')}.</>}
-            </p>
-            <Link href="/cost-control" className="mt-1 inline-block text-xs font-semibold text-indigo-700 hover:underline">Manage Atm Heads →</Link>
-          </div>
-        </div>
-      </Card>
+      <Examples existing={exampleRows.length} live={exampleRows} />
     </div>
   )
 }

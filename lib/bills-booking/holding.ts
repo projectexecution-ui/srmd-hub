@@ -1,4 +1,4 @@
-import { stageDef, isTerminal, daysAtStage, isOverSla, slaFor, type BbStage } from './stages'
+import { stageDef, isTerminal, daysAtStage, isOverSla, slaFor, ageTone, type AgeTone, type BbStage } from './stages'
 
 /** Who is holding which bill, and how long they have had it.
  *
@@ -75,6 +75,9 @@ export interface DeskHold {
   oldestDays: number
   /** The section's own SLA for this desk, for the "3 of 5 days" line. */
   slaDays: number | undefined
+  /** How the desk card should read at a glance: the worst age on it. Amber
+   *  past the turnaround, red past double — screen A of the 16 Sep preview. */
+  tone: AgeTone
 }
 
 export interface DeskKeyed {
@@ -116,6 +119,7 @@ export function whoHoldsWhat(
         lateCount: 0,
         oldestDays: 0,
         slaDays: slaFor(b.stage),
+        tone: 'ok',
       }
       groups.set(b.stage, g)
     } else {
@@ -138,6 +142,11 @@ export function whoHoldsWhat(
     else { g.value += b.amount; g.liveCount += 1 }
     if (late && !b.isExample) g.lateCount += 1
     if (days > g.oldestDays) g.oldestDays = days
+    // The card takes the colour of its worst bill. A desk with no SLA (Trust,
+    // Paid) stays uncoloured whatever is on it — nobody here can act there.
+    const rank: Record<AgeTone, number> = { none: 0, ok: 1, warn: 2, late: 3 }
+    const t = ageTone(b.stage, b.stageSince, now)
+    if (t !== 'none' && rank[t] > rank[g.tone]) g.tone = t
   }
 
   for (const g of groups.values()) {

@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { requireBillsAccess } from '@/lib/bills-booking/access'
+import { requireBillsAdmin } from '@/lib/bills-booking/access'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { DESKS } from '@/lib/bills-booking/desk-list'
@@ -23,7 +23,7 @@ export const dynamic = 'force-dynamic'
  *  all, because every desk was keyed on a CT Hub project.
  */
 export default async function BillsProjectPage({ params }: { params: Promise<{ sid: string }> }) {
-  await requireBillsAccess()
+  await requireBillsAdmin()
   const { sid } = await params
   const subprojectId = Number(sid)
   if (!Number.isInteger(subprojectId)) notFound()

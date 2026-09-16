@@ -118,3 +118,21 @@ export function isOverSla(stage: BbStage, since: string | null | undefined, now:
   const limit = slaFor(stage)
   return limit != null && daysAtStage(since, now) > limit
 }
+
+/** How a bill's age should read at a glance.
+ *
+ *  Aksha, 16 Sep 2026, screen A of the look-and-feel preview: the age turns
+ *  amber past the desk's turnaround and red past double it, on the row and on
+ *  the desk card alike, so "who is holding things up" is answered by looking.
+ *
+ *    ok    within the desk's SLA
+ *    warn  past it, up to twice it
+ *    late  past twice it — the one to push today
+ *    none  a desk with no SLA (Trust, Paid): counted, never coloured */
+export type AgeTone = 'ok' | 'warn' | 'late' | 'none'
+export function ageTone(stage: BbStage, since: string | null | undefined, now: number = Date.now()): AgeTone {
+  const limit = slaFor(stage)
+  if (limit == null) return 'none'
+  const days = daysAtStage(since, now)
+  return days <= limit ? 'ok' : days <= limit * 2 ? 'warn' : 'late'
+}

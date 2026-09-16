@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
-import { requireBillsWrite } from '@/lib/bills-booking/access'
+import { requireBillsAdmin } from '@/lib/bills-booking/access'
 
 /**
  * Set where an IN4 sub-project books, and who approves its bills.
@@ -28,7 +28,7 @@ export async function saveProjectDesk(input: {
   shortName?: string | null
   note?: string | null
 }): Promise<{ ok: boolean; error?: string }> {
-  await requireBillsWrite()
+  await requireBillsAdmin()
   const supabase = await createClient()
 
   const { data: me } = await supabase.auth.getUser()
@@ -86,7 +86,7 @@ export async function setDeskMember(input: {
   userId: string
   on: boolean
 }): Promise<{ ok: boolean; error?: string }> {
-  await requireBillsWrite()
+  await requireBillsAdmin()
   const supabase = await createClient()
 
   const fn = input.on ? 'bb_rpc_add_desk_member' : 'bb_rpc_remove_desk_member'
@@ -116,7 +116,7 @@ export async function copyDesks(input: {
   fromSubprojectId?: number | null
   fromProjectId?: string | null
 }): Promise<{ ok: boolean; error?: string; count?: number }> {
-  await requireBillsWrite()
+  await requireBillsAdmin()
   const supabase = await createClient()
 
   const { data, error } = await supabase.rpc('bb_rpc_copy_desks', {

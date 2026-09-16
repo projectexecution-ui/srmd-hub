@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { requireBillsAccess } from '@/lib/bills-booking/access'
+import { requireBillsAdmin } from '@/lib/bills-booking/access'
 import { PageHeader } from '@/components/PageHeader'
 import { QueryError } from '@/components/ui/query-error'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -32,7 +32,7 @@ const VERDICT: Record<string, { label: string; cls: string }> = {
  *  This is the record of who approved what — IN4's own trail names whoever in
  *  Billing keyed it in, so if this list is wrong there is nothing else. */
 export default async function SanctionsPage() {
-  await requireBillsAccess()
+  await requireBillsAdmin()
   const sb = await createClient()
 
   const { data, error } = await sb
