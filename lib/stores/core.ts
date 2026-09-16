@@ -797,3 +797,115 @@ export function canVoidEntry(role: string | null | undefined): boolean {
   if (!role) return false
   return ['admin', 'founder', 'head'].includes(role)
 }
+
+/* ── Project families, and where a request goes ─────────────────────────── */
+
+export interface ProjectNode { id: string; parentId: string | null }
+
+/**
+ * Everything in one project's family: its root, and every project under that
+ * root.
+ *
+ * Aksha, 16 Sep 2026: "PO of NGH B Belongs to NGH PRoject - so Eng of NGH
+ * Project can call for NGH A,B,C etc Stock - but NGH Project stock can be
+ * stored at diff location". So the unit of ownership is the FAMILY, not the
+ * individual sub-project and not the shelf — NGH covers NGH A, B, C, Infra and
+ * Common Expenses, and NGH stock sitting in CT Warehouse is still NGH stock.
+ *
+ * Walks up to the root first, then down: an engineer on NGH B gets the whole
+ * NGH family, not only NGH B and its children. A project that is its own root
+ * with no children is a family of one, which is correct and common.
+ *
+ * Guards against a parent loop — a project that is its own ancestor would
+ * otherwise spin here, and bad data should not hang a page.
+ */
+export function familyOf(projectId: string, projects: readonly ProjectNode[]): string[] {
+  const byId = new Map(projects.map(p => [p.id, p]))
+  if (!byId.has(projectId)) return [projectId]
+
+  let root = projectId
+  const walked = new Set<string>([root])
+  for (;;) {
+    const parent = byId.get(root)?.parentId
+    if (!parent || walked.has(parent) || !byId.has(parent)) break
+    root = parent
+    walked.add(root)
+  }
+
+  const family = new Set<string>([root])
+  let grew = true
+  while (grew) {
+    grew = false
+    for (const p of projects) {
+      if (p.parentId && family.has(p.parentId) && !family.has(p.id)) {
+        family.add(p.id)
+        grew = true
+      }
+    }
+  }
+  return [...family]
+}
+
+/** Is taking from `stockProjectId` a cross-project request for `forProjectId`?
+ *  Stock that belongs to nobody yet is nobody's to refuse — see the Whose
+ *  stock backlog in Masters. */
+export function isCrossProject(
+  forProjectId: string,
+  stockProjectId: string | null,
+  projects: readonly ProjectNode[],
+): boolean {
+  if (!stockProjectId) return false
+  return !familyOf(forProjectId, projects).includes(stockProjectId)
+}
+
+export type RequestRouting = {
+  /** Where the request lands the moment it is raised. */
+  status: 'approved' | 'pending' | 'blocked'
+  approvers: ApproverKey[]
+  /** Why it went there, in words, kept on the request. */
+  why: string
+}
+
+/**
+ * Where a request goes the moment it is raised.
+ *
+ * Aksha, 16 Sep 2026, and this is a change from the mind map, which put MA/KK
+ * on every request: "if the cross project is off then Site Head or Site Eng
+ * raises only his project stock not cross project - so MA & KK approval is not
+ * required - the request goes directly to Storekeeper". Asked whether anybody
+ * signs off in that case, he chose: "Nobody — straight to the storekeeper".
+ *
+ * So approval is the price of borrowing from ANOTHER family, not of asking for
+ * your own material. Own-family requests land on the storekeeper already
+ * approved; cross-family ones wait for Mayank or Kanti by discipline.
+ *
+ * `blocked` is the case the screens should never produce — a cross-project
+ * request raised while the setting is off. It is returned rather than thrown
+ * so the action can refuse it with a sentence instead of a stack trace.
+ */
+export function routeRequest(input: {
+  crossProjectOn: boolean
+  isCrossProject: boolean
+  disciplineCodes: ReadonlyArray<string | null | undefined>
+}): RequestRouting {
+  if (!input.isCrossProject) {
+    return {
+      status: 'approved',
+      approvers: [],
+      why: 'Your own project’s stock — it goes straight to the storekeeper.',
+    }
+  }
+  if (!input.crossProjectOn) {
+    return {
+      status: 'blocked',
+      approvers: [],
+      why: 'Borrowing from another project is switched off. Ask Aksha to turn it on in Masters → Settings.',
+    }
+  }
+  const approvers = approversForRequest(input.disciplineCodes)
+  return {
+    status: 'pending',
+    approvers,
+    why: `Borrowed from another project, so ${approverLabel(approvers)} approves it first.`,
+  }
+}

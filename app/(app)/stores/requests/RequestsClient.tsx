@@ -5,7 +5,7 @@ import { useMemo, useState, useTransition } from 'react'
 import { raiseRequest, decideRequest, issueRequest } from '@/lib/stores/actions'
 import {
   checkIssue, bestIssueLocation, fmtQty, approverLabel, approversForRequest,
-  RETURNABLES_ON, CROSS_PROJECT_ON, type StockRow,
+  RETURNABLES_ON, type StockRow,
 } from '@/lib/stores/core'
 import { formatDate, formatDateTime } from '@/lib/utils'
 import type { RequestRow, ProjectOpt } from '@/lib/stores/queries'
@@ -27,7 +27,7 @@ const newLine = (): Line => ({ key: `r${++seq}`, itemId: '', unit: '', qty: '', 
 
 export function RequestsClient({
   requests, projects, items, locations, modes, stock, recentItemIds = [], scopeNote = null,
-  mode = 'ask',
+  mode = 'ask', crossProject = false,
 }: {
   requests: RequestRow[]
   projects: ProjectOpt[]
@@ -49,6 +49,9 @@ export function RequestsClient({
    * the stock checks, and a copy of those is a copy that drifts.
    */
   mode?: 'ask' | 'issue'
+  /** Whether borrowing from another project family is switched on — the live
+   *  setting from Masters, not a constant. */
+  crossProject?: boolean
 }) {
   const router = useRouter()
   const rows: StockRow[] = stock.map(s => ({ ...s, lastRate: null, lastMovedAt: null }))
@@ -63,7 +66,8 @@ export function RequestsClient({
         {projects.length === 0
           ? <Notice kind="info">{scopeNote ?? 'You are not on any project yet, so there is nothing to ask for.'}</Notice>
           : <RaiseForm projects={projects} items={items} stock={rows} locations={locations}
-              recentItemIds={recentItemIds} onDone={() => router.refresh()} />}
+              recentItemIds={recentItemIds} crossProject={crossProject}
+              onDone={() => router.refresh()} />}
       </Section>
       )}
 
@@ -86,11 +90,11 @@ export function RequestsClient({
 /* ── Raise ──────────────────────────────────────────────────────────────── */
 
 function RaiseForm({
-  projects, items, stock, locations, recentItemIds, onDone,
+  projects, items, stock, locations, recentItemIds, crossProject, onDone,
 }: {
   projects: ProjectOpt[]; items: Array<{ id: string; name: string; unit: string; disciplineCode?: string | null }>
   stock: StockRow[]; locations: Array<{ id: string; label: string }>
-  recentItemIds: readonly string[]; onDone: () => void
+  recentItemIds: readonly string[]; crossProject: boolean; onDone: () => void
 }) {
   const placeName = (id: string | null) =>
     locations.find(l => l.id === id)?.label ?? 'an unnamed place'
@@ -147,7 +151,7 @@ function RaiseForm({
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-4 max-w-2xl space-y-3">
-      <div className={`grid gap-3 ${CROSS_PROJECT_ON ? 'sm:grid-cols-2' : ''}`}>
+      <div className={`grid gap-3 ${crossProject ? 'sm:grid-cols-2' : ''}`}>
         <Field label="For which project" required>
           <select className={inputClass} value={projectId} onChange={e => setProjectId(e.target.value)}>
             <option value="">Pick one</option>
@@ -156,7 +160,7 @@ function RaiseForm({
         </Field>
         {/* Borrowing from another project is paused — the HOD has not settled
             the process — so an engineer is not asked about it at all. */}
-        {CROSS_PROJECT_ON && (
+        {crossProject && (
           <Field label="Borrowing from another project?" hint="Leave blank for a normal issue from the warehouse.">
             <select className={inputClass} value={fromProjectId} onChange={e => setFromProjectId(e.target.value)}>
               <option value="">No — from the store</option>

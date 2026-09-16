@@ -3,6 +3,7 @@ import {
   loadLists, loadItems, loadProjectOptions, loadProjectStaff, loadAssignablePeople, loadUnassignedStock,
 } from '@/lib/stores/queries'
 import { MastersClient } from './MastersClient'
+import { crossProjectOn } from '@/lib/stores/settings'
 import { guardStoreTab } from '../guard'
 
 export const dynamic = 'force-dynamic'
@@ -12,7 +13,7 @@ export default async function MastersPage() {
   if (blocked) return blocked
 
   const supabase = await createClient()
-  const [lists, items, { data: companies }, projects, staff, people, unassigned] = await Promise.all([
+  const [lists, items, { data: companies }, projects, staff, people, unassigned, crossProject] = await Promise.all([
     loadLists(),
     loadItems(),
     supabase.from('in4_companies').select('id, code, name').order('code'),
@@ -20,6 +21,7 @@ export default async function MastersPage() {
     loadProjectStaff(),
     loadAssignablePeople(),
     loadUnassignedStock(),
+    crossProjectOn(),
   ])
 
   return (
@@ -31,6 +33,7 @@ export default async function MastersPage() {
       staff={staff}
       people={people}
       unassigned={unassigned}
+      crossProject={crossProject}
     />
   )
 }

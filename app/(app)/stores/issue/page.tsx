@@ -6,6 +6,7 @@ import { RequestsClient } from '../requests/RequestsClient'
 import { getMyProfile } from '@/lib/auth'
 import { stockScopeFor, visibleLocationIds } from '@/lib/stores/core'
 import { Section } from '../ui'
+import { crossProjectOn } from '@/lib/stores/settings'
 import { guardStoreTab } from '../guard'
 
 export const dynamic = 'force-dynamic'
@@ -35,6 +36,7 @@ export default async function IssuePage() {
     loadProjectOptions(),
     loadRecentItemIds(),
   ])
+  const crossProject = await crossProjectOn()
 
   const profile = await getMyProfile()
   const mine = profile ? await loadMyProjectIds(profile.id) : []
@@ -60,6 +62,7 @@ export default async function IssuePage() {
         : 'Approved requests appear here for the storekeeper to hand out'}
     >
       <RequestsClient
+        crossProject={crossProject}
         mode="issue"
         requests={requests}
         projects={projects}

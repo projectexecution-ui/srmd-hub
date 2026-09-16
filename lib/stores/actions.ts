@@ -5,9 +5,10 @@ import { createClient } from '@/lib/supabase/server'
 import { getMyProfile } from '@/lib/auth'
 import {
   entryNo, checkIssue, checkReturn, createsStock, approversForRequest, disciplineFromIn4Type,
-  canCorrectEntry, canVoidEntry, type Register,
+  canCorrectEntry, canVoidEntry, routeRequest, approverLabel, type Register,
 } from './core'
 import { isCorrectable } from './desk'
+import { crossProjectOn, CROSS_PROJECT_KEY } from './settings'
 import { loadStock, loadReturnables } from './queries'
 import { formatINR } from '@/lib/utils'
 import {
@@ -232,6 +233,36 @@ export async function raiseRequest(input: RequestInput): Promise<Result<{ id: st
   if (!input.projectId) return fail('Pick a project.')
   if (lines.length === 0) return fail('Add at least one item.')
 
+  /**
+   * WHERE IT GOES, decided before it is written.
+   *
+   * Aksha, 16 Sep 2026, changing the mind map, which put MA/KK on every
+   * request: own-family stock needs no approval and lands on the storekeeper;
+   * approval is the price of borrowing from ANOTHER family. Asked whether
+   * anybody signs off on an own-family request, he chose "Nobody — straight to
+   * the storekeeper".
+   */
+  const borrowing = !!input.fromProjectId
+  const crossOn = await crossProjectOn()
+
+  // The disciplines decide WHO approves, when anybody does — Civil and
+  // Finishes are Mayank's, MEP is Kanti's, and a request holding both is
+  // legitimately for both. The mapping is the code on the discipline row, so
+  // it is Aksha's to change in Masters rather than mine to compile in.
+  const { data: disc } = await supabase
+    .from('mio_items')
+    .select('discipline:discipline_id ( code )')
+    .in('id', lines.map(l => l.itemId))
+  const codes = (disc ?? []).map(r => {
+    const d = Array.isArray(r.discipline) ? r.discipline[0] : r.discipline
+    return (d as { code?: string } | null)?.code ?? null
+  })
+
+  const route = routeRequest({
+    crossProjectOn: crossOn, isCrossProject: borrowing, disciplineCodes: codes,
+  })
+  if (route.status === 'blocked') return fail(route.why)
+
   const { count } = await supabase.from('mio_requests').select('id', { count: 'exact', head: true })
   const no = `REQ/${String((count ?? 0) + 1).padStart(4, '0')}`
 
@@ -245,12 +276,15 @@ export async function raiseRequest(input: RequestInput): Promise<Result<{ id: st
       needed_by: input.neededBy || null,
       remarks: input.remarks?.trim() || null,
       raised_by: profile.id,
+      status: route.status,
+      // Nobody approved an own-family request, and the card must not imply
+      // somebody did. The reason stands in for a name.
+      decision_note: route.status === 'approved' ? route.why : null,
+      decided_at: route.status === 'approved' ? new Date().toISOString() : null,
     })
     .select('id, no')
     .single()
   if (error) return fail(explain(error, 'raise the request'))
-
-  const borrowing = !!input.fromProjectId
   const { error: lineErr } = await supabase.from('mio_request_lines').insert(
     lines.map(l => ({
       request_id: data.id, item_id: l.itemId, unit: l.unit, qty: l.qty,
@@ -259,25 +293,53 @@ export async function raiseRequest(input: RequestInput): Promise<Result<{ id: st
   )
   if (lineErr) return fail(explain(lineErr, 'save the request lines'))
 
-  // Who this one belongs to depends on WHAT is on it: Civil and Finishes are
-  // Mayank's, MEP is Kanti's, and a request holding both is legitimately for
-  // both. The mapping is the code on the discipline row, so it is Aksha's to
-  // change in Masters rather than mine to compile in.
-  const { data: disc } = await supabase
-    .from('mio_items')
-    .select('discipline:discipline_id ( code )')
-    .in('id', input.lines.map(l => l.itemId))
-  const codes = (disc ?? []).map(r => {
-    const d = Array.isArray(r.discipline) ? r.discipline[0] : r.discipline
-    return (d as { code?: string } | null)?.code ?? null
-  })
+  // Only a request that is actually WAITING on somebody is announced to them.
+  // Telling Mayank about a request that went straight to the storekeeper is
+  // how a notification becomes something people learn to ignore.
+  if (route.status === 'pending') {
+    await notifyRequestPending({
+      requestId: data.id as string, no, projectName: null,
+      lineCount: lines.length, approvers: route.approvers, actorId: profile.id,
+    })
+  }
 
-  await notifyRequestPending({
-    requestId: data.id as string, no, projectName: null,
-    lineCount: input.lines.length, approvers: approversForRequest(codes), actorId: profile.id,
-  })
   revalidatePath('/stores')
-  return done(`${no} sent to Mayank / Kanti for approval.`, { id: data.id as string, no })
+  return done(
+    route.status === 'pending'
+      ? `${no} sent to ${approverLabel(route.approvers)} for approval.`
+      : `${no} is with the storekeeper. ${route.why}`,
+    { id: data.id as string, no },
+  )
+}
+
+/* ── The one switch an admin owns ───────────────────────────────────────── */
+
+/**
+ * Turn borrowing from another project on or off.
+ *
+ * Aksha, 16 Sep 2026: "i want to know about if i want to make toggle Cross
+ * Project request admin should be able to on and off the same whenever
+ * requred". One switch, and it changes a whole behaviour rather than storing a
+ * value — see lib/stores/settings.ts for what moves with it.
+ *
+ * Admin, founder and head only: it decides whether material can leave a
+ * project's stock for somebody else's site, which is not a storekeeper's call.
+ */
+export async function setCrossProject(on: boolean): Promise<Result> {
+  const profile = await me()
+  if (!canVoidEntry(profile.role)) {
+    return fail('Only a head or an admin can switch borrowing between projects on or off.')
+  }
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('app_settings')
+    .upsert({ key: CROSS_PROJECT_KEY, value: on ? 'on' : 'off' }, { onConflict: 'key' })
+  if (error) return fail(explain(error, 'save the setting'))
+
+  revalidatePath('/stores')
+  return done(on
+    ? 'Borrowing between projects is ON. Those requests now go to Mayank or Kanti first, and what is borrowed has to come back.'
+    : 'Borrowing between projects is OFF. Each site asks for its own family’s stock, and it goes straight to the storekeeper.')
 }
 
 export async function decideRequest(requestId: string, approve: boolean, note?: string): Promise<Result> {

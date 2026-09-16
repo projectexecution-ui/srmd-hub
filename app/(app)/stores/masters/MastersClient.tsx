@@ -6,6 +6,7 @@ import { saveListRow, setListActive, saveItem } from '@/lib/stores/actions'
 import type { ListRow, ItemRow, ProjectOpt, StaffRow, UnassignedStock } from '@/lib/stores/queries'
 import { StaffDesk } from './StaffDesk'
 import { WhoseStock } from './WhoseStock'
+import { SettingsPanel } from './SettingsPanel'
 import { formatINR, formatNumber } from '@/lib/utils'
 import { Field, inputClass, Btn, Notice, Empty, Scroller, th, thNum, td, tdNum, GroupedOptions } from '../ui'
 
@@ -25,7 +26,7 @@ const KINDS: Array<{ kind: Kind; title: string; note: string }> = [
 ]
 
 export function MastersClient({
-  lists, items, companies, projects, staff, people, unassigned,
+  lists, items, companies, projects, staff, people, unassigned, crossProject,
 }: {
   lists: ListRow[]
   items: ItemRow[]
@@ -35,6 +36,8 @@ export function MastersClient({
   people: Array<{ id: string; name: string; role: string }>
   /** Stock whose movements carry no project yet. */
   unassigned: UnassignedStock[]
+  /** Whether borrowing between project families is switched on. */
+  crossProject: boolean
 }) {
   const router = useRouter()
   /**
@@ -47,10 +50,10 @@ export function MastersClient({
    * same buried-config failure as the language toggle he could not find.
    */
   const params = useSearchParams()
-  const asked = params.get('list') as Kind | 'items' | 'staff' | 'whose' | null
-  const [picked, setPicked] = useState<Kind | 'items' | 'staff' | 'whose' | null>(null)
+  const asked = params.get('list') as Kind | 'items' | 'staff' | 'whose' | 'settings' | null
+  const [picked, setPicked] = useState<Kind | 'items' | 'staff' | 'whose' | 'settings' | null>(null)
   const openKind = picked ?? asked ?? 'location'
-  const setOpenKind = (k: Kind | 'items' | 'staff' | 'whose') => setPicked(k)
+  const setOpenKind = (k: Kind | 'items' | 'staff' | 'whose' | 'settings') => setPicked(k)
 
   return (
     <div className="space-y-4">
@@ -61,6 +64,7 @@ export function MastersClient({
             { key: 'items' as const, label: 'Items' },
             { key: 'staff' as const, label: 'Who works where' },
             { key: 'whose' as const, label: `Whose stock${unassigned.length ? ` (${unassigned.length})` : ''}` },
+            { key: 'settings' as const, label: 'Settings' },
           ].map(t => (
             <button
               key={t.key} type="button" onClick={() => setOpenKind(t.key)}
@@ -74,7 +78,9 @@ export function MastersClient({
         </div>
       </div>
 
-      {openKind === 'whose'
+      {openKind === 'settings'
+        ? <SettingsPanel crossProject={crossProject} />
+        : openKind === 'whose'
         ? <WhoseStock rows={unassigned} projects={projects} />
         : openKind === 'staff'
         ? <StaffDesk staff={staff} people={people} projects={projects} />

@@ -3,6 +3,7 @@ import {
   entryNo, linkedNo, foldStock, availableAt, availableAnywhere, checkIssue,
   outstandingReturnables, checkReturn, missingForGate, missingForComplete, createsStock, heldItemCount,
   fmtQty, isPilotProject, PILOT_PROJECT_IDS, RETURNABLES_ON, STORES_LIVE, canSeeStores, canRecordAtGate, canCorrectEntry, canVoidEntry, stockScopeFor, visibleLocationIds, emptyScopeReason,
+  familyOf, isCrossProject, routeRequest,
   roleStoreTabs, visibleStoreTabs, canOpenStoreTab, homeStoreTab, storeTabHref, STORE_TABS, STORE_TAB_LABEL,
   approversForRequest, approverKeyOf, approverLabel, disciplineFromIn4Type, groupProjects, UNGROUPED, entityCodeFromOrderNo, categoryFor, isServiceScope, bestIssueLocation,
   type Movement, type ReturnableLine, type StockRow,
@@ -825,6 +826,79 @@ describe('who may correct, and who may void', () => {
   it('never lets somebody void who may not even correct', () => {
     for (const role of ['admin', 'founder', 'head', 'store_manager', 'security', 'engineer', 'backoffice', null]) {
       if (canVoidEntry(role)) expect(canCorrectEntry(role)).toBe(true)
+    }
+  })
+})
+
+describe('project families, and where a request goes', () => {
+  // NGH is the real shape: parent with five children.
+  const PROJECTS = [
+    { id: 'ngh', parentId: null },
+    { id: 'ngh-a', parentId: 'ngh' },
+    { id: 'ngh-b', parentId: 'ngh' },
+    { id: 'ngh-c', parentId: 'ngh' },
+    { id: 'ab', parentId: null },
+    { id: 'ab-gf', parentId: 'ab' },
+    { id: 'vv', parentId: null },
+  ]
+
+  it('gives a child the whole family, not just itself', () => {
+    // Aksha: "PO of NGH B Belongs to NGH PRoject - so Eng of NGH Project can
+    // call for NGH A,B,C etc Stock".
+    expect(familyOf('ngh-b', PROJECTS).sort()).toEqual(['ngh', 'ngh-a', 'ngh-b', 'ngh-c'])
+  })
+
+  it('gives the parent the same family as its child', () => {
+    expect(familyOf('ngh', PROJECTS).sort()).toEqual(familyOf('ngh-a', PROJECTS).sort())
+  })
+
+  it('leaves a standalone project a family of one', () => {
+    expect(familyOf('vv', PROJECTS)).toEqual(['vv'])
+  })
+
+  it('does not hang on a project that is its own ancestor', () => {
+    const looped = [{ id: 'a', parentId: 'b' }, { id: 'b', parentId: 'a' }]
+    expect(familyOf('a', looped).length).toBeGreaterThan(0)
+  })
+
+  it('knows what is somebody else’s', () => {
+    expect(isCrossProject('ngh-b', 'ngh-a', PROJECTS)).toBe(false)
+    expect(isCrossProject('ngh-b', 'ngh', PROJECTS)).toBe(false)
+    expect(isCrossProject('ngh-b', 'ab-gf', PROJECTS)).toBe(true)
+  })
+
+  it('treats stock that belongs to nobody as nobody’s to refuse', () => {
+    // The Odoo backlog, until Masters → Whose stock is worked down.
+    expect(isCrossProject('ngh-b', null, PROJECTS)).toBe(false)
+  })
+
+  it('sends an own-family request straight to the storekeeper', () => {
+    // Aksha chose this over any sign-off: "Nobody — straight to the storekeeper".
+    const r = routeRequest({ crossProjectOn: false, isCrossProject: false, disciplineCodes: ['MA'] })
+    expect(r.status).toBe('approved')
+    expect(r.approvers).toEqual([])
+    expect(r.why).toContain('straight to the storekeeper')
+  })
+
+  it('sends a borrowed request to the approver its disciplines imply', () => {
+    const civil = routeRequest({ crossProjectOn: true, isCrossProject: true, disciplineCodes: ['MA'] })
+    expect(civil.status).toBe('pending')
+    expect(civil.approvers).toEqual(['MA'])
+
+    const both = routeRequest({ crossProjectOn: true, isCrossProject: true, disciplineCodes: ['MA', 'KK'] })
+    expect(both.approvers).toEqual(['MA', 'KK'])
+  })
+
+  it('refuses a borrowed request while borrowing is switched off', () => {
+    const r = routeRequest({ crossProjectOn: false, isCrossProject: true, disciplineCodes: ['KK'] })
+    expect(r.status).toBe('blocked')
+    expect(r.why).toContain('Masters → Settings')
+  })
+
+  it('never routes an own-family request to an approver, whatever the switch says', () => {
+    for (const on of [true, false]) {
+      expect(routeRequest({ crossProjectOn: on, isCrossProject: false, disciplineCodes: ['MA', 'KK'] }).approvers)
+        .toEqual([])
     }
   })
 })

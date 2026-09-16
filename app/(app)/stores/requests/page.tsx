@@ -7,6 +7,7 @@ import { RequestsClient } from './RequestsClient'
 import { getMyProfile } from '@/lib/auth'
 import { stockScopeFor, visibleLocationIds, emptyScopeReason } from '@/lib/stores/core'
 import { sayStatus } from '@/lib/stores/status'
+import { crossProjectOn } from '@/lib/stores/settings'
 import { guardStoreTab } from '../guard'
 
 export const dynamic = 'force-dynamic'
@@ -18,9 +19,19 @@ export const dynamic = 'force-dynamic'
  * wording was "Request raised by Engineer for Site - Approval", shortened to
  * something that reads at a glance from across a desk.
  */
+/**
+ * "With the storekeeper" is NOT a filter here any more.
+ *
+ * Aksha, 16 Sep 2026: "can u check why twice ?? similar data". Splitting the
+ * storekeeper's queue into its own tab and then leaving the same rows behind
+ * as a chip on this one put five requests on two screens — which is the
+ * confusion the split was meant to end, wearing a new hat.
+ *
+ * This screen is now about asking and following: what is waiting for approval,
+ * and everything you have raised. What is waiting to go OUT is To issue.
+ */
 const FILTERS = [
   { key: 'pending',  label: sayStatus('pending').label },
-  { key: 'approved', label: sayStatus('approved').label },
   { key: '',         label: 'Everything' },
 ]
 
@@ -42,6 +53,7 @@ export default async function RequestsPage({
     loadRecentItemIds(),
     loadRequests({}),
   ])
+  const crossProject = await crossProjectOn()
 
   // A count on the chip, so "is anything on me?" is answered without a click.
   const countFor = (key: string) =>
@@ -99,9 +111,22 @@ export default async function RequestsPage({
             )}
           </Link>
         ))}
+
+        {/* Where the storekeeper's queue went, said once rather than shown
+            twice. */}
+        {countFor('approved') > 0 && (
+          <Link
+            href="/stores/issue"
+            className="inline-flex items-center rounded-lg px-3 py-2 text-[12.5px] font-semibold
+              text-indigo-700 hover:underline min-h-[44px]"
+          >
+            {countFor('approved')} approved, waiting in To issue →
+          </Link>
+        )}
       </div>
 
       <RequestsClient
+        crossProject={crossProject}
         requests={requests}
         projects={askableProjects}
         scopeNote={scopeNote}
