@@ -572,3 +572,40 @@ export function approverLabel(keys: readonly ApproverKey[]): string {
   if (names.length === 1) return names[0]
   return names.join(' and ')
 }
+
+/* ── IN4's material type → our discipline ───────────────────────────────── */
+
+/**
+ * IN4 files every material under a type: "07 (M) Electrical Works",
+ * "12 (M) Finishes", "03 (M) Civil". Our ten disciplines are Aksha's own, not
+ * IN4's 89 skills — but where IN4's type CONTAINS one of our discipline names,
+ * IN4 has already answered the question and we should use its answer.
+ *
+ * Deliberately narrow. It matches on the discipline's own words and nothing
+ * else, so "06 (M) Mechanical Works" maps to NOTHING — we hold three separate
+ * Mechanical disciplines (HVAC, Lifts, Steel Fabrication) and IN4 does not say
+ * which. Same for "13 Interiors", "10 MGPS", "36 Infra Structures": a person
+ * can place those in a second, and a rule that placed them would be inventing
+ * an answer that looks identical to a real one.
+ *
+ * An item that maps to nothing keeps a null discipline and is SHOWN as such —
+ * see the Items master. That is a gap to fill, not a reason to guess.
+ */
+export function disciplineFromIn4Type(
+  in4TypeName: string | null | undefined,
+  disciplines: ReadonlyArray<{ id: string; name: string }>,
+): string | null {
+  const t = (in4TypeName ?? '').toLowerCase()
+  if (!t) return null
+
+  // Longest name first, so "Mechanical: HVAC" is tried before any shorter name
+  // that happens to be a substring of it.
+  const byLength = [...disciplines].sort((a, b) => b.name.length - a.name.length)
+  for (const d of byLength) {
+    const name = d.name.toLowerCase()
+    // A discipline with a colon is a sub-kind IN4 does not distinguish.
+    if (name.includes(':')) continue
+    if (t.includes(name)) return d.id
+  }
+  return null
+}

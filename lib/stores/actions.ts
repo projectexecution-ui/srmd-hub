@@ -4,7 +4,8 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { getMyProfile } from '@/lib/auth'
 import {
-  entryNo, checkIssue, checkReturn, createsStock, approversForRequest, type Register,
+  entryNo, checkIssue, checkReturn, createsStock, approversForRequest, disciplineFromIn4Type,
+  type Register,
 } from './core'
 import { loadStock, loadReturnables } from './queries'
 import { formatINR } from '@/lib/utils'
@@ -723,17 +724,29 @@ export async function importIn4Material(materialId: number): Promise<Result<{ id
   if (existing) return done(`${existing.name} is already in the item list.`, { id: existing.id as string, name: existing.name as string })
 
   const { data: mat } = await supabase
-    .from('in4_materials').select('id, name, uom').eq('id', materialId).maybeSingle()
+    .from('in4_materials').select('id, name, uom, type_name').eq('id', materialId).maybeSingle()
   if (!mat) return fail('IN4 does not have that material.')
 
-  const { data: rate } = await supabase
-    .from('in4_last_po_by_material').select('rate').eq('material_id', materialId).maybeSingle()
+  const [{ data: rate }, { data: discs }] = await Promise.all([
+    supabase.from('in4_last_po_by_material').select('rate').eq('material_id', materialId).maybeSingle(),
+    supabase.from('mio_lists').select('id, name').eq('kind', 'discipline').eq('is_active', true),
+  ])
+
+  // CARRY THE DISCIPLINE ACROSS. It decides whether the item's requests reach
+  // Mayank or Kanti, and IN4 already knows: it files every material under a
+  // type like "12 (M) Finishes". Importing without it produced nine tiles that
+  // were Finishes in IN4 and belonged to nobody here.
+  const disciplineId = disciplineFromIn4Type(
+    mat.type_name as string | null,
+    (discs ?? []).map(d => ({ id: d.id as string, name: d.name as string })),
+  )
 
   const { data, error } = await supabase
     .from('mio_items')
     .insert({
       name: mat.name as string, unit: (mat.uom as string) || 'Nos',
       in4_material_id: materialId,
+      discipline_id: disciplineId,
       last_rate: rate?.rate == null ? null : Number(rate.rate),
     })
     .select('id, name')

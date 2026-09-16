@@ -15,7 +15,8 @@ const KINDS: Array<{ kind: Kind; title: string; note: string }> = [
     note: 'Two levels — the site, then the spot inside it. Material is always put in a spot, never in a site.' },
   { kind: 'delivery_mode', title: 'Delivery modes', note: 'How material arrives and leaves.' },
   { kind: 'item_category', title: 'Item categories', note: 'What kind of material this is.' },
-  { kind: 'discipline', title: 'Disciplines', note: 'Your ten, used to group the reports — not IN4’s 89 budget categories.' },
+  { kind: 'discipline', title: 'Disciplines',
+    note: 'Your ten, used to group the reports — not IN4’s 89 budget categories. The code decides who approves a request for them: MA (Mayank) or KK (Kanti).' },
   { kind: 'entity', title: 'Trusts',
     note: 'Which trust is paying. Seeded from IN4 and mapped to it — add one here with no IN4 match and point it at IN4 later.' },
   { kind: 'unit', title: 'Units',
@@ -97,6 +98,7 @@ function ListPanel({
 
   const isLocation = spec.kind === 'location'
   const isEntity = spec.kind === 'entity'
+  const isDiscipline = spec.kind === 'discipline'
   const sites = rows.filter(r => !r.parentId)
 
   // Sites first, each followed by its spots — reading order, not id order.
@@ -133,7 +135,14 @@ function ListPanel({
             </Field>
           )}
           {!isLocation && !isEntity && (
-            <Field label="Short code"><input className={inputClass} value={code} onChange={e => setCode(e.target.value)} autoComplete="off" /></Field>
+            // On disciplines the code is not decoration — it routes the
+            // approval. Naming it "Short code" there would hide that.
+            <Field
+              label={isDiscipline ? 'Approved by' : 'Short code'}
+              hint={isDiscipline ? 'MA for Mayank, KK for Kanti' : undefined}
+            >
+              <input className={inputClass} value={code} onChange={e => setCode(e.target.value)} autoComplete="off" />
+            </Field>
           )}
         </div>
 
@@ -253,6 +262,8 @@ function ItemsPanel({
   const [name, setName] = useState('')
   const [unit, setUnit] = useState('Nos')
   const [disciplineId, setDisciplineId] = useState('')
+  const discName = new Map(disciplines.map(d => [d.id, d.name]))
+  const noDiscipline = items.filter(i => i.isActive && !i.disciplineId).length
   const [q, setQ] = useState('')
 
   const shown = q.trim()
@@ -302,6 +313,15 @@ function ItemsPanel({
         aria-label="Search items"
       />
 
+      {noDiscipline > 0 && (
+        <Notice kind="info">
+          <b>{formatNumber(noDiscipline, 0)} item{noDiscipline === 1 ? ' has' : 's have'} no discipline.</b>{' '}
+          A request for {noDiscipline === 1 ? 'it' : 'them'} reaches neither Mayank nor Kanti and falls to the
+          admins instead. IN4 fills this in for anything imported with a PO; these are the ones it could not
+          place.
+        </Notice>
+      )}
+
       {shown.length === 0 ? (
         <Empty
           title={items.length === 0 ? 'No items yet' : 'Nothing matches that'}
@@ -316,6 +336,7 @@ function ItemsPanel({
               <tr>
                 <th className={th}>Item</th>
                 <th className={th}>Unit</th>
+                <th className={th}>Discipline</th>
                 <th className={thNum}>Last rate</th>
                 <th className={th}>From IN4</th>
               </tr>
@@ -325,6 +346,13 @@ function ItemsPanel({
                 <tr key={i.id} className={i.isActive ? '' : 'opacity-55'}>
                   <td className={td}>{i.name}</td>
                   <td className={td}>{i.unit}</td>
+                  {/* An item with no discipline reaches NO approver — its
+                      requests fall through to the admins. That is a gap to
+                      fill, so it is shown as one rather than left blank. */}
+                  <td className={td}>
+                    {discName.get(i.disciplineId ?? '')
+                      ?? <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10.5px] font-semibold text-amber-900">not set</span>}
+                  </td>
                   <td className={tdNum}>{i.lastRate == null ? '—' : formatINR(i.lastRate)}</td>
                   <td className={td}>
                     {i.in4MaterialId
