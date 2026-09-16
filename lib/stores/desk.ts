@@ -271,16 +271,53 @@ export function checkReceipt(
  * Says it, and lets it be saved anyway — extra deliveries happen, and a form
  * that refuses one teaches a storekeeper to record it somewhere else. What
  * must not happen is it going by in silence.
+ *
+ * TWO THINGS IT WILL NOT DO, both learned from Aksha's screenshot on
+ * 16 Sep 2026, where a line sitting at a quantity of ZERO was being told it
+ * had made 5,364 against 2,682 ordered:
+ *
+ *   · It says nothing while nothing is being added. A quantity of 0 adds
+ *     nothing and cannot be saved anyway, so a warning on it is an alarm
+ *     about somebody else's doing.
+ *   · Where the line was ALREADY past the order before this delivery, it says
+ *     so plainly instead of blaming this one. The storekeeper standing at the
+ *     lorry did not cause it and cannot fix it by typing a smaller number —
+ *     that is an earlier entry to void, and a different job.
  */
 export function overReceiptNote(
   line: { ordered: number; alreadyIn: number; atGate: number },
   typed: number,
   unit = '',
 ): string | null {
-  const c = checkReceipt(line, typed)
+  const adding = Math.max(0, typed || 0)
+  if (adding <= 0) return null
+
+  const c = checkReceipt(line, adding)
   if (c.over <= 0) return null
+
   const u = unit ? ` ${unit}` : ''
+  const alreadyOver = checkReceipt(line, 0).over
+  if (alreadyOver > 0) {
+    return `${fmtQty(c.received)}${u} was already counted in against ${fmtQty(line.ordered)}${u} ordered — ${fmtQty(alreadyOver)}${u} over before this lorry. Adding ${fmtQty(adding)}${u} takes it to ${fmtQty(c.total)}${u}. Check the earlier entries.`
+  }
   return `This makes ${fmtQty(c.total)}${u} against ${fmtQty(line.ordered)}${u} ordered — ${fmtQty(c.over)}${u} over. You can still save it; it will be marked.`
+}
+
+/**
+ * The quiet line under an item, saying where the order stands.
+ *
+ * Here rather than in the component so the words are tested, and so the "how
+ * much is already in" figure is worded the same as the warning above it.
+ */
+export function receiptLabel(
+  line: { ordered: number; alreadyIn: number; atGate: number },
+  unit = '',
+): string {
+  const c = checkReceipt(line, 0)
+  const u = unit ? ` ${unit}` : ''
+  const from = c.from === 'gate' ? ' (counted at the gate)' : c.from === 'in4' ? ' (IN4)' : ''
+  const head = `Ordered ${fmtQty(line.ordered)}${u} · ${fmtQty(c.received)} already in${from}`
+  return c.over > 0 ? `${head} · already ${fmtQty(c.over)} over` : head
 }
 
 /* ── How the stock list is arranged ─────────────────────────────────────── */

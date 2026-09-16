@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   istDay, daysSince, daysOverdue, waitedFor, overdueWord, mostUrgent,
-  setupHealth, duplicateNameGroups, checkReceipt, overReceiptNote,
+  setupHealth, duplicateNameGroups, checkReceipt, overReceiptNote, receiptLabel,
   searchStock, groupStockByDiscipline, groupStockByStore, stockWorth, itemHistory, moveWord,
   stockLines, NO_DISCIPLINE, type StockLine, type Waiting, type ItemMove,
 } from './desk'
@@ -390,5 +390,44 @@ describe('the same lines, grouped by the place they are in', () => {
     const byStore = groupStockByStore(rows).flatMap(g => g.rows)
     const total = (rs: typeof rows) => rs.reduce((s, r) => s + r.qty, 0)
     expect(total(byStore)).toBe(total(byItem.filter(r => r.qty > 0 && r.locationId)))
+  })
+})
+
+describe('the over-receipt warning does not cry wolf', () => {
+  // Aksha's screenshot, 16 Sep 2026: a line sitting at a quantity of ZERO was
+  // being told it had made 5,364 against 2,682 ordered. Two of his own test
+  // entries had already double-counted that line; the storekeeper standing at
+  // the next lorry did not do it and cannot fix it by typing a smaller number.
+  const doubled = { ordered: 2_682, alreadyIn: 0, atGate: 5_364 }
+
+  it('says nothing at all while nothing is being added', () => {
+    expect(overReceiptNote(doubled, 0, 'SqFt')).toBeNull()
+    expect(overReceiptNote(doubled, NaN, 'SqFt')).toBeNull()
+    expect(overReceiptNote(doubled, -5, 'SqFt')).toBeNull()
+  })
+
+  it('blames the earlier entries, not this lorry, when it was over already', () => {
+    const note = overReceiptNote(doubled, 100, 'SqFt')
+    expect(note).toContain('5,364 SqFt was already counted in')
+    expect(note).toContain('2,682 SqFt over before this lorry')
+    expect(note).toContain('Check the earlier entries')
+    // It must NOT say this delivery "makes" the total — it did not.
+    expect(note).not.toContain('This makes')
+  })
+
+  it('still blames this delivery when this delivery is what tips it over', () => {
+    const note = overReceiptNote({ ordered: 100, alreadyIn: 0, atGate: 40 }, 80, 'Nos')
+    expect(note).toContain('This makes 120 Nos against 100 Nos ordered')
+    expect(note).toContain('20 Nos over')
+    expect(note).toContain('still save')
+  })
+
+  it('says where the "already in" figure came from, and when it is over', () => {
+    expect(receiptLabel(doubled, 'SqFt'))
+      .toBe('Ordered 2,682 SqFt · 5,364 already in (counted at the gate) · already 2,682 over')
+    expect(receiptLabel({ ordered: 100, alreadyIn: 80, atGate: 0 }, 'Nos'))
+      .toBe('Ordered 100 Nos · 80 already in (IN4)')
+    expect(receiptLabel({ ordered: 100, alreadyIn: 0, atGate: 0 }, 'Nos'))
+      .toBe('Ordered 100 Nos · 0 already in')
   })
 })

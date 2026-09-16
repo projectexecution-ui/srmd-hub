@@ -1,7 +1,7 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { useMemo, useState, useTransition } from 'react'
+import { useMemo, useRef, useState, useTransition } from 'react'
 import { Plus, Trash2, PackageCheck, Sparkles } from 'lucide-react'
 import { completeGateEntry, importIn4Material } from '@/lib/stores/actions'
 import { loadOrderForEntry } from './po-action'
@@ -9,7 +9,7 @@ import { OrderPicker } from './OrderPicker'
 import {
   missingForComplete, fmtQty, entityCodeFromOrderNo, categoryFor, RETURNABLES_ON, type Register,
 } from '@/lib/stores/core'
-import { checkReceipt, overReceiptNote } from '@/lib/stores/desk'
+import { checkReceipt, overReceiptNote, receiptLabel } from '@/lib/stores/desk'
 import { T } from '@/lib/stores/lang'
 import { formatINR } from '@/lib/utils'
 import { Label, Stepper, BigNotice } from '../../field'
@@ -113,6 +113,13 @@ export function CompleteForm({
   const [itemList, setItemList] = useState<ItemOpt[]>(items)
   const [shots, setShots] = useState<Shot[]>([])
 
+  /** What the ORDER filled in, so clearing it can put back only what it set
+   *  and leave anything the storekeeper has changed since alone. A ref, not
+   *  state: nothing on screen depends on it, and it must not cause a render. */
+  const autoFilled = useRef<{
+    entityId?: string; projectId?: string; itemCategoryId?: string; locationId?: string
+  }>({})
+
   // The mind map asks for "Item Pics" and "Storage Location Pics" here by
   // name, and Aksha asked for both to be enforced. The location shot is
   // dropped for vendor material, which never enters a store.
@@ -145,9 +152,38 @@ export function CompleteForm({
     [itemList],
   )
 
+  /**
+   * Taking the order back off — and taking WHAT IT DID off with it.
+   *
+   * Aksha, 16 Sep 2026: "when i deselct the PO - the items are not getting
+   * removed". He is right, and it was worse than untidy: the lines stayed with
+   * their order quantities and their in4_po_item_id, so clearing a wrongly
+   * picked order and picking the right one would have booked the first order's
+   * items against the second one's number.
+   *
+   * It undoes exactly what the order did and no more:
+   *   · its item lines go; lines typed by hand stay, because nobody else put
+   *     them there
+   *   · a header field goes back to empty only if it is STILL exactly what the
+   *     order set it to. If the storekeeper has changed it since, their answer
+   *     stands — they were standing at the delivery and IN4 was not, which is
+   *     the same rule that governs filling it in the first place.
+   */
   const clearOrder = () => {
     setOrder(null); setPoWoNo(''); setPoNote(null); setFilledFrom([]); setOrderParty(null)
     setOrderCard(null)
+
+    setLines(ls => {
+      const byHand = ls.filter(l => l.in4PoItemId == null)
+      return byHand.length > 0 ? byHand : [newLine()]
+    })
+
+    const was = autoFilled.current
+    if (was.entityId && entityId === was.entityId) setEntityId('')
+    if (was.projectId && projectId === was.projectId) setProjectId('')
+    if (was.itemCategoryId && itemCategoryId === was.itemCategoryId) setItemCategoryId('')
+    if (was.locationId && locationId === was.locationId) setLocationId('')
+    autoFilled.current = {}
   }
 
   /**
@@ -192,7 +228,7 @@ export function CompleteForm({
       if (!entityId) {
         const code = entityCodeFromOrderNo(o.no, entities.map(e => e.code ?? ''))
         const hit = code ? entities.find(e => e.code === code) : null
-        if (hit) { setEntityId(hit.id); done.push(`trust ${hit.code || hit.name}`) }
+        if (hit) { setEntityId(hit.id); autoFilled.current.entityId = hit.id; done.push(`trust ${hit.code || hit.name}`) }
         else why.push('The order number does not name one of our trusts — pick it.')
       }
 
@@ -201,6 +237,7 @@ export function CompleteForm({
       if (!projectId) {
         if (o.projectId && projects.some(p => p.id === o.projectId)) {
           setProjectId(o.projectId)
+          autoFilled.current.projectId = o.projectId
           landedProject = o.projectId
           done.push(`project ${projects.find(p => p.id === o.projectId)?.name ?? ''}`.trim())
         } else if (o.projectWhy) why.push(o.projectWhy)
@@ -212,6 +249,7 @@ export function CompleteForm({
         const cat = categoryFor(register, true, categories)
         if (cat) {
           setItemCategoryId(cat)
+          autoFilled.current.itemCategoryId = cat
           done.push(`item category ${categories.find(c => c.id === cat)?.name ?? ''}`.trim())
         }
       }
@@ -222,6 +260,7 @@ export function CompleteForm({
         const forProject = lastLocations.byProject[landedProject]
         if (forProject && forProject !== locationId && locations.some(l => l.id === forProject)) {
           setLocationId(forProject)
+          autoFilled.current.locationId = forProject
           done.push(`put away at ${locations.find(l => l.id === forProject)?.label ?? ''}`.trim())
         }
       }
@@ -248,8 +287,7 @@ export function CompleteForm({
           qty: c.outstanding > 0 ? String(c.outstanding) : '',
           rate: String(l.rate), returnable: false, in4PoItemId: l.in4PoItemId,
           po: { ordered: l.ordered, alreadyIn: l.alreadyIn, atGate: l.atGate },
-          label: `Ordered ${fmtQty(l.ordered)} · ${fmtQty(c.received)} already in${
-            c.from === 'gate' ? ' (counted at the gate)' : c.from === 'in4' ? ' (IN4)' : ''}`,
+          label: receiptLabel(l, l.unit),
         })
       }
       if (added.length) setItemList(prev => [...prev, ...added])
