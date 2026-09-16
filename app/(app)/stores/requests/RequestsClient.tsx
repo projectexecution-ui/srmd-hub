@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation'
 import { useMemo, useState, useTransition } from 'react'
 import { raiseRequest, decideRequest, issueRequest } from '@/lib/stores/actions'
 import {
-  checkIssue, bestIssueLocation, fmtQty, approverLabel, approversForRequest,
+  checkIssue, bestIssueLocation, fmtQty, approverLabel, routeRequest,
   RETURNABLES_ON, type StockRow,
 } from '@/lib/stores/core'
 import { formatDate, formatDateTime } from '@/lib/utils'
@@ -73,7 +73,14 @@ export function RequestsClient({
 
       <Section title={mode === 'issue' ? 'Approved, waiting to go out' : 'Your requests'}>
         {requests.length === 0 ? (
-          <Empty title="No requests here" hint="Raise one above and it will appear for approval." />
+          <Empty
+            title="No requests here"
+            hint={mode === 'issue'
+              ? 'Approved requests land here for you to hand out.'
+              : crossProject
+                ? 'Raise one above. Your own family’s stock goes straight to the storekeeper; borrowing from another project waits for Mayank or Kanti.'
+                : 'Raise one above and it goes straight to the storekeeper.'}
+          />
         ) : (
           <div className="space-y-3">
             {requests.map(r => (
@@ -146,6 +153,23 @@ function RaiseForm({
   }, [items, stock, locations])
 
   const held = (itemId: string) => stock.filter(s => s.itemId === itemId && s.qty > 0)
+
+  /**
+   * Where this request will actually go — worked out by the SAME function the
+   * server uses, so the button cannot say one thing and the system do another.
+   *
+   * Aksha, 16 Sep 2026, with borrowing switched off and the button still
+   * reading "Send to Mayank or Kanti": "what are u upto ???". Fair. The
+   * routing had moved and the label had not, which is the screen lying about
+   * what pressing it does.
+   */
+  const route = routeRequest({
+    crossProjectOn: crossProject,
+    isCrossProject: !!fromProjectId,
+    disciplineCodes: lines
+      .filter(l => l.itemId)
+      .map(l => items.find(i => i.id === l.itemId)?.disciplineCode ?? null),
+  })
 
   if (!open) return <Btn onClick={() => { setOpen(true); setResult(null) }}>Raise a request</Btn>
 
@@ -263,7 +287,7 @@ function RaiseForm({
 
       {result && <Notice kind={result.ok ? 'ok' : 'bad'}>{result.message}</Notice>}
 
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Btn
           busy={pending}
           onClick={() => start(async () => {
@@ -276,11 +300,13 @@ function RaiseForm({
             if (r.ok) { setLines([newLine()]); setRemarks(''); onDone() }
           })}
         >
-          Send to {approverLabel(approversForRequest(
-            lines.filter(l => l.itemId).map(l => items.find(i => i.id === l.itemId)?.disciplineCode ?? null),
-          ))}
+          {route.status === 'pending' ? `Send to ${approverLabel(route.approvers)}` : 'Send to the storekeeper'}
         </Btn>
         <Btn kind="ghost" onClick={() => { setOpen(false); setResult(null) }}>Cancel</Btn>
+        {/* Where it is about to go, in the same words the server will use —
+            both come from routeRequest, so the button cannot promise one thing
+            and the system do another. */}
+        <p className="text-[12px] text-gray-500 flex-1 min-w-[200px]">{route.why}</p>
       </div>
     </div>
   )

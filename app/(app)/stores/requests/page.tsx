@@ -42,16 +42,28 @@ export default async function RequestsPage({
   if (blocked) return blocked
 
   const { status } = await searchParams
-  const active = FILTERS.find(f => f.key === status)?.key ?? 'pending'
 
-  const [requests, items, lists, stock, projects, recentItemIds, allRequests] = await Promise.all([
+  /**
+   * Default to what is actually there.
+   *
+   * "With Mayank / Kanti" was the landing filter, and since own-family requests
+   * stopped needing approval nothing is ever pending — so an engineer opened
+   * their own screen and saw an empty list under a form they had just used.
+   * When nothing is waiting on an approver, the honest default is everything.
+   */
+  const allRequests = await loadRequests({})
+  const anyPending = allRequests.some(r => r.status === 'pending')
+  const active = status !== undefined
+    ? FILTERS.find(f => f.key === status)?.key ?? ''
+    : (anyPending ? 'pending' : '')
+
+  const [requests, items, lists, stock, projects, recentItemIds] = await Promise.all([
     loadRequests({ status: active || null }),
     loadItems(),
     loadLists(),
     loadStock(),
     loadProjectOptions(),
     loadRecentItemIds(),
-    loadRequests({}),
   ])
   const crossProject = await crossProjectOn()
 
