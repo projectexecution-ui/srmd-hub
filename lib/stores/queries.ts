@@ -779,7 +779,18 @@ export interface PoLine {
   name: string
   unit: string
   ordered: number
+  /** What IN4's own Goods Receipt Notes say has come in. */
   alreadyIn: number
+  /**
+   * What THIS section has counted in through the gate against the same line,
+   * not counting the entry being filled in now.
+   *
+   * Without it the form offered the whole order a second time on a second
+   * delivery — IN4's GRN quantity had not moved — which is how In: 16Sep26/001
+   * and /002 booked 34,862 SqFt against a 33,142 SqFt order on 16 Sep 2026.
+   * See checkReceipt in desk.ts for why the two figures are never added.
+   */
+  atGate: number
   rate: number
 }
 
@@ -809,7 +820,7 @@ export interface OrderDetail {
  * alias, projectId stays null and projectWhy says so, because a wrong project
  * booked silently is worse than a blank one: nobody goes looking for it.
  */
-export async function loadOrder(key: string): Promise<OrderDetail | null> {
+export async function loadOrder(key: string, exceptEntryId?: string | null): Promise<OrderDetail | null> {
   const id = Number(key)
   if (!Number.isFinite(id)) return null
   const supabase = await createClient()
@@ -829,6 +840,28 @@ export async function loadOrder(key: string): Promise<OrderDetail | null> {
       ? supabase.from('in4_projects').select('name').eq('id', po.project_id).maybeSingle()
       : Promise.resolve({ data: null }),
   ])
+
+  /**
+   * What the gate has already counted against these order lines.
+   *
+   * Voided entries are left out — a struck-out entry took its stock back off
+   * the ledger, and it must not go on holding a purchase order closed.
+   */
+  const poItemIds = (items ?? []).map(i => i.item_id as number).filter(Boolean)
+  const gateSoFar = new Map<number, number>()
+  if (poItemIds.length) {
+    const { data: booked } = await supabase
+      .from('mio_entry_lines')
+      .select('in4_po_item_id, qty, mio_entries!inner ( id, stage )')
+      .in('in4_po_item_id', poItemIds)
+      .neq('mio_entries.stage', 'void')
+    for (const b of booked ?? []) {
+      const entry = one(b.mio_entries) as { id?: string } | null
+      if (exceptEntryId && entry?.id === exceptEntryId) continue
+      const k = b.in4_po_item_id as number
+      gateSoFar.set(k, (gateSoFar.get(k) ?? 0) + num(b.qty))
+    }
+  }
 
   const materialIds = [...new Set((items ?? []).map(i => i.material_id as number).filter(Boolean))]
   const { data: mats } = materialIds.length
@@ -889,6 +922,7 @@ export async function loadOrder(key: string): Promise<OrderDetail | null> {
         unit: (m?.uom as string) ?? 'Nos',
         ordered: num(i.base_po_qty),
         alreadyIn: num(i.grn_qty),
+        atGate: gateSoFar.get(i.item_id as number) ?? 0,
         rate: num(i.net_rate),
       }
     }),

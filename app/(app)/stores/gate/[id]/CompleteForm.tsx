@@ -9,6 +9,7 @@ import { OrderPicker } from './OrderPicker'
 import {
   missingForComplete, fmtQty, entityCodeFromOrderNo, categoryFor, RETURNABLES_ON, type Register,
 } from '@/lib/stores/core'
+import { checkReceipt, overReceiptNote } from '@/lib/stores/desk'
 import { T } from '@/lib/stores/lang'
 import { formatINR } from '@/lib/utils'
 import { Label, Stepper, BigNotice } from '../../field'
@@ -21,7 +22,26 @@ import { uploadEntryPhotos } from '../../upload-photos'
 
 interface Opt { id: string; name: string; code?: string | null }
 interface ItemOpt { id: string; name: string; unit: string; lastRate: number | null; in4MaterialId: number | null }
-interface Line { key: string; itemId: string; unit: string; qty: string; rate: string; returnable: boolean; in4PoItemId?: number | null; label?: string }
+interface Line {
+  key: string; itemId: string; unit: string; qty: string; rate: string; returnable: boolean
+  in4PoItemId?: number | null; label?: string
+  /** What the order says about this line, so the card can warn when the
+   *  quantity typed would take the order past what was ordered. */
+  po?: { ordered: number; alreadyIn: number; atGate: number }
+}
+
+/** What the order card shows above the items. */
+interface OrderCard {
+  no: string
+  party: string | null
+  project: string | null
+  /** The one unit every line shares, when they do share one. */
+  unit: string | null
+  ordered: number
+  received: number
+  linesDone: number
+  lines: number
+}
 
 let seq = 0
 const newLine = (): Line => ({ key: `l${++seq}`, itemId: '', unit: '', qty: '', rate: '', returnable: false })
@@ -88,6 +108,7 @@ export function CompleteForm({
   const [poNote, setPoNote] = useState<{ ok: boolean; text: string } | null>(null)
   const [filledFrom, setFilledFrom] = useState<string[]>([])
   const [orderParty, setOrderParty] = useState<string | null>(null)
+  const [orderCard, setOrderCard] = useState<OrderCard | null>(null)
   const [poBusy, setPoBusy] = useState(false)
   const [itemList, setItemList] = useState<ItemOpt[]>(items)
   const [shots, setShots] = useState<Shot[]>([])
@@ -126,6 +147,7 @@ export function CompleteForm({
 
   const clearOrder = () => {
     setOrder(null); setPoWoNo(''); setPoNote(null); setFilledFrom([]); setOrderParty(null)
+    setOrderCard(null)
   }
 
   /**
@@ -141,9 +163,12 @@ export function CompleteForm({
    * the delivery and IN4 was not.
    */
   const pickOrder = (key: string) => {
-    setPoBusy(true); setPoNote(null); setFilledFrom([]); setOrderParty(null)
+    setPoBusy(true); setPoNote(null); setFilledFrom([]); setOrderParty(null); setOrderCard(null)
     start(async () => {
-      const o: OrderDetail | null = await loadOrderForEntry(key)
+      // This entry's own lines must not count as "already received", or
+      // re-picking the order half way through would read as over-delivery
+      // against itself.
+      const o: OrderDetail | null = await loadOrderForEntry(key, entryId)
       setPoBusy(false)
       if (!o) { setPoNote({ ok: false, text: 'That order could not be read from IN4.' }); return }
 
@@ -213,15 +238,34 @@ export function CompleteForm({
           item = { id: r.data.id, name: r.data.name, unit: l.unit, lastRate: l.rate, in4MaterialId: l.materialId }
           added.push(item); known.set(l.materialId, item)
         }
-        const outstanding = Math.max(0, l.ordered - l.alreadyIn)
+        // What is STILL DUE, counting both records of what has arrived — IN4's
+        // receipts and this section's own gate entries, whichever knows more.
+        // See checkReceipt: they are never added, because they are two views
+        // of the same lorries.
+        const c = checkReceipt(l)
         drafts.push({
           key: `po${++seq}`, itemId: item.id, unit: l.unit,
-          qty: outstanding > 0 ? String(outstanding) : '',
+          qty: c.outstanding > 0 ? String(c.outstanding) : '',
           rate: String(l.rate), returnable: false, in4PoItemId: l.in4PoItemId,
-          label: `Ordered ${fmtQty(l.ordered)} · already in ${fmtQty(l.alreadyIn)}`,
+          po: { ordered: l.ordered, alreadyIn: l.alreadyIn, atGate: l.atGate },
+          label: `Ordered ${fmtQty(l.ordered)} · ${fmtQty(c.received)} already in${
+            c.from === 'gate' ? ' (counted at the gate)' : c.from === 'in4' ? ' (IN4)' : ''}`,
         })
       }
       if (added.length) setItemList(prev => [...prev, ...added])
+
+      // The order, as a card: what it is and how far through it we are.
+      const units = new Set(o.lines.map(l => l.unit))
+      setOrderCard({
+        no: o.no,
+        party: o.party,
+        project: o.projectName,
+        unit: units.size === 1 ? [...units][0] : null,
+        ordered: o.lines.reduce((s, l) => s + l.ordered, 0),
+        received: o.lines.reduce((s, l) => s + checkReceipt(l).received, 0),
+        linesDone: o.lines.filter(l => checkReceipt(l).outstanding <= 0).length,
+        lines: o.lines.length,
+      })
 
       // Never wipe lines the storekeeper already entered by hand.
       const hasOwnLines = lines.some(l => l.itemId)
@@ -266,6 +310,11 @@ export function CompleteForm({
         <OrderPicker value={order} onPick={pickOrder} onClear={clearOrder} gateParty={gateParty} gatePartyId={gatePartyId} />
 
         {poBusy && <p className="text-[13.5px] text-gray-500">Reading the order…</p>}
+
+        {/* The order as a CARD, not a number in a field. A nearly complete
+            order should look different from a fresh one before a single
+            quantity is typed. Aksha, 16 Sep 2026 — U3. */}
+        {orderCard && <OrderProgress card={orderCard} />}
 
         {filledFrom.length > 0 && (
           <div className="rounded-xl border-2 border-emerald-300 bg-emerald-50 p-3">
@@ -377,6 +426,15 @@ export function CompleteForm({
               <div className="space-y-1.5">
                 <Label t={T.qty} />
                 <Stepper value={l.qty} onChange={v => setLine(l.key, { qty: v })} unit={l.unit || undefined} />
+                {/* Says it, and still lets it be saved. Extra deliveries
+                    happen; a form that refuses one teaches a storekeeper to
+                    write it down somewhere else. What must not happen is it
+                    going past in silence — PO …/87 already reads 34,862 SqFt
+                    received against 33,142 ordered and nothing said a word. */}
+                {l.po && (() => {
+                  const note = overReceiptNote(l.po, Number(l.qty) || 0, l.unit)
+                  return note ? <BigNotice kind="info" title={note} /> : null
+                })()}
               </div>
 
               <div className="grid grid-cols-2 gap-3 items-end">
@@ -467,6 +525,51 @@ export function CompleteForm({
           {pending ? '…' : makesStock ? T.takeIntoStock : `Complete ${entryNo}`}
         </span>
       </button>
+    </div>
+  )
+}
+
+/**
+ * The purchase order, as a card with a bar.
+ *
+ * Quantities are only totalled when every line shares ONE unit — adding bags
+ * to metres is the classic register lie, and this screen will not tell it. An
+ * order that mixes units shows how many of its LINES are fully received
+ * instead, which is true whatever they are measured in.
+ */
+function OrderProgress({ card }: { card: OrderCard }) {
+  const byQty = card.unit != null && card.ordered > 0
+  const done = byQty
+    ? Math.min(100, Math.round((card.received / card.ordered) * 100))
+    : card.lines > 0 ? Math.round((card.linesDone / card.lines) * 100) : 0
+
+  return (
+    <div className="rounded-xl border-2 border-indigo-200 bg-indigo-50 p-3.5">
+      <p className="font-mono text-[13px] font-semibold text-indigo-800 break-all">{card.no}</p>
+      <p className="text-[15px] font-bold text-gray-900 mt-0.5">
+        {card.party ?? 'Supplier not named in IN4'}
+        {card.project && <span className="font-semibold text-gray-600"> · {card.project}</span>}
+      </p>
+
+      <div className="mt-2.5 h-2 w-full rounded-full bg-white overflow-hidden border border-indigo-100">
+        <div
+          className={`h-full rounded-full ${done >= 100 ? 'bg-emerald-600' : 'bg-indigo-600'}`}
+          style={{ width: `${Math.max(done, done > 0 ? 3 : 0)}%` }}
+        />
+      </div>
+
+      <p className="mt-1.5 text-[12.5px] text-gray-700 tabular-nums">
+        {byQty ? (
+          <>
+            <b>{fmtQty(card.received)}</b> of <b>{fmtQty(card.ordered)}</b> {card.unit} received
+          </>
+        ) : (
+          <>
+            <b>{card.linesDone}</b> of <b>{card.lines}</b> item{card.lines === 1 ? '' : 's'} fully received
+            <span className="text-gray-500"> — the lines are in different units, so they are not added</span>
+          </>
+        )}
+      </p>
     </div>
   )
 }

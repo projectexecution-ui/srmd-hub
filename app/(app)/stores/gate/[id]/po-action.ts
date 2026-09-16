@@ -21,7 +21,10 @@ export async function searchOrdersForEntry(
   return searchOrders(query, { partyHint: party?.name ?? null, partyId: party?.id ?? null })
 }
 
-export async function loadOrderForEntry(key: string) {
+/** `exceptEntryId` is the entry being filled in now — its own lines must not
+ *  count as "already received", or re-picking the order on a half-typed entry
+ *  would tell the storekeeper they had over-delivered against themselves. */
+export async function loadOrderForEntry(key: string, exceptEntryId?: string) {
   await requirePermission('cost-control', 'view')
-  return loadOrder(key)
+  return loadOrder(key, exceptEntryId ?? null)
 }
