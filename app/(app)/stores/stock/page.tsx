@@ -10,6 +10,7 @@ import { formatINR } from '@/lib/utils'
 import { Section, Empty, Scroller, th, thNum, td, tdNum } from '../ui'
 import { OpeningStockForm } from './OpeningStockForm'
 import { ByStore, type StoreGroup } from './ByStore'
+import { guardStoreTab } from '../guard'
 
 export const dynamic = 'force-dynamic'
 
@@ -30,6 +31,9 @@ export const dynamic = 'force-dynamic'
 export default async function StockPage({
   searchParams,
 }: { searchParams: Promise<{ asOn?: string; by?: string }> }) {
+  const blocked = await guardStoreTab('stock')
+  if (blocked) return blocked
+
   const { asOn, by } = await searchParams
   const byStore = by === 'store'
   const valid = asOn && /^\d{4}-\d{2}-\d{2}$/.test(asOn) ? asOn : undefined

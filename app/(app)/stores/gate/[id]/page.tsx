@@ -7,10 +7,14 @@ import {
 import { createsStock } from '@/lib/stores/core'
 import { CompleteForm } from './CompleteForm'
 import { EntryDetailPanels } from './EntryDetailPanels'
+import { guardStoreTab } from '../../guard'
 
 export const dynamic = 'force-dynamic'
 
 export default async function GateEntryPage({ params }: { params: Promise<{ id: string }> }) {
+  const blocked = await guardStoreTab('gate')
+  if (blocked) return blocked
+
   const { id } = await params
   const entry = await loadEntry(id)
   if (!entry) notFound()

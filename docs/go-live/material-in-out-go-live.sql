@@ -27,10 +27,15 @@
 -- Who may read and write the section. Mirrors LIVE_ROLES in lib/stores/core.ts;
 -- if you change one, change the other, or somebody sees a screen that then
 -- refuses to load their data.
+-- BACKOFFICE IS MAYANK, and he was missing from this list until 16 Sep 2026.
+-- He is the approver the whole OUT cycle routes to and the person notify.ts
+-- mails by name; without him here the database would have refused the requests
+-- it had just told him about. Found while drawing who-sees-what for the Round
+-- Two preview. LIVE_ROLES in lib/stores/core.ts carries the same list.
 create or replace function public.mio_can_use() returns boolean
 language sql stable security definer set search_path = public as $$
   select public.current_user_role()::text in
-    ('admin', 'founder', 'head', 'store_manager', 'security', 'engineer');
+    ('admin', 'founder', 'head', 'backoffice', 'store_manager', 'security', 'engineer');
 $$;
 
 -- Masters stay narrower — a storekeeper records material, they do not invent

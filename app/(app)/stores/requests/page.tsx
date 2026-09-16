@@ -6,31 +6,30 @@ import {
 import { RequestsClient } from './RequestsClient'
 import { getMyProfile } from '@/lib/auth'
 import { stockScopeFor, visibleLocationIds, emptyScopeReason } from '@/lib/stores/core'
+import { sayStatus } from '@/lib/stores/status'
+import { guardStoreTab } from '../guard'
 
 export const dynamic = 'force-dynamic'
 
 /**
- * Named by WHO IS HOLDING IT, not by what the status column says.
- *
- * Aksha, 16 Sep 2026, wanted "To approve" and "To issue" spelled out — his own
- * wording was "Request raised by Engineer for Site - Approval" and "Storekeeper
- * to Enginner Handover Process", and he asked for something shorter that says
- * as much.
- *
- * "To approve" never said to approve BY WHOM, and a chip has to read at a
- * glance from across a desk. Whose desk it is on answers the question everybody
- * actually opens this screen with — where has my request got to — and it is
- * three words instead of eight.
+ * Named by WHO IS HOLDING IT, not by what the status column says — and named
+ * in lib/stores/status.ts, so the chip on the card and the filter above it can
+ * never drift apart again. Aksha asked for those words on 16 Sep 2026; his own
+ * wording was "Request raised by Engineer for Site - Approval", shortened to
+ * something that reads at a glance from across a desk.
  */
 const FILTERS = [
-  { key: 'pending',  label: 'With Mayank / Kanti' },
-  { key: 'approved', label: 'With the storekeeper' },
+  { key: 'pending',  label: sayStatus('pending').label },
+  { key: 'approved', label: sayStatus('approved').label },
   { key: '',         label: 'Everything' },
 ]
 
 export default async function RequestsPage({
   searchParams,
 }: { searchParams: Promise<{ status?: string }> }) {
+  const blocked = await guardStoreTab('requests')
+  if (blocked) return blocked
+
   const { status } = await searchParams
   const active = FILTERS.find(f => f.key === status)?.key ?? 'pending'
 

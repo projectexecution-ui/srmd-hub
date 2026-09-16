@@ -3,10 +3,14 @@ import {
   loadLists, loadItems, loadProjectOptions, loadProjectStaff, loadAssignablePeople,
 } from '@/lib/stores/queries'
 import { MastersClient } from './MastersClient'
+import { guardStoreTab } from '../guard'
 
 export const dynamic = 'force-dynamic'
 
 export default async function MastersPage() {
+  const blocked = await guardStoreTab('masters')
+  if (blocked) return blocked
+
   const supabase = await createClient()
   const [lists, items, { data: companies }, projects, staff, people] = await Promise.all([
     loadLists(),

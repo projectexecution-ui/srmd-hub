@@ -3,7 +3,8 @@ import { notFound } from 'next/navigation'
 import { getMyProfile } from '@/lib/auth'
 import { Warehouse } from 'lucide-react'
 import { StoresNav } from './StoresNav'
-import { canSeeStores } from '@/lib/stores/core'
+import { canSeeStores, visibleStoreTabs } from '@/lib/stores/core'
+import { loadCounts } from '@/lib/stores/queries'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,6 +22,11 @@ export const dynamic = 'force-dynamic'
 export default async function StoresLayout({ children }: { children: React.ReactNode }) {
   const profile = await getMyProfile()
   if (!canSeeStores(profile?.role)) notFound()
+
+  // The tabs carry what is waiting behind them, so "is anything on me?" is
+  // answered from whichever screen you happen to be standing on.
+  const tabs = visibleStoreTabs(profile?.role)
+  const counts = await loadCounts()
 
   return (
     <div className="p-4 sm:p-6 max-w-6xl mx-auto space-y-5">
@@ -44,7 +50,10 @@ export default async function StoresLayout({ children }: { children: React.React
         </p>
       </header>
 
-      <StoresNav />
+      <StoresNav
+        tabs={tabs}
+        counts={{ gate: counts.toComplete, requests: counts.pendingRequests }}
+      />
       {children}
     </div>
   )

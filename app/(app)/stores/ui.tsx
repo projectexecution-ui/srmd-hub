@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useState, useTransition, type ReactNode } from 'react'
 import { formatDateTime, formatNumber } from '@/lib/utils'
 import type { Stage, Register } from '@/lib/stores/core'
+import { sayStage, sayStatus, type Tone } from '@/lib/stores/status'
 
 /**
  * The shared chrome for the Stores section.
@@ -80,16 +81,28 @@ export function Btn({
 
 /* ── Status ─────────────────────────────────────────────────────────────── */
 
-const STAGE_LOOK: Record<Stage, { label: string; cls: string }> = {
-  gate:     { label: 'Waiting on storekeeper', cls: 'bg-amber-100 text-amber-900' },
-  complete: { label: 'Complete',               cls: 'bg-emerald-100 text-emerald-800' },
-  closed:   { label: 'Closed',                 cls: 'bg-gray-200 text-gray-700' },
-  void:     { label: 'Voided',                 cls: 'bg-rose-100 text-rose-800' },
+/**
+ * What a tone looks like on a desk screen.
+ *
+ * The WORDS live in lib/stores/status.ts and are shared with every other
+ * screen; only the paint is here, because the field register paints the same
+ * tones differently and has to keep being able to.
+ */
+const TONE: Record<Tone, string> = {
+  wait: 'bg-amber-100 text-amber-900',
+  go:   'bg-blue-100 text-blue-900',
+  done: 'bg-emerald-100 text-emerald-800',
+  dead: 'bg-rose-100 text-rose-800',
+  bad:  'bg-rose-100 text-rose-800',
 }
 
 export function StageChip({ stage }: { stage: Stage }) {
-  const s = STAGE_LOOK[stage] ?? STAGE_LOOK.gate
-  return <span className={`inline-block rounded-full px-2 py-0.5 text-[10.5px] font-bold ${s.cls}`}>{s.label}</span>
+  const s = sayStage(stage)
+  return (
+    <span title={s.meaning} className={`inline-block rounded-full px-2 py-0.5 text-[10.5px] font-bold ${TONE[s.tone]}`}>
+      {s.label}
+    </span>
+  )
 }
 
 const REGISTER_LOOK: Record<Register, { label: string; cls: string }> = {
@@ -103,31 +116,46 @@ export function RegisterChip({ register }: { register: Register }) {
   return <span className={`inline-block rounded px-1.5 py-0.5 text-[10.5px] font-semibold ${r.cls}`}>{r.label}</span>
 }
 
+/**
+ * A request's status, in the same words the filter chips use.
+ *
+ * It used to print the database value with a capital letter — so the filter
+ * said "With Mayank / Kanti" and the card beside it said "Pending", which are
+ * the same fact wearing two names.
+ */
 export function StatusChip({ status }: { status: string }) {
-  const cls = {
-    pending:  'bg-amber-100 text-amber-900',
-    approved: 'bg-blue-100 text-blue-900',
-    rejected: 'bg-rose-100 text-rose-800',
-    issued:   'bg-emerald-100 text-emerald-800',
-    closed:   'bg-gray-200 text-gray-700',
-  }[status] ?? 'bg-gray-200 text-gray-700'
-  return <span className={`inline-block rounded-full px-2 py-0.5 text-[10.5px] font-bold capitalize ${cls}`}>{status}</span>
+  const s = sayStatus(status)
+  return (
+    <span title={s.meaning} className={`inline-block rounded-full px-2 py-0.5 text-[10.5px] font-bold ${TONE[s.tone]}`}>
+      {s.label}
+    </span>
+  )
 }
 
 /* ── Layout ─────────────────────────────────────────────────────────────── */
 
-/** A live count on a tile — Aksha's V1 rule: the tile says what is waiting. */
-export function Tile({ href, label, count, sub, tone = 'slate' }: {
-  href: string; label: string; count?: number; sub: string; tone?: 'amber' | 'blue' | 'emerald' | 'slate'
+/**
+ * A live count on a tile — Aksha's V1 rule: the tile says what is waiting.
+ *
+ * `value` is for a figure that is not a count of things waiting — money, most
+ * obviously. It is never dimmed to grey the way a zero count is, because ₹0 of
+ * stock is not "nothing on you", it is a fact about the store.
+ */
+export function Tile({ href, label, count, value, sub, tone = 'slate' }: {
+  href: string; label: string; count?: number; value?: string; sub: string
+  tone?: 'amber' | 'blue' | 'emerald' | 'slate'
 }) {
   const waiting = (count ?? 0) > 0
-  const ring = waiting
+  const lit = value != null || waiting
+  const ring = lit
     ? { amber: 'border-amber-300 bg-amber-50', blue: 'border-blue-300 bg-blue-50', emerald: 'border-emerald-300 bg-emerald-50', slate: 'border-gray-300 bg-white' }[tone]
     : 'border-gray-200 bg-white'
   return (
     <Link href={href} className={`block rounded-xl border p-4 hover:shadow-sm transition-shadow min-h-[44px] ${ring}`}>
       <p className="text-[13px] font-bold text-gray-900">{label}</p>
-      {count != null && (
+      {value != null ? (
+        <p className="text-2xl font-bold mt-1 tabular-nums text-gray-900">{value}</p>
+      ) : count != null && (
         <p className={`text-2xl font-bold mt-1 tabular-nums ${waiting ? 'text-gray-900' : 'text-gray-400'}`}>
           {formatNumber(count, 0)}
         </p>

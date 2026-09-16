@@ -31,7 +31,15 @@ export const isPilotProject = (projectId: string): boolean =>
  *   security       records the vehicle at the gate
  *   store_manager  counts the material in, puts it away, issues it out
  *   engineer       raises a request for their site
+ *   backoffice     Mayank — approves requests
  *   head, founder  approve, and read the registers
+ *
+ * BACKOFFICE WAS MISSING UNTIL 16 SEP 2026, and it mattered: Mayank is the
+ * approver the whole OUT cycle routes to, notify.ts already mails him by name,
+ * and his account is `backoffice` — so the day this went live he would have
+ * been told a request was waiting and then refused the screen to act on it.
+ * Found while drawing who-sees-what for the Round Two preview. The go-live
+ * migration carries the same list and was corrected with it.
  *
  * GOING LIVE IS TWO ACTS, deliberately. Flip STORES_LIVE, and apply
  * supabase/migrations/20260915_material_in_out_go_live.sql — which is written
@@ -43,12 +51,94 @@ export const isPilotProject = (projectId: string): boolean =>
 export const STORES_LIVE = false
 
 const LIVE_ROLES: readonly string[] = [
-  'admin', 'founder', 'head', 'store_manager', 'security', 'engineer',
+  'admin', 'founder', 'head', 'backoffice', 'store_manager', 'security', 'engineer',
 ]
 
 export function canSeeStores(role: string | null | undefined): boolean {
   if (!role) return false
   return STORES_LIVE ? LIVE_ROLES.includes(role) : role === 'admin'
+}
+
+/* ── Which screens are whose ────────────────────────────────────────────── */
+
+export type StoreTab = 'overview' | 'gate' | 'requests' | 'stock' | 'reports' | 'masters'
+
+/**
+ * Who sees which screen — Aksha, 16 Sep 2026: "Role-aware tabs, one status
+ * language".
+ *
+ * It is a JOB, not a rank. A guard needs one screen and six is five too many;
+ * a storekeeper holds material and issues it, so they get the gate, the stock
+ * and the requests waiting to be issued; an engineer asks and follows; Mayank
+ * approves and wants to see what is held and what moved. Everything belongs to
+ * the people who run the whole thing.
+ *
+ * An unlisted screen is REFUSED WITH A SENTENCE, never a blank 404 — see
+ * NotYourScreen. A tab that silently vanishes and then 404s on a bookmark is
+ * the silent blocker Aksha has asked me not to ship.
+ */
+const TAB_ROLES: Record<StoreTab, readonly string[]> = {
+  overview: ['admin', 'founder', 'head'],
+  gate:     ['admin', 'founder', 'head', 'security', 'store_manager'],
+  requests: ['admin', 'founder', 'head', 'backoffice', 'store_manager', 'engineer'],
+  stock:    ['admin', 'founder', 'head', 'backoffice', 'store_manager', 'engineer'],
+  reports:  ['admin', 'founder', 'head', 'backoffice'],
+  masters:  ['admin', 'founder', 'head'],
+}
+
+/** Reading order, which is also the order of the nav. */
+export const STORE_TABS: readonly StoreTab[] =
+  ['overview', 'gate', 'requests', 'stock', 'reports', 'masters']
+
+/**
+ * What this JOB needs, before asking whether the section is open yet.
+ *
+ * Deliberately separate from the live switch. Which screens a storekeeper
+ * needs is a fact about the work and does not change on the day it goes live —
+ * and if the two were one function, none of it could be tested until it was,
+ * because STORES_LIVE is false and every role but admin would come back empty.
+ */
+export function roleStoreTabs(role: string | null | undefined): StoreTab[] {
+  if (!role) return []
+  return STORE_TABS.filter(t => TAB_ROLES[t]?.includes(role) ?? false)
+}
+
+/** The real gate: the section has to be open to them AND the screen has to be
+ *  part of their job. */
+export function canOpenStoreTab(role: string | null | undefined, tab: StoreTab): boolean {
+  return canSeeStores(role) && roleStoreTabs(role).includes(tab)
+}
+
+/** What goes in the nav — nothing at all while the section is closed to them. */
+export function visibleStoreTabs(role: string | null | undefined): StoreTab[] {
+  return canSeeStores(role) ? roleStoreTabs(role) : []
+}
+
+/**
+ * Where this person lands, and what the section's own link points at.
+ *
+ * A guard opening /stores should be looking at the gate, not at a page they
+ * may not have. Falls back to the first screen they do have, and to the
+ * overview when they have none — at which point canSeeStores has already
+ * refused them anyway.
+ */
+export function homeStoreTab(role: string | null | undefined): StoreTab {
+  const mine = roleStoreTabs(role)
+  if (mine.includes('overview')) return 'overview'
+  if (mine.includes('gate')) return 'gate'
+  return mine[0] ?? 'overview'
+}
+
+export const storeTabHref = (tab: StoreTab): string =>
+  tab === 'overview' ? '/stores' : `/stores/${tab}`
+
+export const STORE_TAB_LABEL: Record<StoreTab, string> = {
+  overview: 'Overview',
+  gate: 'Gate register',
+  requests: 'Requests',
+  stock: 'Stock',
+  reports: 'Reports',
+  masters: 'Masters',
 }
 
 /**

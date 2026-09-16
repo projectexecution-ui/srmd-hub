@@ -4,6 +4,7 @@ import {
   loadRegister, loadRegisterParties, loadLists, listsOf, loadProjectOptions,
 } from '@/lib/stores/queries'
 import { RegisterClient } from '../RegisterClient'
+import { guardStoreTab } from '../../guard'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -21,6 +22,9 @@ export default async function RegisterPage({
   params: Promise<{ kind: string }>
   searchParams: Promise<{ from?: string; to?: string; party?: string; project?: string; discipline?: string }>
 }) {
+  const blocked = await guardStoreTab('reports')
+  if (blocked) return blocked
+
   const { kind } = await params
   const spec = findRegister(kind)
   if (!spec) notFound()

@@ -3,6 +3,7 @@ import {
   entryNo, linkedNo, foldStock, availableAt, availableAnywhere, checkIssue,
   outstandingReturnables, checkReturn, missingForGate, missingForComplete, createsStock, heldItemCount,
   fmtQty, isPilotProject, PILOT_PROJECT_IDS, RETURNABLES_ON, STORES_LIVE, canSeeStores, canRecordAtGate, stockScopeFor, visibleLocationIds, emptyScopeReason,
+  roleStoreTabs, visibleStoreTabs, canOpenStoreTab, homeStoreTab, storeTabHref, STORE_TABS, STORE_TAB_LABEL,
   approversForRequest, approverKeyOf, approverLabel, disciplineFromIn4Type, groupProjects, UNGROUPED, entityCodeFromOrderNo, categoryFor, isServiceScope, bestIssueLocation,
   type Movement, type ReturnableLine, type StockRow,
 } from './core'
@@ -690,5 +691,77 @@ describe('canRecordAtGate — the storekeeper covers when Security is off', () =
     expect(canRecordAtGate(null)).toBe(false)
     expect(canRecordAtGate(undefined)).toBe(false)
     expect(canRecordAtGate('')).toBe(false)
+  })
+})
+
+/**
+ * Who sees which screen. Aksha, 16 Sep 2026: "Role-aware tabs, one status
+ * language". These are the only proof available until the section goes live —
+ * the security and storekeeper accounts exist but cannot sign in yet, so the
+ * behaviour cannot be walked through from their seat.
+ */
+describe('who sees which screen', () => {
+  it('gives a guard the gate and nothing else', () => {
+    expect(roleStoreTabs('security')).toEqual(['gate'])
+  })
+
+  it('gives the storekeeper what they actually hold and hand out', () => {
+    expect(roleStoreTabs('store_manager')).toEqual(['gate', 'requests', 'stock'])
+  })
+
+  it('gives an engineer the asking, not the store’s books', () => {
+    expect(roleStoreTabs('engineer')).toEqual(['requests', 'stock'])
+  })
+
+  it('lets Mayank reach the requests he is mailed about', () => {
+    // He is `backoffice`, and until 16 Sep 2026 that role could not open the
+    // section at all — notify.ts would have told him a request was waiting and
+    // the app would then have refused him the screen to act on it.
+    expect(roleStoreTabs('backoffice')).toEqual(['requests', 'stock', 'reports'])
+  })
+
+  it('gives the people who run it everything', () => {
+    for (const role of ['admin', 'founder', 'head']) {
+      expect(roleStoreTabs(role)).toEqual(['overview', 'gate', 'requests', 'stock', 'reports', 'masters'])
+    }
+  })
+
+  it('gives somebody with no role nothing at all', () => {
+    expect(roleStoreTabs(null)).toEqual([])
+    expect(roleStoreTabs('contractor')).toEqual([])
+    expect(canOpenStoreTab(undefined, 'gate')).toBe(false)
+  })
+
+  it('lands everyone on a screen their own job includes', () => {
+    for (const role of ['admin', 'founder', 'head', 'backoffice', 'store_manager', 'security', 'engineer']) {
+      expect(roleStoreTabs(role)).toContain(homeStoreTab(role))
+    }
+  })
+
+  it('sends a guard to the gate rather than to an overview they do not have', () => {
+    expect(homeStoreTab('security')).toBe('gate')
+    expect(homeStoreTab('store_manager')).toBe('gate')
+    expect(homeStoreTab('engineer')).toBe('requests')
+    expect(homeStoreTab('backoffice')).toBe('requests')
+    expect(homeStoreTab('admin')).toBe('overview')
+  })
+
+  it('points every tab at a real address', () => {
+    expect(storeTabHref('overview')).toBe('/stores')
+    expect(storeTabHref('gate')).toBe('/stores/gate')
+    for (const t of STORE_TABS) expect(STORE_TAB_LABEL[t]).toBeTruthy()
+  })
+
+  it('shows nobody a tab while the section is still closed to them', () => {
+    // roleStoreTabs says what the job needs; visibleStoreTabs also asks whether
+    // the section is open at all. Only the second may put a tab on a screen.
+    if (!STORES_LIVE) {
+      for (const role of ['founder', 'head', 'backoffice', 'store_manager', 'security', 'engineer']) {
+        expect(roleStoreTabs(role).length).toBeGreaterThan(0)
+        expect(visibleStoreTabs(role)).toEqual([])
+        expect(canOpenStoreTab(role, 'gate')).toBe(false)
+      }
+      expect(visibleStoreTabs('admin')).toHaveLength(6)
+    }
   })
 })

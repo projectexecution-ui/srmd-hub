@@ -3,9 +3,11 @@ import {
   loadEntries, loadLists, listsOf, loadRecentParties, loadSuppliers,
 } from '@/lib/stores/queries'
 import { fmtQty, canRecordAtGate, type Stage } from '@/lib/stores/core'
+import { sayStage } from '@/lib/stores/status'
 import { getMyProfile } from '@/lib/auth'
 import { Section, Empty, Scroller, th, thNum, td, tdNum, StageChip, RegisterChip, When } from '../ui'
 import { GateInForm, StorekeeperCta } from './GateInForm'
+import { guardStoreTab } from '../guard'
 
 export const dynamic = 'force-dynamic'
 
@@ -25,14 +27,17 @@ function gateHref(stage: Stage | 'all', way: 'in' | 'out' | null): string {
 }
 
 const STAGES: Array<{ key: Stage | 'all'; label: string }> = [
-  { key: 'gate',     label: 'Waiting on storekeeper' },
-  { key: 'complete', label: 'Complete' },
+  { key: 'gate',     label: sayStage('gate').label },
+  { key: 'complete', label: sayStage('complete').label },
   { key: 'all',      label: 'Everything' },
 ]
 
 export default async function GatePage({
   searchParams,
 }: { searchParams: Promise<{ stage?: string; direction?: string }> }) {
+  const blocked = await guardStoreTab('gate')
+  if (blocked) return blocked
+
   const { stage, direction } = await searchParams
   const active = (STAGES.find(s => s.key === stage)?.key ?? 'gate') as Stage | 'all'
   const way: 'in' | 'out' | null =

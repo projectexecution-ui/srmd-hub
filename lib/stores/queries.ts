@@ -1,13 +1,14 @@
 import 'server-only'
 import { createClient } from '@/lib/supabase/server'
 import {
-  foldStock, outstandingReturnables, heldItemCount, type Movement, type StockRow,
+  foldStock, outstandingReturnables, heldItemCount, RETURNABLES_ON, type Movement, type StockRow,
   type ReturnableLine, type ReturnableRow, type Register, type Stage,
 } from './core'
 import type { RegisterSpec, RegisterFilter, RegisterRow } from './registers'
 import {
   groupProjects, isServiceScope, approversForRequest, type ProjectOpt, type ApproverKey,
 } from './core'
+import { duplicateNameGroups, type HealthInput } from './desk'
 import { loadAliasMap, resolveAlias } from '@/lib/aliases'
 export type { ProjectOpt }
 
@@ -917,9 +918,21 @@ async function resolveHubProject(
   }
 }
 
-export async function loadCounts(projectId?: string | null): Promise<{
-  toComplete: number; pendingRequests: number; returnablesOut: number; itemsHeld: number
-}> {
+export interface StoreCounts {
+  toComplete: number
+  pendingRequests: number
+  returnablesOut: number
+  itemsHeld: number
+  /** What the stock is worth at the last rate paid for each thing. */
+  stockValue: number
+  /** Stock rows with no rate at all — the reason stockValue understates. */
+  unpricedRows: number
+  /** Stock lines in hand. One item in two stores is two lines, which is why
+   *  this is not itemsHeld — the caveat has to say "x of y LINES". */
+  heldRows: number
+}
+
+export async function loadCounts(projectId?: string | null): Promise<StoreCounts> {
   const supabase = await createClient()
   const scoped = <T extends { eq: (c: string, v: string) => T }>(q: T) =>
     projectId ? q.eq('project_id', projectId) : q
@@ -927,14 +940,67 @@ export async function loadCounts(projectId?: string | null): Promise<{
   const [gate, reqs, returnables, stock] = await Promise.all([
     scoped(supabase.from('mio_entries').select('id', { count: 'exact', head: true }).eq('stage', 'gate') as never),
     scoped(supabase.from('mio_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending') as never),
-    loadReturnables(projectId ?? null),
+    // Returnables are switched off, and the fold behind them is not free.
+    // Asking for a list nothing will show is the sort of query that makes a
+    // page slow for no reason anybody can see.
+    RETURNABLES_ON ? loadReturnables(projectId ?? null) : Promise.resolve([] as ReturnableRow[]),
     loadStock(),
   ])
+
+  const held = stock.filter(s => s.qty > 0)
   return {
     toComplete: (gate as { count: number | null }).count ?? 0,
     pendingRequests: (reqs as { count: number | null }).count ?? 0,
     returnablesOut: returnables.length,
     itemsHeld: heldItemCount(stock),
+    // Never a silent zero for a missing rate: the unpriced rows are counted
+    // separately so the screen can say the figure is understated.
+    stockValue: held.reduce((s, r) => s + (r.lastRate == null ? 0 : r.lastRate * r.qty), 0),
+    unpricedRows: held.filter(r => r.lastRate == null).length,
+    heldRows: held.length,
+  }
+}
+
+/**
+ * What the setup is still missing — the line across the top of the Overview.
+ *
+ * Aksha, 16 Sep 2026, replacing the grey "what is not built yet" box with it.
+ * Config belongs behind Masters; a gap that silently misroutes an approval is
+ * not config, it is a fault, and it belongs where he will see it.
+ *
+ * Every figure is counted here rather than typed into the screen, because a
+ * health line that goes stale is worse than none: it says "all clear" about a
+ * store that is not.
+ */
+export async function loadSetupHealth(): Promise<HealthInput> {
+  const supabase = await createClient()
+  const [items, stock, lists, { count: staff }] = await Promise.all([
+    loadItems(),
+    loadStock(),
+    loadLists(),
+    supabase.from('mio_project_staff').select('id', { count: 'exact', head: true }).eq('is_active', true),
+  ])
+
+  const active = items.filter(i => i.isActive)
+  const held = new Set(stock.filter(s => s.qty > 0).map(s => s.itemId))
+  const rateOf = new Map<string, number | null>()
+  for (const s of stock) {
+    if (s.qty > 0 && s.lastRate != null) rateOf.set(s.itemId, s.lastRate)
+  }
+
+  // A site with no project is a shared warehouse — only a storekeeper can see
+  // it, which is right for the CT Warehouse and wrong for a site store.
+  const sites = listsOf(lists, 'location').filter(l => !l.parentId && l.isActive)
+
+  return {
+    itemsWithoutDiscipline: active.filter(i => !i.disciplineId).length,
+    duplicateNameGroups: duplicateNameGroups(active.map(i => ({ id: i.id, name: i.name }))).length,
+    staffAssigned: staff ?? 0,
+    // Only what is actually HELD: an item with no rate and no stock costs
+    // nothing and understates nothing.
+    itemsWithoutRate: [...held].filter(id => rateOf.get(id) == null
+      && active.find(i => i.id === id)?.lastRate == null).length,
+    locationsWithoutProject: sites.filter(s => !s.projectId).length,
   }
 }
 
