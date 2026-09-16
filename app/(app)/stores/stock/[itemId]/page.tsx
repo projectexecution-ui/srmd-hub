@@ -91,6 +91,39 @@ export default async function ItemCardPage({ params }: { params: Promise<{ itemI
         </div>
       </div>
 
+      {/* What was changed about the ITEM, as opposed to what moved.
+          Aksha, 16 Sep 2026: "i will need all the data should be recorded and
+          what all changes is done to that item should also come". A rate that
+          moves with no name against it is a rate nobody can defend later. */}
+      {item.edits.length > 0 && (
+        <details className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+          <summary className="px-4 py-3 cursor-pointer list-none min-h-[44px] flex flex-wrap items-center gap-2">
+            <span className="text-[13px] font-bold text-gray-900">What was changed about this item</span>
+            <span className="text-[12px] text-gray-500">
+              {item.edits.length} change{item.edits.length === 1 ? '' : 's'}
+              {' · last '}{formatDateTime(item.edits[0].changedAt)}
+            </span>
+            <span className="ml-auto text-[12px] font-semibold text-indigo-700">Show</span>
+          </summary>
+          <ul className="border-t border-gray-100 divide-y divide-gray-100">
+            {item.edits.map(e => (
+              <li key={e.id} className="px-4 py-2.5">
+                <p className="text-[12.5px] text-gray-800">
+                  <b>{e.field}</b>{' '}
+                  <span className="text-gray-500 line-through">{e.oldValue || 'empty'}</span>
+                  {' → '}
+                  <span className="font-semibold">{e.newValue || 'empty'}</span>
+                </p>
+                <p className="text-[11.5px] text-gray-400">
+                  {e.changedBy ?? 'Someone'} · {formatDateTime(e.changedAt)}
+                  {e.reason ? ` · ${e.reason}` : ''}
+                </p>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+
       <Section
         title="Every movement"
         note={`${formatNumber(rows.length, 0)} in all — newest first, with the balance after each one`}

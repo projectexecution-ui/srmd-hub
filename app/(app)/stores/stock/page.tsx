@@ -66,6 +66,9 @@ export default async function StockPage({
       // The site a spot hangs off, for the store view's bands. A spot with no
       // parent IS its own site — some places are a single shed.
       site: id => (id ? byLocation.get(id)?.parentName ?? byLocation.get(id)?.name ?? 'Not placed' : 'Not placed'),
+      // Where no delivery ever carried a rate, the item master fills the gap —
+      // which is what makes editing a rate in Masters actually value the stock.
+      itemRate: id => byItem.get(id)?.lastRate ?? null,
     },
   )
 

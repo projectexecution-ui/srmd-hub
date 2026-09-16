@@ -1405,6 +1405,8 @@ export interface ItemCard {
   isActive: boolean
   /** Where it sits right now, and how much is on each shelf. */
   at: Array<{ locationId: string | null; label: string; qty: number; value: number | null }>
+  /** Every change made to the item itself — rate, name, unit, discipline. */
+  edits: Array<{ id: string; field: string; oldValue: string | null; newValue: string | null; reason: string | null; changedAt: string; changedBy: string | null }>
 }
 
 /**
@@ -1428,7 +1430,7 @@ export async function loadItemCard(itemId: string): Promise<{ item: ItemCard; mo
     .maybeSingle()
   if (!row) return null
 
-  const [{ data: moves }, lists, stock] = await Promise.all([
+  const [{ data: moves }, { data: edits }, lists, stock] = await Promise.all([
     supabase
       .from('mio_movements')
       .select(`id, kind, qty, rate, moved_at, location_id, note, entry_id,
@@ -1437,6 +1439,11 @@ export async function loadItemCard(itemId: string): Promise<{ item: ItemCard; mo
                creator:created_by ( full_name )`)
       .eq('item_id', itemId)
       .order('moved_at'),
+    supabase
+      .from('mio_edits')
+      .select('id, field, old_value, new_value, reason, changed_at, profiles:changed_by ( full_name )')
+      .eq('table_name', 'mio_items').eq('row_id', itemId)
+      .order('changed_at', { ascending: false }),
     loadLists(),
     loadStock(),
   ])
@@ -1462,6 +1469,15 @@ export async function loadItemCard(itemId: string): Promise<{ item: ItemCard; mo
           value: s.lastRate == null ? null : s.lastRate * s.qty,
         }))
         .sort((a, b) => b.qty - a.qty || a.label.localeCompare(b.label)),
+      edits: (edits ?? []).map(e => ({
+        id: e.id as string,
+        field: e.field as string,
+        oldValue: (e.old_value as string | null) ?? null,
+        newValue: (e.new_value as string | null) ?? null,
+        reason: (e.reason as string | null) ?? null,
+        changedAt: e.changed_at as string,
+        changedBy: ((one(e.profiles) as { full_name?: string } | null)?.full_name) ?? null,
+      })),
     },
     moves: (moves ?? []).map(m => {
       const entry = one(m.entry) as { no?: string; party_name?: string; handed_over_to?: string } | null

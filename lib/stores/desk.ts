@@ -346,6 +346,16 @@ export interface StockLine {
   spot: string
   qty: number
   lastRate: number | null
+  /**
+   * Where the rate came from.
+   *
+   * `movement` is what this shelf actually cost, off the delivery that brought
+   * it. `item` is the figure from the item master, used only where no delivery
+   * ever carried one — which is all 723 of the Odoo opening lines. What it
+   * really cost always beats a master figure, and the screen says which is
+   * which so nobody quotes an estimate as a fact.
+   */
+  rateFrom: 'movement' | 'item' | null
   /** qty × rate, or null when there is no rate — never a silent zero. */
   value: number | null
   discipline: string | null
@@ -516,11 +526,18 @@ export function stockLines(
     where: (locationId: string | null) => string
     /** The site a spot sits in, for the store view's bands. */
     site?: (locationId: string | null) => string
+    /** The item master's rate, used only where no delivery carried one. */
+    itemRate?: (itemId: string) => number | null
   },
 ): StockLine[] {
   return stock.map(s => {
     const where = look.where(s.locationId)
     const site = look.site?.(s.locationId) ?? where
+    // What it cost beats what the master says; the master fills the gap.
+    const fallback = s.lastRate == null ? look.itemRate?.(s.itemId) ?? null : null
+    const rate = s.lastRate ?? fallback
+    const rateFrom: StockLine['rateFrom'] =
+      s.lastRate != null ? 'movement' : fallback != null ? 'item' : null
     return {
       itemId: s.itemId,
       name: look.name(s.itemId),
@@ -532,8 +549,9 @@ export function stockLines(
       // are called that, which is why the spot is never shown on its own.
       spot: where.startsWith(`${site} → `) ? where.slice(site.length + 3) : where,
       qty: s.qty,
-      lastRate: s.lastRate,
-      value: s.lastRate == null ? null : s.lastRate * s.qty,
+      lastRate: rate,
+      rateFrom,
+      value: rate == null ? null : rate * s.qty,
       discipline: look.discipline(s.itemId),
       lastMovedAt: s.lastMovedAt,
     }

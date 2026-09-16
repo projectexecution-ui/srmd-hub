@@ -224,7 +224,18 @@ export function StockClient({
                               <td className={`${td} whitespace-nowrap text-gray-500`}>
                                 {r.lastMovedAt ? formatDate(r.lastMovedAt) : '—'}
                               </td>
-                              <td className={tdNum}>{r.lastRate == null ? '—' : formatINR(r.lastRate)}</td>
+                              <td className={tdNum}>
+                                {r.lastRate == null ? '—' : formatINR(r.lastRate)}
+                                {/* A master rate is an estimate standing in for
+                                    what a delivery would have said. Marked, so
+                                    nobody quotes it as what it cost. */}
+                                {r.rateFrom === 'item' && (
+                                  <span
+                                    title="From the item master — no delivery ever carried a rate"
+                                    className="ml-1 text-[10.5px] font-semibold text-amber-700"
+                                  >est</span>
+                                )}
+                              </td>
                               <td className={tdNum}>{r.value == null ? '—' : formatINR(r.value)}</td>
                             </tr>
                           ))}

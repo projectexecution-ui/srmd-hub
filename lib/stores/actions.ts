@@ -789,30 +789,127 @@ export async function setListActive(id: string, isActive: boolean): Promise<Resu
  * A storekeeper must be able to do this at the gate: if something arrives that
  * IN4 has never carried, refusing to record it would stop the lorry.
  */
+/** What an item can be changed on, and what to call it in the history. */
+const ITEM_FIELDS: Record<string, string> = {
+  name: 'Name',
+  unit: 'Unit',
+  discipline_id: 'Discipline',
+  last_rate: 'Rate',
+}
+
+/**
+ * Add an item, or change one — and keep what it said before.
+ *
+ * Aksha, 16 Sep 2026: "What about Items rate where can i change if i need also
+ * i will need all the data should be recorded and what all changes is done to
+ * that item should also come". The action has always accepted a rate; nothing
+ * ever offered one, and nothing recorded a change.
+ *
+ * TWO THINGS IT NO LONGER DOES. It used to write every column on an update,
+ * so editing a name would blank the IN4 link, the discipline and the rate of
+ * anything that did not re-send them — 14 items are linked to IN4 materials
+ * and 667 carry a discipline, all of it silently losable. Only fields actually
+ * passed are touched now.
+ *
+ * And every change is written to `mio_edits` beside the gate entries', so the
+ * item card can show who changed a rate and when. A rate that moves with no
+ * name against it is a rate nobody can defend in a review.
+ */
 export async function saveItem(input: {
   id?: string | null
   name: string
-  unit: string
+  unit?: string
   in4MaterialId?: number | null
   disciplineId?: string | null
   lastRate?: number | null
-}): Promise<Result<{ id: string }>> {
+  /** Why — optional, and the thing that makes the history readable later. */
+  reason?: string
+}): Promise<Result<{ id: string; changed: string[] }>> {
+  const profile = await me()
+  if (!canCorrectEntry(profile.role)) {
+    return fail('Only the people who keep the store can add or change an item.')
+  }
   const supabase = await createClient()
   if (!input.name?.trim()) return fail('Give the item a name.')
 
-  const row = {
-    name: input.name.trim(), unit: input.unit?.trim() || 'Nos',
-    in4_material_id: input.in4MaterialId ?? null,
-    discipline_id: input.disciplineId || null,
-    last_rate: input.lastRate ?? null,
+  /* ── New item ─────────────────────────────────────────────────────────── */
+  if (!input.id) {
+    const { data, error } = await supabase
+      .from('mio_items')
+      .insert({
+        name: input.name.trim(),
+        unit: input.unit?.trim() || 'Nos',
+        in4_material_id: input.in4MaterialId ?? null,
+        discipline_id: input.disciplineId || null,
+        last_rate: input.lastRate ?? null,
+      })
+      .select('id').single()
+    if (error) return fail(explain(error, 'save the item'))
+    revalidatePath('/stores')
+    return done(`${input.name.trim()} added.`, { id: data.id as string, changed: [] })
   }
-  const { data, error } = input.id
-    ? await supabase.from('mio_items').update(row).eq('id', input.id).select('id').single()
-    : await supabase.from('mio_items').insert(row).select('id').single()
+
+  /* ── Changing one ─────────────────────────────────────────────────────── */
+  const { data: before } = await supabase
+    .from('mio_items')
+    .select('id, name, unit, discipline_id, last_rate')
+    .eq('id', input.id).maybeSingle()
+  if (!before) return fail('That item no longer exists.')
+
+  // Only what was actually sent, and only where it actually differs.
+  const wanted: Record<string, unknown> = { name: input.name.trim() }
+  if (input.unit !== undefined) wanted.unit = input.unit?.trim() || 'Nos'
+  if (input.disciplineId !== undefined) wanted.discipline_id = input.disciplineId || null
+  if (input.lastRate !== undefined) wanted.last_rate = input.lastRate
+
+  const patch: Record<string, unknown> = {}
+  const edits: Array<{ field: string; oldValue: string | null; newValue: string | null }> = []
+  for (const [col, next] of Object.entries(wanted)) {
+    const prev = (before as Record<string, unknown>)[col]
+    const same = prev == null && next == null
+      ? true
+      : String(prev ?? '') === String(next ?? '')
+    if (same) continue
+    patch[col] = next
+    edits.push({
+      field: ITEM_FIELDS[col] ?? col,
+      oldValue: prev == null ? null : String(prev),
+      newValue: next == null ? null : String(next),
+    })
+  }
+
+  if (edits.length === 0) return fail('Nothing changed.')
+
+  const { error } = await supabase.from('mio_items').update(patch).eq('id', input.id)
   if (error) return fail(explain(error, 'save the item'))
 
+  // Names rather than ids in the history where a name exists — "Discipline:
+  // 3f2a… → 91bc…" is not a record anybody can read in six months.
+  const ids = edits
+    .filter(e => e.field === 'Discipline')
+    .flatMap(e => [e.oldValue, e.newValue])
+    .filter(Boolean) as string[]
+  const names = new Map<string, string>()
+  if (ids.length) {
+    const { data: rows } = await supabase.from('mio_lists').select('id, name').in('id', ids)
+    for (const r of rows ?? []) names.set(r.id as string, r.name as string)
+  }
+
+  await supabase.from('mio_edits').insert(edits.map(e => ({
+    table_name: 'mio_items',
+    row_id: input.id,
+    field: e.field,
+    old_value: e.oldValue == null ? null : names.get(e.oldValue) ?? e.oldValue,
+    new_value: e.newValue == null ? null : names.get(e.newValue) ?? e.newValue,
+    reason: input.reason?.trim() || null,
+    changed_by: profile.id,
+  })))
+
   revalidatePath('/stores')
-  return done(input.id ? 'Saved.' : `${row.name} added.`, { id: data.id as string })
+  return done(
+    `${edits.map(e => e.field).join(' and ')} changed. The old value is kept.`,
+    { id: input.id, changed: edits.map(e => e.field) },
+  )
 }
 
 /**

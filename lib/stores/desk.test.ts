@@ -11,7 +11,7 @@ const NOW = new Date('2026-09-16T07:30:00.000Z') // 13:00 IST
 const line = (o: Partial<StockLine> & { itemId: string; name: string }): StockLine => ({
   unit: 'Nos', locationId: 'L1', where: 'CT Warehouse (Yunus) → Stock',
   site: 'CT Warehouse (Yunus)', spot: 'Stock', qty: 10,
-  lastRate: null, value: null, discipline: 'Plumbing', lastMovedAt: null, ...o,
+  lastRate: null, rateFrom: null, value: null, discipline: 'Plumbing', lastMovedAt: null, ...o,
 })
 
 describe('days, counted in IST', () => {
@@ -608,5 +608,61 @@ describe('the Odoo backlog is flagged until it is worked down', () => {
   it('counts one line in the right English', () => {
     expect(setupHealth({ ...none, unassignedStock: 1 }).find(n => n.key === 'whose')?.text)
       .toContain('1 stock line does not')
+  })
+})
+
+describe('a rate from the item master fills the gap, and says so', () => {
+  it('uses what the delivery actually cost when there is one', () => {
+    const [line] = stockLines(
+      [{ itemId: 'a', locationId: 'L1', qty: 10, lastRate: 52.5, lastMovedAt: null }],
+      {
+        name: () => 'Tile', unit: () => 'SqFt', discipline: () => 'Finishes',
+        where: () => 'NGH B → Warehouse-NGH', itemRate: () => 99,
+      },
+    )
+    // What it cost beats a master figure — always.
+    expect(line.lastRate).toBe(52.5)
+    expect(line.rateFrom).toBe('movement')
+    expect(line.value).toBe(525)
+  })
+
+  it('falls back to the item master where no delivery carried a rate', () => {
+    // All 723 Odoo opening lines are this case: Odoo shipped no rates at all.
+    const [line] = stockLines(
+      [{ itemId: 'a', locationId: 'L1', qty: 10, lastRate: null, lastMovedAt: null }],
+      {
+        name: () => 'Tile', unit: () => 'SqFt', discipline: () => null,
+        where: () => 'CT Warehouse (Yunus) → Stock', itemRate: () => 41.46,
+      },
+    )
+    expect(line.lastRate).toBe(41.46)
+    expect(line.rateFrom).toBe('item')
+    expect(line.value).toBeCloseTo(414.6, 4)
+  })
+
+  it('stays null rather than zero when neither knows', () => {
+    const [line] = stockLines(
+      [{ itemId: 'a', locationId: null, qty: 5, lastRate: null, lastMovedAt: null }],
+      { name: () => 'X', unit: () => 'Nos', discipline: () => null, where: () => 'Not placed' },
+    )
+    expect(line.lastRate).toBeNull()
+    expect(line.rateFrom).toBeNull()
+    expect(line.value).toBeNull()
+  })
+
+  it('counts a master-rated line as priced, so the total stops understating', () => {
+    const lines = stockLines(
+      [
+        { itemId: 'a', locationId: 'L1', qty: 10, lastRate: null, lastMovedAt: null },
+        { itemId: 'b', locationId: 'L1', qty: 2, lastRate: null, lastMovedAt: null },
+      ],
+      {
+        name: () => 'X', unit: () => 'Nos', discipline: () => null, where: () => 'Store',
+        itemRate: id => (id === 'a' ? 100 : null),
+      },
+    )
+    const w = stockWorth(lines)
+    expect(w.value).toBe(1000)
+    expect(w.unpriced).toBe(1)
   })
 })
