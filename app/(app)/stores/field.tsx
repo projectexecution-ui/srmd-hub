@@ -287,3 +287,28 @@ export function SwitchLink({ onClick, children }: { onClick: () => void; childre
     </button>
   )
 }
+
+/**
+ * A rate, on a field screen. The field register's own twin of the desk's
+ * NumberInput: grouped once you leave it, plain while you type, because
+ * reformatting under a moving caret is how a 52.50 becomes a 5,250.
+ */
+export function RateInput({
+  value, onChange, className = '',
+}: { value: string; onChange: (v: string) => void; className?: string }) {
+  const [focused, setFocused] = useState(false)
+  const n = Number(value)
+  const shown = focused || value === '' || !Number.isFinite(n)
+    ? value
+    : n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return (
+    <input
+      className={`${className} tabular-nums`}
+      value={shown}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onChange={e => onChange(e.target.value.replace(/,/g, ''))}
+      inputMode="decimal"
+    />
+  )
+}

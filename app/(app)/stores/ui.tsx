@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useState, useTransition, type ReactNode } from 'react'
 import { formatDateTime, formatNumber } from '@/lib/utils'
+import { fmtQty } from '@/lib/stores/core'
 import type { Stage, Register } from '@/lib/stores/core'
 import { sayStage, sayStatus, type Tone } from '@/lib/stores/status'
 
@@ -51,6 +52,54 @@ export function Field({ label, hint, children, required }: { label: string; hint
       {children}
       {hint && <span className="block text-[11.5px] text-gray-500 mt-1 leading-snug">{hint}</span>}
     </label>
+  )
+}
+
+/**
+ * A number you can read while you check it against a challan.
+ *
+ * Aksha, 16 Sep 2026, on a quantity box reading 22277: "why commas not coming
+ * here why ???" — fair, since the line above it already said "4,500 m" and the
+ * same figure was wearing two different faces on one screen.
+ *
+ * Grouped while you READ it, plain while you TYPE it. Reformatting on every
+ * keystroke fights the caret — type "1" into "22,277" and the separators move
+ * under your finger — so the commas go in the moment the field is left, which
+ * is the same rule the field register's Stepper already used. This is its desk
+ * twin, so both registers behave the same way.
+ */
+export function NumberInput({
+  value, onChange, className = '', money = false, placeholder, ariaLabel,
+}: {
+  value: string
+  onChange: (v: string) => void
+  className?: string
+  /** Two decimals kept, for a rate. A quantity drops trailing zeros. */
+  money?: boolean
+  placeholder?: string
+  ariaLabel?: string
+}) {
+  const [focused, setFocused] = useState(false)
+  const n = Number(value)
+  const shown = focused || value === '' || !Number.isFinite(n)
+    ? value
+    : money
+      ? n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+      : fmtQty(n)
+
+  return (
+    <input
+      value={shown}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      // Whatever is pasted in, the separators come straight back out — nobody
+      // should have to think about which characters the box will accept.
+      onChange={e => onChange(e.target.value.replace(/,/g, ''))}
+      inputMode="decimal"
+      placeholder={placeholder}
+      aria-label={ariaLabel}
+      className={`${inputClass} tabular-nums ${className}`}
+    />
   )
 }
 

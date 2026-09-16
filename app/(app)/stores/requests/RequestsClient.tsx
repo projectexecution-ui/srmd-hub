@@ -15,7 +15,8 @@ import { ISSUE_SLOTS, missingPhotos } from '@/lib/stores/photos'
 import { PhotoCapture, type Shot } from '../PhotoCapture'
 import { uploadEntryPhotos } from '../upload-photos'
 import {
-  Field, inputClass, Btn, Notice, Empty, Section, StatusChip, Scroller, th, thNum, td, tdNum, GroupedOptions,
+  Field, inputClass, Btn, Notice, Empty, Section, StatusChip, Scroller, NumberInput,
+  th, thNum, td, tdNum, GroupedOptions,
 } from '../ui'
 
 interface Opt { id: string; name: string }
@@ -179,8 +180,7 @@ function RaiseForm({
                   />
                 </Field>
                 <Field label="Qty">
-                  <input className={inputClass} value={l.qty} inputMode="decimal"
-                    onChange={e => setLine(l.key, { qty: e.target.value })} />
+                  <NumberInput value={l.qty} onChange={v => setLine(l.key, { qty: v })} />
                 </Field>
                 <Field label="Unit">
                   <input className={inputClass} value={l.unit} onChange={e => setLine(l.key, { unit: e.target.value })} />
@@ -397,8 +397,8 @@ function RequestCard({
                   )}
                   {issuing && (
                     <td className={td}>
-                      <input className={`${inputClass} w-24 text-right`} value={qtys[l.id] ?? ''} inputMode="decimal"
-                        onChange={e => setQtys(q => ({ ...q, [l.id]: e.target.value }))} />
+                      <NumberInput className="w-24 text-right" ariaLabel={`Issue ${l.itemName}`}
+                        value={qtys[l.id] ?? ''} onChange={v => setQtys(q => ({ ...q, [l.id]: v }))} />
                     </td>
                   )}
                 </tr>

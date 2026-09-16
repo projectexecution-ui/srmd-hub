@@ -12,7 +12,7 @@ import {
 import { checkReceipt, overReceiptNote, receiptLabel } from '@/lib/stores/desk'
 import { T } from '@/lib/stores/lang'
 import { formatINR } from '@/lib/utils'
-import { Label, Stepper, BigNotice } from '../../field'
+import { Label, Stepper, BigNotice, RateInput } from '../../field'
 import { SearchableSelect } from '@/components/ui/searchable-select'
 import { GroupedOptions } from '../../ui'
 import type { ProjectOpt, OrderDetail } from '@/lib/stores/queries'
@@ -478,10 +478,9 @@ export function CompleteForm({
               <div className="grid grid-cols-2 gap-3 items-end">
                 <label className="block space-y-1.5">
                   <Label t={T.rate} />
-                  <input
-                    className={sel} value={l.rate} inputMode="decimal"
-                    onChange={e => setLine(l.key, { rate: e.target.value })}
-                  />
+                  {/* The rate is grouped once you leave it, like every other
+                      figure on the screen — ₹1,140.70, not 1140.7. */}
+                  <RateInput value={l.rate} onChange={v => setLine(l.key, { rate: v })} className={sel} />
                 </label>
                 <div className="space-y-1.5">
                   <Label t={T.amount} />
