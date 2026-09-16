@@ -291,13 +291,28 @@ async function loadPoCalc(
   // is the purchase side of an abstract made and waiting, and it is what the
   // Disc Head, CT Head and Atm Head are actually being asked to pass.
   const billedGrns = new Set(lines.map(l => l.grn_id).filter((v): v is number => typeof v === 'number'))
+
+  // The bills raised on this order BEFORE this one, and their lines.
+  //
+  // Aksha, 16 Sep 2026: "what about PO - i want similar format to follow as
+  // WO". A purchase order is a running account against the order just as a
+  // work order is, and the question an approver asks of it is the same: what
+  // did the earlier bills take of this material, and what is left. The
+  // purchase side answers it more exactly — a pay line carries its own
+  // certificate_id, so it belongs to a bill outright with nothing to match.
+  const ladder = earlierBillsOn(history, mineCert?.certificateId ?? null)
+  const earlierIds = new Set(ladder.map(b => b.certificateId))
+  const earlierLines = lines.filter(l => earlierIds.has(n(l.certificate_id)))
+
   const grn = mineCert
     ? await loadGrnSheet(sb, {
         poId,
         lines: lines.filter(l => n(l.certificate_id) === mineCert.certificateId),
         landed: mineCert.gross,
+        earlier: earlierLines,
+        ladder,
       }).catch(() => null)
-    : await loadUnbilledGrn(sb, { poId, billedGrns }).catch(() => null)
+    : await loadUnbilledGrn(sb, { poId, billedGrns, earlier: earlierLines, ladder }).catch(() => null)
 
   return {
     orderNo: bill.orderNo,
@@ -324,7 +339,10 @@ async function loadPoCalc(
  *  the abstract does — this bill, received to date, still to come. */
 async function loadGrnSheet(
   sb: SupabaseClient,
-  opts: { poId: number; lines: Record<string, unknown>[]; landed: number; billed?: boolean },
+  opts: {
+    poId: number; lines: Record<string, unknown>[]; landed: number; billed?: boolean
+    earlier?: Record<string, unknown>[]; ladder?: LadderBill[]
+  },
 ): Promise<GrnSheet | null> {
   if (!opts.lines.length) return null
 
@@ -350,13 +368,16 @@ async function loadGrnSheet(
   const matName = new Map((matData ?? []).map(m => [m.id as number, (m.name as string | null) ?? '']))
   const uomName = new Map((uomData ?? []).map(u => [u.id as number, (u.name as string | null) ?? '']))
 
+  const payLine = (l: Record<string, unknown>) => ({
+    certificateId: n(l.certificate_id),
+    grnId: (l.grn_id as number | null) ?? null,
+    materialId: (l.material_id as number | null) ?? null,
+    landed: n(l.landed_cost),
+    certified: n(l.certified_amt),
+  })
+
   return buildGrnSheet(
-    opts.lines.map(l => ({
-      grnId: (l.grn_id as number | null) ?? null,
-      materialId: (l.material_id as number | null) ?? null,
-      landed: n(l.landed_cost),
-      certified: n(l.certified_amt),
-    })),
+    opts.lines.map(payLine),
     grns.map(g => ({
       grnId: (g.grn_id as number | null) ?? null,
       materialId: (g.material_id as number | null) ?? null,
@@ -380,6 +401,8 @@ async function loadGrnSheet(
     }),
     opts.landed,
     opts.billed ?? true,
+    (opts.earlier ?? []).map(payLine),
+    opts.ladder ?? [],
   )
 }
 
@@ -550,7 +573,10 @@ export async function loadMakerSeed(
  *  the note in purchase.ts about why that matters once a certificate exists. */
 async function loadUnbilledGrn(
   sb: SupabaseClient,
-  opts: { poId: number; billedGrns: Set<number> },
+  opts: {
+    poId: number; billedGrns: Set<number>
+    earlier?: Record<string, unknown>[]; ladder?: LadderBill[]
+  },
 ): Promise<GrnSheet | null> {
   const { data: grnData } = await sb.from('in4_grn_items')
     .select('grn_id, material_id, received_qty, grn_material_cost, grn_no, grn_dt, delivery_challan_no')
@@ -573,5 +599,9 @@ async function loadUnbilledGrn(
     })),
     landed: open.reduce((s, g) => s + Number(g.grn_material_cost ?? 0), 0),
     billed: false,
+    // Goods received and not yet billed are still measured against everything
+    // the order has already been billed for.
+    earlier: opts.earlier,
+    ladder: opts.ladder,
   })
 }

@@ -171,10 +171,10 @@ describe('every earlier bill as its own column', () => {
  *  RA-4. */
 describe('the earlier columns come from the bill register', () => {
   const LADDER: LadderBill[] = [
-    { ra: 1, invoiceNo: 'RU-WH-CV/01', on: '2025-09-16', certified: 3127174 },
-    { ra: 2, invoiceNo: 'RU-WH-CV/02', on: '2025-09-16', certified: 389879.48 },
-    { ra: 3, invoiceNo: 'RU-WH-CV/03', on: '2025-09-16', certified: 3492189.42 },
-    { ra: 4, invoiceNo: 'RU-WH-CV/04', on: '2025-10-15', certified: 7505440.32 },
+    { ra: 1, certificateId: 1584, invoiceNo: 'RU-WH-CV/01', on: '2025-09-16', certified: 3127174 },
+    { ra: 2, certificateId: 1585, invoiceNo: 'RU-WH-CV/02', on: '2025-09-16', certified: 389879.48 },
+    { ra: 3, certificateId: 1586, invoiceNo: 'RU-WH-CV/03', on: '2025-09-16', certified: 3492189.42 },
+    { ra: 4, certificateId: 1742, invoiceNo: 'RU-WH-CV/04', on: '2025-10-15', certified: 7505440.32 },
   ]
   const LUMPED: AbstractLine[] = [
     line({ abstractId: 1502, abstractNo: 'Abs/SRET/WH/2025-26/176', billNo: 'RU-WH-CV/01,02 & 03', on: '2025-09-11', itemId: 12221, qty: 40, rate: 896, amt: 4000000 }),
@@ -184,9 +184,30 @@ describe('the earlier columns come from the bill register', () => {
     line({ abstractId: 1589, abstractNo: 'Abs/SRET/WH/2025-26/217', billNo: 'RU-WH-CV/04', on: '2025-10-10', itemId: 12221, qty: 20, rate: 896, amt: 7505440 }),
   ]
 
-  it('numbers a column the way the bills panel numbers it', () => {
+  it('gives every bill its own column — nothing is ever clubbed', () => {
+    // Aksha, 16 Sep 2026: "I want RA 1- 3 also seperate - arent u
+    // understanidng - dont want any clubbed RA".
     const { columns } = earlierColumns([...LUMPED, ...FOURTH], LADDER)
-    expect(columns.map(c => c.label)).toEqual(['RA-1–3', 'RA-4'])
+    expect(columns.map(c => c.label)).toEqual(['RA-1', 'RA-2', 'RA-3', 'RA-4'])
+    expect(columns.map(c => c.billNo))
+      .toEqual(['RU-WH-CV/01', 'RU-WH-CV/02', 'RU-WH-CV/03', 'RU-WH-CV/04'])
+  })
+
+  it('marks the three that share one measurement sheet', () => {
+    // They are three bills with three headings; what they share is the single
+    // abstract IN4 filed against all of them, and the group says so without
+    // inventing a per-bill quantity.
+    const { columns } = earlierColumns([...LUMPED, ...FOURTH], LADDER)
+    const g = columns.map(c => c.group)
+    expect(g[0]).toBe(g[1])
+    expect(g[1]).toBe(g[2])
+    expect(g[3]).not.toBe(g[0])
+  })
+
+  it('writes the shared quantity once, against the first of the three', () => {
+    // Anything else double-counts the moment a folded range is summed.
+    const { columnOf } = earlierColumns([...LUMPED, ...FOURTH], LADDER)
+    expect(columnOf.get('ru-wh-cv/01,02 & 03')).toBe(0)
   })
 
   it('merges a run only when the money adds up, never by reading the text', () => {
@@ -196,6 +217,9 @@ describe('the earlier columns come from the bill register', () => {
     const wrong = LUMPED.map(l => ({ ...l, amt: 11 }))
     const { columns } = earlierColumns([...wrong, ...FOURTH], LADDER)
     expect(columns.map(c => c.label)).toEqual([null, 'RA-1', 'RA-2', 'RA-3', 'RA-4'])
+    // And RA-1..RA-3 are then genuinely unmeasured, each on its own.
+    expect(columns.map(c => c.measured)).toEqual([true, false, false, false, true])
+    expect(new Set(columns.slice(1, 4).map(c => c.group)).size).toBe(3)
   })
 
   it('keeps a column for a bill IN4 never abstracted, and says so', () => {
@@ -207,13 +231,14 @@ describe('the earlier columns come from the bill register', () => {
     expect(columns[0].billNo).toBe('RU-WH-CV/01')
   })
 
-  it('puts the lumped abstract quantity under the merged column', () => {
+  it('carries the shared quantity in one slot, not three', () => {
     const s = buildAbstractSheet(
       [line({ abstractId: 1779, billNo: 'RU-WH-CV/05', on: '2025-11-25', itemId: 12221, qty: 7, rate: 896, amt: 6272 })],
       [...LUMPED, ...FOURTH], BOQ, null, LADDER)
-    expect(s.earlierBills.map(b => b.label)).toEqual(['RA-1–3', 'RA-4'])
+    expect(s.earlierBills.map(b => b.label)).toEqual(['RA-1', 'RA-2', 'RA-3', 'RA-4'])
     const row = s.rows.find(r => r.itemId === 12221)!
-    expect(row.history).toEqual([40, 20])
+    // 40 under RA-1 and nowhere else, so a sum across the three is still 40.
+    expect(row.history).toEqual([40, 0, 0, 20])
     expect(s.unmeasured).toBe(0)
   })
 
@@ -229,6 +254,7 @@ describe('the earlier columns come from the bill register', () => {
     const s = buildAbstractSheet(THIRD_BILL, [...SECOND, ...FIRST], BOQ, null)
     expect(s.earlierBills.map(b => b.billNo)).toEqual(['KP362SRA51', 'KP362SRA06'])
     expect(s.earlierBills.map(b => b.label)).toEqual([null, null])
+    expect(new Set(s.earlierBills.map(b => b.group)).size).toBe(2)
   })
 })
 

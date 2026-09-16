@@ -98,8 +98,8 @@ export interface SheetRow {
  *  "Bills on …" panel, the same RA numbers — and the measurement is attached
  *  to it. */
 export interface EarlierBill {
-  /** What the register calls it: "RA-4", or "RA-1–3" where one abstract
-   *  answered three bills. Null for an abstract that no bill accounts for. */
+  /** What the register calls it — "RA-4". One bill, one column, always. Null
+   *  for an abstract that no bill on the register accounts for. */
   label: string | null
   billNo: string | null
   on: string | null
@@ -107,12 +107,31 @@ export interface EarlierBill {
    *  it. The column is then blank because nothing was measured — not because
    *  zero was. Saying which is which is the whole point of showing it. */
   measured: boolean
+  /** Columns sharing a group id share ONE measurement sheet in IN4, which
+   *  files one abstract against several bills.
+   *
+   *  Aksha, 16 Sep 2026: "I want RA 1- 3 also seperate - arent u
+   *  understanidng - dont want any clubbed RA". Right — RA-1, RA-2 and RA-3
+   *  are three bills and each gets its own column and its own heading. What
+   *  cannot be split is the QUANTITY: IN4 holds one sheet for the three, so
+   *  there is no per-bill figure to put in three cells. Splitting the money
+   *  three ways to invent one would be a guess, and repeating the same figure
+   *  under each heading would read as billing it three times. So the headings
+   *  are separate and the measured quantity is drawn once across them.
+   *
+   *  The group is decided on the MONEY — see below — never by reading the
+   *  bill-number text. */
+  group: number
 }
 
 /** One bill on the register, oldest first — `ra` is its position, exactly as
  *  `woHistory` numbers it, so the sheet and the bills panel agree. */
 export interface LadderBill {
   ra: number
+  /** IN4's own id for the bill. The purchase side matches its pay lines on it;
+   *  the contractor side has no such key on the abstract and matches on the
+   *  bill number instead. */
+  certificateId: number
   invoiceNo: string | null
   on: string | null
   certified: number
@@ -213,36 +232,36 @@ export function earlierColumns(
     }
   })
 
-  // Build the columns: the register in order, runs merged, then the orphan
-  // abstracts slotted in by date.
+  // One column per bill on the register, in order, then the orphan abstracts
+  // slotted in by date. Bills answered by the same abstract share a group id
+  // and nothing else — each keeps its own heading, its own bill number and its
+  // own date.
   type Col = EarlierBill & { seq: number; k: string | null }
-  const cols: Col[] = []
-  for (let i = 0; i < ladder.length;) {
-    const g = owner[i]
-    let j = i
-    while (g !== -1 && j + 1 < ladder.length && owner[j + 1] === g) j++
-    const from = ladder[i], to = ladder[j]
-    const grp = g === -1 ? null : groups[g]
-    cols.push({
-      label: i === j ? `RA-${from.ra}` : `RA-${from.ra}–${to.ra}`,
-      billNo: grp?.billNo ?? from.invoiceNo,
-      on: from.on ?? grp?.on ?? null,
-      measured: g !== -1,
-      seq: i,
-      k: grp?.k ?? null,
-    })
-    i = j + 1
-  }
+  const cols: Col[] = ladder.map((b, i) => ({
+    label: `RA-${b.ra}`,
+    billNo: b.invoiceNo,
+    on: b.on,
+    measured: owner[i] !== -1,
+    // Own group unless an abstract covers several bills, when they share it.
+    group: owner[i] === -1 ? -1 - i : owner[i],
+    seq: i,
+    k: owner[i] === -1 ? null : groups[owner[i]].k,
+  }))
   groups.forEach((g, gi) => {
     if (owner.includes(gi)) return
-    cols.push({ label: null, billNo: g.billNo, on: g.on, measured: true, seq: ladder.length + gi, k: g.k })
+    cols.push({
+      label: null, billNo: g.billNo, on: g.on, measured: true,
+      group: groups.length + gi, seq: ladder.length + gi, k: g.k,
+    })
   })
   cols.sort((a, b) => (a.on ?? '').localeCompare(b.on ?? '') || a.seq - b.seq)
 
+  // The quantity is written into the FIRST column of each group and nowhere
+  // else, so summing a folded range can never count one sheet twice.
   const columnOf = new Map<string, number>()
-  cols.forEach((c, i) => { if (c.k) columnOf.set(c.k, i) })
+  cols.forEach((c, i) => { if (c.k && !columnOf.has(c.k)) columnOf.set(c.k, i) })
   return {
-    columns: cols.map(({ label, billNo, on, measured }) => ({ label, billNo, on, measured })),
+    columns: cols.map(({ label, billNo, on, measured, group }) => ({ label, billNo, on, measured, group })),
     columnOf,
   }
 }

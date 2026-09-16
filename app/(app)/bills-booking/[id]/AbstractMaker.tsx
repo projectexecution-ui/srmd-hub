@@ -100,13 +100,29 @@ export function AbstractMaker({ billId, woNo, vendor, work, seed, gst: gstPick, 
   //   folded  every earlier bill in one column — the narrowest read
   const [view, setView] = useState<'auto' | 'all' | 'folded'>('auto')
   const KEEP = 3
-  const rolled = view === 'all' ? 0
+  let rolled = view === 'all' ? 0
     : view === 'folded' ? earlierBills.length
       : Math.max(0, earlierBills.length - KEEP)
+  // Never fold half a shared sheet. Where IN4 filed one abstract against RA-1,
+  // RA-2 and RA-3 its quantity is written once, against the first of them, so
+  // splitting the three across the fold would leave the figure hiding inside
+  // "Earlier" and RA-3 reading as nothing. The boundary moves instead.
+  while (rolled > 0 && rolled < earlierBills.length
+         && earlierBills[rolled].group === earlierBills[rolled - 1].group) rolled++
   // Kept with their ORIGINAL position, so the label stays RA-4 and not RA-1 —
   // renumbering them would make the legend lie.
   const shownBills = earlierBills.map((b, i) => ({ ...b, i })).slice(rolled)
   const unmeasured = earlierBills.filter(b => !b.measured).length
+  // Every bill keeps its own heading. Consecutive bills answered by ONE
+  // abstract share one cell beneath them, because IN4 holds one quantity for
+  // the lot and there is no honest way to split it three ways.
+  const cells = shownBills.reduce<Array<{ i: number; span: number; idx: number[] }>>((acc, b) => {
+    const last = acc[acc.length - 1]
+    if (last && earlierBills[last.i].group === b.group) { last.span++; last.idx.push(b.i) }
+    else acc.push({ i: b.i, span: 1, idx: [b.i] })
+    return acc
+  }, [])
+  const shared = cells.filter(cl => cl.span > 1)
   const prevCols = (rolled > 0 ? 1 : 0) + Math.max(shownBills.length, earlierBills.length === 0 ? 1 : 0)
   const hidden = useMemo(() => seed.filter(l => shortenBoq(l.particular).shortened).length, [seed])
 
@@ -183,6 +199,14 @@ export function AbstractMaker({ billId, woNo, vendor, work, seed, gst: gstPick, 
           </button>
         </div>
       )}
+      {shared.length > 0 && (
+        <p className="border-b border-gray-100 bg-amber-50/70 px-4 py-1.5 text-[11px] text-amber-900">
+          <b>IN4 holds one measurement sheet for {shared.map(cl =>
+            cl.idx.map(i => earlierBills[i].label ?? 'an abstract').join(', ')).join('; and for ')}.</b>{' '}
+          Each bill keeps its own column, and that one measured quantity is drawn across them — IN4 has no
+          per-bill figure to split it into, and the money on each is on the bills panel below.
+        </p>
+      )}
       {unmeasured > 0 && (
         <p className="border-b border-gray-100 bg-amber-50/70 px-4 py-1.5 text-[11px] text-amber-900">
           <b>{unmeasured} of these {unmeasured === 1 ? 'bills has' : 'bills have'} no measurement sheet in IN4.</b>{' '}
@@ -254,8 +278,14 @@ export function AbstractMaker({ billId, woNo, vendor, work, seed, gst: gstPick, 
                     {n(q3((l.history ?? []).slice(0, rolled).reduce((a, b) => a + b, 0)))}
                   </Td>
                 )}
-                {shownBills.map(b => (
-                  <Td key={b.i} g="prev" className="text-gray-600">{n(l.history?.[b.i] ?? 0)}</Td>
+                {cells.map(cl => (
+                  <Td key={cl.i} g="prev" colSpan={cl.span} centre={cl.span > 1}
+                      className={cl.span > 1 ? 'bg-amber-100/70 text-gray-700' : 'text-gray-600'}
+                      title={cl.span > 1
+                        ? `One measurement sheet in IN4 for ${cl.idx.map(i => earlierBills[i].label ?? '').join(', ')} — no per-bill quantity exists`
+                        : undefined}>
+                    {n(q3(cl.idx.reduce((a, i) => a + (l.history?.[i] ?? 0), 0)))}
+                  </Td>
                 ))}
                 {earlierBills.length === 0 && <Td g="prev">{n(l.priorQty)}</Td>}
                 <Td g="prev">{mc(l.priorAmt)}</Td>
@@ -400,10 +430,11 @@ function Th({ children, l, g }: { children: React.ReactNode; l?: boolean; g?: 'w
     </th>
   )
 }
-function Td({ children, l, g, className = '' }: { children: React.ReactNode; l?: boolean; g?: 'wo' | 'prev' | 'this' | 'cum' | 'bal'; className?: string }) {
+function Td({ children, l, g, colSpan, centre, title, className = '' }: { children: React.ReactNode; l?: boolean; g?: 'wo' | 'prev' | 'this' | 'cum' | 'bal'; colSpan?: number; centre?: boolean; title?: string; className?: string }) {
   const bg = g === 'this' ? 'bg-blue-50/70' : g === 'prev' ? 'bg-amber-50/50' : g === 'cum' ? 'bg-emerald-50/40' : g === 'wo' ? 'bg-slate-50/60' : ''
+  const align = centre ? 'text-center' : l ? 'text-left' : 'text-right'
   return (
-    <td className={`border border-gray-100 px-1.5 py-1 tabular-nums ${bg} ${l ? 'text-left' : 'text-right'} ${className}`}>
+    <td colSpan={colSpan} title={title} className={`border border-gray-100 px-1.5 py-1 tabular-nums ${bg} ${align} ${className}`}>
       {children}
     </td>
   )

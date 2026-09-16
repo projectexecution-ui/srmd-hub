@@ -11,6 +11,7 @@ import { StatusTimeline } from './StatusTimeline'
 import { Documents, type DocRow } from './Documents'
 import { AbstractNo } from './AbstractNo'
 import { Calculation } from './Calculation'
+import { GrnSheetPanel } from './GrnSheet'
 import { loadBillCalc, loadMakerSeed } from '@/lib/bills-booking/load-calc'
 import { AbstractMaker } from './AbstractMaker'
 import { linesFromSheet } from '@/lib/bills-booking/maker'
@@ -244,6 +245,13 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
           earlierBills={fromIn4 ? calc?.sheet?.earlierBills ?? [] : []}
           sourceNote={fromIn4 ? in4Note : null}
         />
+      )}
+
+      {/* The purchase side's abstract. Aksha, 16 Sep 2026: "what about PO - i
+          want similar format to follow as WO" — so it sits in the same place
+          on the page, above the money, in the same layout. */}
+      {calc?.grn && (
+        <GrnSheetPanel s={calc.grn} orderNo={bill.order_no as string} vendor={vendor} billLabel={raLabel} />
       )}
 
       {calc && <Calculation calc={calc} />}

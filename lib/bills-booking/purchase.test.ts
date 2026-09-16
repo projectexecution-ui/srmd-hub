@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { buildGrnSheet, advancePosition, poScope, type PayLine, type GrnItem, type PoLine } from './purchase'
+import type { LadderBill } from './abstract'
 
 /** Certificate 784 on PO/SRET/RU/2025-26/… as the live mirror holds it: one
  *  GRN, a handful of CPVC lines, the pay line's landed cost equal to the GRN
@@ -233,5 +234,94 @@ describe('what a purchase order is for, in words', () => {
   it('is nothing when IN4 names no material', () => {
     expect(poScope([])).toBeNull()
     expect(poScope([{ material: '   ', orderedAmt: 5 }])).toBeNull()
+  })
+})
+
+/** Aksha, 16 Sep 2026: "what about PO - i want similar format to follow as WO".
+ *
+ *  PO/SRASSK/NGH/2026-27/9, material 3612 — "PU SHAPE DRAIN T-6 450 X 450" —
+ *  read off the mirror on 16 Sep 2026. Eleven bills carry it; the first five
+ *  are below, each a whole goods receipt:
+ *
+ *      Bill 1  cert 1261  23 May  GRN 1393  114 @ 3,04,150
+ *      Bill 2  cert 1272  26 May  GRN 1400  114 @ 3,04,150
+ *      Bill 3  cert 1273  26 May  GRN 1399  114 @ 3,04,150
+ *      Bill 4  cert 1274  26 May  GRN 1398  114 @ 3,04,150
+ *      Bill 5  cert 1318  06 Jun  GRN 1434   64 @ 1,70,750.72
+ *
+ *  The pay line reads 3,04,150 against a receipt of 3,04,149.72 — 28 paise, so
+ *  the two tables agree and the quantity is certain. */
+describe('every earlier bill on the purchase order, as its own column', () => {
+  const DRAIN: PoLine[] = [
+    { materialId: 3612, material: 'PU SHAPE DRAIN T-6 450 X 450', uom: 'Nos', orderedQty: 1000, rate: 2667.98, orderedAmt: 2667980, receivedQty: 520 },
+  ]
+  const GRNS: GrnItem[] = [
+    { grnId: 1393, materialId: 3612, qty: 114, cost: 304149.72, no: 'GRN/SRASSK/NGH/2026-27/1', on: '2026-05-23', challanNo: null },
+    { grnId: 1400, materialId: 3612, qty: 114, cost: 304149.72, no: 'GRN/SRASSK/NGH/2026-27/1', on: '2026-05-26', challanNo: null },
+    { grnId: 1399, materialId: 3612, qty: 114, cost: 304149.72, no: 'GRN/SRASSK/NGH/2026-27/1', on: '2026-05-26', challanNo: null },
+    { grnId: 1398, materialId: 3612, qty: 114, cost: 304149.72, no: 'GRN/SRASSK/NGH/2026-27/1', on: '2026-05-26', challanNo: null },
+    { grnId: 1434, materialId: 3612, qty: 64, cost: 170750.72, no: 'GRN/SRASSK/NGH/2026-27/1', on: '2026-06-06', challanNo: null },
+  ]
+  const pay = (certificateId: number, grnId: number, landed: number): PayLine =>
+    ({ certificateId, grnId, materialId: 3612, landed, certified: landed })
+
+  const EARLIER: PayLine[] = [
+    pay(1261, 1393, 304150), pay(1272, 1400, 304150),
+    pay(1273, 1399, 304150), pay(1274, 1398, 304150),
+  ]
+  const LADDER: LadderBill[] = [
+    { ra: 1, certificateId: 1261, invoiceNo: 'NGH/25-26/1', on: '2026-05-23', certified: 304150 },
+    { ra: 2, certificateId: 1272, invoiceNo: 'NGH/25-26/2', on: '2026-05-26', certified: 304150 },
+    { ra: 3, certificateId: 1273, invoiceNo: 'NGH/25-26/3', on: '2026-05-26', certified: 304150 },
+    { ra: 4, certificateId: 1274, invoiceNo: 'NGH/25-26/4', on: '2026-05-26', certified: 304150 },
+  ]
+  const MINE: PayLine[] = [pay(1318, 1434, 170750.72)]
+
+  const sheet = () => buildGrnSheet(MINE, GRNS, DRAIN, 170750.72, true, EARLIER, LADDER)!
+
+  it('gives each earlier bill its own column, numbered like the bills panel', () => {
+    expect(sheet().earlierBills.map(b => b.label)).toEqual(['Bill 1', 'Bill 2', 'Bill 3', 'Bill 4'])
+    expect(sheet().earlierBills.every(b => b.measured)).toBe(true)
+  })
+
+  it('puts what each of them took in its own slot', () => {
+    const r = sheet().rows[0]
+    expect(r.history).toEqual([114, 114, 114, 114])
+    expect(r.thisQty).toBe(64)
+  })
+
+  it('keeps the money exact even where a quantity would not be', () => {
+    const r = sheet().rows[0]
+    expect(r.priorAmt).toBe(1216600)
+    expect(r.cumAmt).toBe(1387350.72)
+    // Ordered 26,67,980 less billed to date.
+    expect(r.balAmt).toBe(1280629.28)
+  })
+
+  it('leaves a quantity blank where IN4 own two tables disagree', () => {
+    // A bill paying for PART of a receipt: ₹94,400 against goods the receipt
+    // costs at ₹1,88,800. Dividing money by money to get a share produced 95x
+    // on one live line, so the cell says nothing rather than guessing.
+    const part = EARLIER.map((l, i) => (i === 0 ? { ...l, landed: 94400 } : l))
+    const s = buildGrnSheet(MINE, GRNS, DRAIN, 170750.72, true, part, LADDER)!
+    expect(s.rows[0].history).toEqual([null, 114, 114, 114])
+    // The money still adds up — that is what is being approved.
+    expect(s.rows[0].priorAmt).toBe(1006850)
+  })
+
+  it('totals the sheet the way the work-order sheet totals', () => {
+    const s = sheet()
+    expect(s.prevBill).toBe(1216600)
+    expect(s.thisBill).toBe(170750.72)
+    expect(s.cumulative).toBe(1387350.72)
+    expect(s.ordered).toBe(2667980)
+    expect(s.balance).toBe(1280629.28)
+  })
+
+  it('has no columns at all on the first bill of an order', () => {
+    const s = buildGrnSheet(MINE, GRNS, DRAIN, 170750.72)!
+    expect(s.earlierBills).toEqual([])
+    expect(s.rows[0].history).toEqual([])
+    expect(s.rows[0].priorAmt).toBe(0)
   })
 })

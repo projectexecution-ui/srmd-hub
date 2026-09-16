@@ -253,5 +253,8 @@ export function earlierBillsOn(h: WoHistory, certificateId: number | null): Ladd
     : oldestFirst.find(r => r.certificateId === certificateId)?.ra
   return oldestFirst
     .filter(r => !r.dead && (mine == null || r.ra < mine))
-    .map(r => ({ ra: r.ra, invoiceNo: r.invoiceNo, on: r.on, certified: r.certified }))
+    .map(r => ({
+      ra: r.ra, certificateId: r.certificateId,
+      invoiceNo: r.invoiceNo, on: r.on, certified: r.certified,
+    }))
 }
