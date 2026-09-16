@@ -2,7 +2,8 @@ import Link from 'next/link'
 import {
   loadEntries, loadLists, listsOf, loadRecentParties, loadSuppliers,
 } from '@/lib/stores/queries'
-import { fmtQty, type Stage } from '@/lib/stores/core'
+import { fmtQty, canRecordAtGate, type Stage } from '@/lib/stores/core'
+import { getMyProfile } from '@/lib/auth'
 import { Section, Empty, Scroller, th, thNum, td, tdNum, StageChip, RegisterChip, When } from '../ui'
 import { GateInForm, StorekeeperCta } from './GateInForm'
 
@@ -46,16 +47,22 @@ export default async function GatePage({
   ])
   const modes = listsOf(lists, 'delivery_mode').filter(m => m.isActive)
 
+  // Security's door, and the storekeeper's when Security is not there.
+  const profile = await getMyProfile()
+  const mayRecord = canRecordAtGate(profile?.role)
+
   return (
     <div className="space-y-6">
       {/* The guard's door and the storekeeper's door, side by side and equal —
           they are two different people arriving at the same screen. */}
       <div className="grid gap-3 sm:grid-cols-2">
-        <GateInForm
-          modes={modes.map(m => ({ id: m.id, name: m.name }))}
-          recentParties={recent}
-          suppliers={suppliers}
-        />
+        {mayRecord && (
+          <GateInForm
+            modes={modes.map(m => ({ id: m.id, name: m.name }))}
+            recentParties={recent}
+            suppliers={suppliers}
+          />
+        )}
         <StorekeeperCta waiting={waiting.length} />
       </div>
 

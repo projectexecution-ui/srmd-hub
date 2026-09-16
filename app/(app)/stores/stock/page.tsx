@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import {
   loadStock, loadItems, loadLists, storableLocations, locationLabel, loadMyProjectIds, listsOf,
 } from '@/lib/stores/queries'
@@ -8,6 +9,7 @@ import {
 import { formatINR } from '@/lib/utils'
 import { Section, Empty, Scroller, th, thNum, td, tdNum } from '../ui'
 import { OpeningStockForm } from './OpeningStockForm'
+import { ByStore, type StoreGroup } from './ByStore'
 
 export const dynamic = 'force-dynamic'
 
@@ -27,8 +29,9 @@ export const dynamic = 'force-dynamic'
  */
 export default async function StockPage({
   searchParams,
-}: { searchParams: Promise<{ asOn?: string }> }) {
-  const { asOn } = await searchParams
+}: { searchParams: Promise<{ asOn?: string; by?: string }> }) {
+  const { asOn, by } = await searchParams
+  const byStore = by === 'store'
   const valid = asOn && /^\d{4}-\d{2}-\d{2}$/.test(asOn) ? asOn : undefined
 
   const profile = await getMyProfile()
@@ -58,6 +61,39 @@ export default async function StockPage({
 
   const value = rows.reduce((s, r) => s + (r.lastRate ?? 0) * r.qty, 0)
 
+  // The same fold, grouped by the place instead of the item — so the two
+  // views can never disagree about a quantity.
+  const placeById = new Map(listsOf(lists, 'location').map(l => [l.id, l]))
+  const groups: StoreGroup[] = (() => {
+    const by = new Map<string, StoreGroup>()
+    for (const r of rows) {
+      if (r.qty <= 0 || !r.locationId) continue
+      const spot = placeById.get(r.locationId)
+      const spotName = spot?.name ?? 'Unnamed place'
+      const siteName = spot?.parentName ?? spotName
+      const g = by.get(r.locationId) ?? {
+        siteName, spotName, label: r.where,
+        items: [], totalItems: 0, totalValue: 0, hasUnpriced: false,
+      }
+      const v = r.lastRate == null ? null : r.lastRate * r.qty
+      g.items.push({ name: r.name, unit: r.unit, qty: r.qty, value: v })
+      g.totalItems += 1
+      g.totalValue += v ?? 0
+      if (v == null) g.hasUnpriced = true
+      by.set(r.locationId, g)
+    }
+    return [...by.values()]
+      .map(g => ({ ...g, items: g.items.sort((a, b) => a.name.localeCompare(b.name)) }))
+      .sort((a, b) => a.siteName.localeCompare(b.siteName) || a.spotName.localeCompare(b.spotName))
+  })()
+
+  const tab = (key: string) =>
+    `rounded-lg px-3 py-2 text-[12.5px] font-semibold min-h-[44px] inline-flex items-center ${
+      (key === 'store') === byStore
+        ? 'bg-indigo-700 text-white'
+        : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+    }`
+
   return (
     <div className="space-y-6">
       <Section
@@ -86,6 +122,22 @@ export default async function StockPage({
           />
         ) : (
           <>
+            {/* Two ways to read the same fold: "where is the cement" and
+                "what is in the NGH B store". Aksha, 16 Sep 2026: "Stock as per
+                Warehouse location is not showing". */}
+            <div className="flex flex-wrap gap-1.5 mb-3">
+              <Link href={valid ? `/stores/stock?asOn=${valid}` : '/stores/stock'} className={tab('item')}>
+                By item
+              </Link>
+              <Link
+                href={valid ? `/stores/stock?asOn=${valid}&by=store` : '/stores/stock?by=store'}
+                className={tab('store')}
+              >
+                By store
+              </Link>
+            </div>
+
+            {byStore ? <ByStore groups={groups} /> : (
             <Scroller min={680}>
               <table className="w-full border-collapse">
                 <thead>
@@ -116,6 +168,7 @@ export default async function StockPage({
                 </tbody>
               </table>
             </Scroller>
+            )}
             {rows.some(r => r.qty < 0) && (
               <p className="text-[12px] text-rose-800 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">
                 A negative balance means more went out than ever came in — usually an opening quantity that was

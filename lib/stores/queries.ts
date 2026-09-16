@@ -343,6 +343,9 @@ export interface RequestRow {
   decisionNote: string | null
   /** Whose approval this is — from the disciplines on its lines. */
   approvers: ApproverKey[]
+  /** Which stores hold what is being asked for, so the approver can see it
+   *  can actually be met before saying yes. */
+  heldAt: Array<{ locationId: string; label: string; itemCount: number }>
   lines: Array<{ id: string; itemId: string; itemName: string; unit: string; qty: number; issuedQty: number; returnable: boolean }>
 }
 
@@ -361,6 +364,34 @@ export async function loadRequests(opts: { projectId?: string | null; status?: s
   if (opts.status) q = q.eq('status', opts.status)
 
   const { data } = await q
+
+  /**
+   * Where the material actually is, per request.
+   *
+   * Aksha, 16 Sep 2026: "all data should show to the approver". Approving
+   * blind is approving a promise — Mayank could say yes to 4,111 SqFt that the
+   * store does not hold, and nobody finds out until the storekeeper opens it.
+   * Folding the ledger once here costs one query and answers "can this be
+   * met" on the card.
+   */
+  const [stock, lists] = await Promise.all([loadStock(), loadLists()])
+  const stockFor = (itemIds: readonly string[]) => {
+    const want = new Set(itemIds)
+    const byPlace = new Map<string, number>()
+    for (const row of stock) {
+      if (row.qty > 0 && row.locationId && want.has(row.itemId)) {
+        byPlace.set(row.locationId, (byPlace.get(row.locationId) ?? 0) + 1)
+      }
+    }
+    return [...byPlace.entries()]
+      .map(([locationId, itemCount]) => ({
+        locationId,
+        label: locationLabel(lists, locationId) ?? 'an unnamed place',
+        itemCount,
+      }))
+      .sort((a, b) => b.itemCount - a.itemCount || a.label.localeCompare(b.label))
+  }
+
   return (data ?? []).map(r => ({
     id: r.id as string,
     no: (r.no as string) ?? '',
@@ -375,6 +406,10 @@ export async function loadRequests(opts: { projectId?: string | null; status?: s
     decidedByName: ((r.decider as { full_name?: string } | null)?.full_name) ?? null,
     decidedAt: (r.decided_at as string | null) ?? null,
     decisionNote: (r.decision_note as string | null) ?? null,
+    heldAt: stockFor(
+      ((r.mio_request_lines as Array<Record<string, unknown>> | null) ?? [])
+        .map(l => l.item_id as string),
+    ),
     approvers: approversForRequest(
       ((r.mio_request_lines as Array<Record<string, unknown>> | null) ?? []).map(l => {
         const item = one(l.mio_items) as { discipline?: unknown } | null
@@ -786,7 +821,7 @@ export async function loadOrder(key: string): Promise<OrderDetail | null> {
 
   const [{ data: items }, party, { data: project }] = await Promise.all([
     supabase.from('in4_po_items')
-      .select('item_id, material_id, uom_id, base_po_qty, grn_qty, net_rate')
+      .select('item_id, material_id, uom_id, base_po_qty, grn_qty, net_rate, subproject_id')
       .eq('po_id', po.po_id),
     partyName(supabase, SUPPLIER, (po.supplier_id as number | null) ?? null),
     po.project_id
@@ -799,13 +834,48 @@ export async function loadOrder(key: string): Promise<OrderDetail | null> {
     ? await supabase.from('in4_materials').select('id, name, uom').in('id', materialIds)
     : { data: [] as Array<{ id: number; name: string; uom: string }> }
   const byMat = new Map((mats ?? []).map(m => [m.id as number, m]))
-  const projectName = ((project as { name?: string } | null)?.name as string | null) ?? null
+  const headerProject = ((project as { name?: string } | null)?.name as string | null) ?? null
+
+  /**
+   * THE SUB-PROJECT IS THE REAL ANSWER.
+   *
+   * Aksha, 16 Sep 2026: "NGH is main project - this should capture exact
+   * project from the PO". He is right, and the precision is already in IN4 —
+   * just not on the header. PO/SRASSK/NGH/2026-27/87 says "New Guest House" at
+   * the top and "New Guest House B-Execution" on every line, and only the
+   * second is a place material actually goes.
+   *
+   * 95 of the 96 live orders carry exactly ONE sub-project across their lines,
+   * so this is nearly always unambiguous. Where an order spans two there is no
+   * single answer, and the header is the honest fallback — a parent the
+   * storekeeper narrows beats a child picked by coin toss.
+   *
+   * It also resolves MORE orders, not fewer: 37 of the live ones reach a hub
+   * project through the sub-project against 24 through the header, because the
+   * alias table was seeded from IN4's sub-project names in the first place.
+   */
+  const subIds = [...new Set(
+    (items ?? []).map(i => i.subproject_id as number | null).filter(Boolean),
+  )] as number[]
+  let subName: string | null = null
+  if (subIds.length === 1) {
+    const { data: sp } = await supabase
+      .from('in4_subprojects').select('name').eq('id', subIds[0]).maybeSingle()
+    subName = ((sp as { name?: string } | null)?.name as string | null) ?? null
+  }
+  const projectName = subName ?? headerProject
+
+  // Try the precise name first; fall back to the parent rather than nothing.
+  const resolved = await resolveHubProject(supabase, projectName)
+  const viaHeader = resolved.projectId == null && subName && headerProject
+    ? await resolveHubProject(supabase, headerProject)
+    : null
 
   return {
     no: (po.po_no as string) ?? '',
     party,
     projectName,
-    ...(await resolveHubProject(supabase, projectName)),
+    ...(viaHeader?.projectId ? viaHeader : resolved),
     date: (po.po_dt as string | null) ?? null,
     value: po.po_value == null ? null : num(po.po_value),
     status: po.status === 'Approved' ? null : (po.status as string | null),

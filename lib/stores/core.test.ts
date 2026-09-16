@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   entryNo, linkedNo, foldStock, availableAt, availableAnywhere, checkIssue,
   outstandingReturnables, checkReturn, missingForGate, missingForComplete, createsStock, heldItemCount,
-  fmtQty, isPilotProject, PILOT_PROJECT_IDS, RETURNABLES_ON, STORES_LIVE, canSeeStores, stockScopeFor, visibleLocationIds, emptyScopeReason,
+  fmtQty, isPilotProject, PILOT_PROJECT_IDS, RETURNABLES_ON, STORES_LIVE, canSeeStores, canRecordAtGate, stockScopeFor, visibleLocationIds, emptyScopeReason,
   approversForRequest, approverKeyOf, approverLabel, disciplineFromIn4Type, groupProjects, UNGROUPED, entityCodeFromOrderNo, categoryFor, isServiceScope, bestIssueLocation,
   type Movement, type ReturnableLine, type StockRow,
 } from './core'
@@ -662,5 +662,33 @@ describe('disciplineFromIn4Type — using IN4s own filing, not a guess', () => {
     expect(disciplineFromIn4Type(null, D)).toBeNull()
     expect(disciplineFromIn4Type('', D)).toBeNull()
     expect(disciplineFromIn4Type('12 (M) Finishes', [])).toBeNull()
+  })
+})
+
+describe('canRecordAtGate — the storekeeper covers when Security is off', () => {
+  it('lets Security record, which is their job', () => {
+    expect(canRecordAtGate('security')).toBe(true)
+  })
+
+  it('lets the storekeeper record too', () => {
+    // Aksha, 16 Sep 2026: "this should be available with Storekeeper - if
+    // Security is unavailable". A lorry does not wait because one person is off.
+    expect(canRecordAtGate('store_manager')).toBe(true)
+  })
+
+  it('lets management cover as well', () => {
+    for (const r of ['admin', 'founder', 'head']) expect(canRecordAtGate(r)).toBe(true)
+  })
+
+  it('does not let an engineer or a contractor open the gate register', () => {
+    for (const r of ['engineer', 'contractor', 'viewer', 'billing', 'uploader']) {
+      expect(canRecordAtGate(r)).toBe(false)
+    }
+  })
+
+  it('refuses somebody with no role', () => {
+    expect(canRecordAtGate(null)).toBe(false)
+    expect(canRecordAtGate(undefined)).toBe(false)
+    expect(canRecordAtGate('')).toBe(false)
   })
 })

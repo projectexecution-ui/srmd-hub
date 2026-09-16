@@ -92,13 +92,18 @@ export function GateInForm({
     return (
       <button
         type="button" onClick={() => { setOpen(true); reset() }}
-        className="w-full sm:w-auto inline-flex items-center gap-3 rounded-2xl bg-indigo-700 px-5 py-4 min-h-[64px]
-          text-white shadow-sm active:bg-indigo-800"
+        className="w-full inline-flex items-center gap-3 rounded-2xl bg-indigo-700 px-5 py-4 min-h-[64px]
+          text-left text-white shadow-sm active:bg-indigo-800"
       >
-        <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/15">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/15">
           <ClipboardList className="h-5 w-5" strokeWidth={2.5} />
         </span>
-        <span className="text-[17px] font-bold">{T.gateTitle}</span>
+        <span className="min-w-0">
+          <span className="block text-[17px] font-bold">{T.gateTitle}</span>
+          {/* Who this is for. A storekeeper reading "Vehicle at the gate" has
+              no way of knowing it is theirs to press when the guard is off. */}
+          <span className="block text-[12.5px] font-medium text-white/70">{T.gateWhoRecords}</span>
+        </span>
       </button>
     )
   }

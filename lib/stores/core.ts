@@ -630,3 +630,24 @@ export function disciplineFromIn4Type(
  * because a settings screen for a paused feature is a screen nobody can use.
  */
 export const CROSS_PROJECT_ON = false
+
+/**
+ * Who may record a vehicle at the gate.
+ *
+ * Security's job, and the STOREKEEPER'S TOO. Aksha, 16 Sep 2026: "this should
+ * be available with Storekeeper - if Security is unavailable" — the same
+ * fallback he set for the video of the load, and for the same reason: a lorry
+ * does not wait because one person is off.
+ *
+ * It worked before this only because nothing stopped it. A capability nobody
+ * decided on is one somebody removes by accident later while tightening
+ * permissions, so it is written down here, named, and tested.
+ *
+ * Whoever does it signs it — security_by and security_signed_by carry their
+ * name and id — so "the storekeeper covered the gate on Tuesday" stays on the
+ * record rather than being lost in a shared role.
+ */
+export function canRecordAtGate(role: string | null | undefined): boolean {
+  if (!role) return false
+  return ['security', 'store_manager', 'admin', 'founder', 'head'].includes(role)
+}

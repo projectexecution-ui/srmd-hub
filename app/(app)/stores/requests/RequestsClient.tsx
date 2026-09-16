@@ -268,6 +268,23 @@ function RaiseForm({
   )
 }
 
+/** One fact on a request card. Shows the gap rather than hiding it — an
+ *  approver needs to know what was NOT said as much as what was. */
+function Fact({
+  label, value, empty = '—', tone,
+}: { label: string; value: string | null; empty?: string; tone?: 'bad' }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-[10px] font-bold uppercase tracking-wider text-gray-400">{label}</dt>
+      <dd className={`mt-0.5 text-[12.5px] ${
+        value ? 'text-gray-900' : tone === 'bad' ? 'font-semibold text-rose-700' : 'text-gray-400'
+      }`}>
+        {value ?? empty}
+      </dd>
+    </div>
+  )
+}
+
 /* ── One request ────────────────────────────────────────────────────────── */
 
 function RequestCard({
@@ -370,10 +387,29 @@ function RequestCard({
         </table>
       </Scroller>
 
-      {req.remarks && <p className="px-4 py-2 text-[12.5px] text-gray-600 border-t border-gray-100">{req.remarks}</p>}
-      {req.neededBy && (
-        <p className="px-4 pb-2 text-[12px] text-gray-500">Needed by {formatDate(req.neededBy)}</p>
-      )}
+      {/* Everything the approver needs, without opening anything else.
+          Aksha, 16 Sep 2026: "which project and which warehouse and where will
+          it be used - all data should show to the approver". Saying yes to
+          4,111 SqFt the store does not hold is a promise nobody can keep, and
+          the storekeeper is the one who finds out. */}
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-2 border-t border-gray-100 px-4 py-3 sm:grid-cols-4">
+        <Fact label="For which project" value={req.projectName} />
+        <Fact
+          label="Out of which store"
+          value={req.heldAt.length === 0
+            ? null
+            : req.heldAt.map(h => h.label).join(' · ')}
+          tone={req.heldAt.length === 0 ? 'bad' : undefined}
+          empty="Not in any store — cannot be issued"
+        />
+        <Fact label="What it is for" value={req.remarks} empty="not said" />
+        <Fact
+          label="Needed by"
+          value={req.neededBy ? formatDate(req.neededBy) : null}
+          empty="no date"
+        />
+      </dl>
+
       {req.decisionNote && (
         <p className="px-4 py-2 text-[12.5px] text-gray-700 bg-gray-50 border-t border-gray-100">
           <b>{req.decidedByName ?? 'Approver'}:</b> {req.decisionNote}
