@@ -4,7 +4,7 @@ import { requireBillsAccess } from '@/lib/bills-booking/access'
 import { PageHeader } from '@/components/PageHeader'
 import { QueryError } from '@/components/ui/query-error'
 import { EmptyState } from '@/components/ui/empty-state'
-import { Plus, ReceiptText, Clock, Users, Landmark, PackageCheck, ShieldCheck, CalendarDays, FileQuestion, MapPin, ChevronRight, Wallet, Search, X } from 'lucide-react'
+import { Plus, ReceiptText, Clock, Users, Landmark, PackageCheck, ShieldCheck, CalendarDays, FileQuestion, MapPin, ChevronRight, Wallet, Search, X, FlaskConical } from 'lucide-react'
 import { isTerminal } from '@/lib/bills-booking/stages'
 import { BillingTree, type TrustNode, type Leaf } from './BillingTree'
 import { WhoHolds } from './WhoHolds'
@@ -188,6 +188,32 @@ export default async function BillsBookingPage({ searchParams }: {
               </span>
             )}
           </Link>
+          {/* The example bills, as a chip rather than a bar.
+              Aksha, 17 Sep 2026: "i had said to hide this in top right corner
+              do that". It was a full-width amber notice under the tiles, so the
+              register opened on housekeeping — and it repeated at length what
+              the Desks page already says beside the button that removes them.
+              The COUNT is what is worth keeping in sight; the explanation lives
+              where the action is. The rows keep their own badges, so which
+              bills are examples is not hidden by this. */}
+          {examples > 0 && (
+            me.isAdmin ? (
+              <Link
+                href="/bills-booking/admin"
+                title={`${examples} example bills, badged in the list and left out of every total. Seeded from real IN4 work orders so the figures behave. Remove them on the Desks page.`}
+                className="inline-flex min-h-[40px] items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900 hover:bg-amber-100"
+              >
+                <FlaskConical className="h-4 w-4" /> {examples} examples
+              </Link>
+            ) : (
+              <span
+                title={`${examples} example bills, badged in the list and left out of every total.`}
+                className="inline-flex min-h-[40px] items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900"
+              >
+                <FlaskConical className="h-4 w-4" /> {examples} examples
+              </span>
+            )
+          )}
           {/* The Disc Head and every desk above waits on IN4. Twice a day is
               the schedule; this is the same two sweeps — raise, then advance —
               on demand, so a bill approved this morning is not left sitting. */}
@@ -239,13 +265,6 @@ export default async function BillsBookingPage({ searchParams }: {
               <p className="mt-1 text-[12px] text-gray-600">{money.wo.bills} contractor bills not yet paid · <span className="font-semibold text-indigo-700">where it stands ›</span></p>
             </Link>
           </div>
-
-          {examples > 0 && (
-            <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-900">
-              <b>{examples} example bills</b> are in the list, badged. Seeded from real IN4 work orders so the figures
-              behave; left out of every total.{me.isAdmin && <> <Link href="/bills-booking/admin" className="font-semibold underline">Remove them</Link> when you are done.</>}
-            </p>
-          )}
 
           {findOpen && <RegisterFilters projects={projectOptions} counts={counts} onDesk={me.onAnyDesk} closeHref={findHref} />}
 
