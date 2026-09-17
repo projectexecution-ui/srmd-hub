@@ -347,7 +347,7 @@ describe('groupProjects — the picker order', () => {
 
   it('keeps an orphan rather than dropping it — a missing option books material to the wrong site', () => {
     const out = groupProjects([P('x', 'Orphan', 'deleted-parent')])
-    expect(out).toEqual([{ id: 'x', name: 'Orphan', group: UNGROUPED }])
+    expect(out).toEqual([{ id: 'x', name: 'Orphan', group: UNGROUPED, heading: false }])
   })
 
   it('never loses or duplicates a project', () => {

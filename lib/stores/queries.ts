@@ -1219,7 +1219,7 @@ export async function loadProjectOptions(): Promise<ProjectOpt[]> {
   const supabase = await createClient()
   const { data } = await supabase
     .from('projects')
-    .select('id, name, parent_project_id')
+    .select('id, name, parent_project_id, group_label')
     .order('name')
 
   // Consultancy and design lines are fees, not places material goes. All
@@ -1233,6 +1233,9 @@ export async function loadProjectOptions(): Promise<ProjectOpt[]> {
       id: r.id as string,
       name: ((r.name as string) ?? '').trim(),
       parentId: (r.parent_project_id as string | null) ?? null,
+      // NGH / P2 / VV are bins that gather the buildings, not places material
+      // goes. Three records already point at one by accident.
+      groupLabel: (r.group_label as string | null) ?? null,
     })))
 }
 

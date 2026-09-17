@@ -21,7 +21,7 @@ export default async function MappingPage() {
   const supabase = await createClient()
 
   const [projectsRes, in4Res, procRes, stateRes, aliases] = await Promise.all([
-    supabase.from('projects').select('id, code, name, parent_project_id, archived_at').order('code'),
+    supabase.from('projects').select('id, code, name, parent_project_id, group_label, archived_at').order('code'),
     supabase.from('in4_subprojects').select('id, name, ex_code, is_active').eq('is_active', true).order('name'),
     supabase.from('procurement_known_projects').select('name').order('name'),
     supabase.from('budget_hub_state').select('state').eq('id', 'global').maybeSingle(),

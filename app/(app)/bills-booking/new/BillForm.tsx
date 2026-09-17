@@ -16,7 +16,9 @@ import { formatINR } from '@/lib/utils'
 import { GroupedOptions } from '@/components/ui/grouped-options'
 import { groupProjectRows } from '@/lib/projects'
 
-type Opt = { id: string; code?: string; name: string; parent_project_id?: string | null }
+type Opt = { id: string; code?: string; name: string; parent_project_id?: string | null; group_label?: string | null }
+/** IN4's skill tree, folded to the two levels the form offers. */
+type Category = { id: number; name: string; subs: Array<{ id: number; name: string }> }
 
 /** Bill types that are drawn against an order — a work order or a purchase
  *  order. Advance is here because it is raised against one even though it has
@@ -49,8 +51,8 @@ const hydrate = (s: BookingSeed): BookingMaps => ({
   disciplines: new Map(s.disciplines),
 })
 
-export function BillForm({ projects, disciplines, in4Wos, in4Pos, in4Projects, seed, canAdmin }: {
-  projects: Opt[]; disciplines: Opt[]
+export function BillForm({ projects, categories, in4Wos, in4Pos, in4Projects, seed, canAdmin }: {
+  projects: Opt[]; categories: Category[]
   in4Wos: PickableOrder[]; in4Pos: PickableOrder[]
   in4Projects: Array<{ id: number; name: string }>
   seed: BookingSeed
@@ -71,7 +73,10 @@ export function BillForm({ projects, disciplines, in4Wos, in4Pos, in4Projects, s
 
   // Only used when there is no order to read any of this off.
   const [projectId, setProjectId] = useState('')
-  const [disciplineId, setDisciplineId] = useState('')
+  // IN4's category and sub-category, cascading. Names carry IN4's own
+  // numbers because that is what the ERP prints and what Aksha asked to see.
+  const [catId, setCatId] = useState('')
+  const [subCatId, setSubCatId] = useState('')
   const [vendorText, setVendorText] = useState('')
   const [workManual, setWorkManual] = useState('')
   const [billNo, setBillNo] = useState('')
@@ -107,10 +112,14 @@ export function BillForm({ projects, disciplines, in4Wos, in4Pos, in4Projects, s
   // when IN4 holds one — a work order carries a description, a purchase order
   // has no such field, so on a PO it is asked rather than left blank.
   const finalProjectId = usingOrder ? booking.projectId : (projectId || null)
-  const finalDisciplineId = usingOrder ? booking.disciplineId : (disciplineId || null)
+  const cat = categories.find(c => String(c.id) === catId) ?? null
+  const subCat = cat?.subs.find(s => String(s.id) === subCatId) ?? null
+  // A bill entered without an order has no cc_disciplines id to carry — the
+  // category is IN4's, and it is recorded by name.
+  const finalDisciplineId = usingOrder ? booking.disciplineId : null
   const finalDisciplineName = usingOrder
     ? (booking.disciplineName ?? booking.categoryIn4)
-    : (disciplines.find(d => d.id === disciplineId)?.name ?? null)
+    : (cat?.name ?? null)
   const work = booking.scope ?? (workManual.trim() || null)
 
   const thisBill = Number(claimed) || 0
@@ -143,7 +152,9 @@ export function BillForm({ projects, disciplines, in4Wos, in4Pos, in4Projects, s
     setBusy(true); setErr(null)
     const { data, error } = await supabase.rpc('bb_rpc_create_bill', {
       p: {
-        order_type: orderType, bill_type: billType, bill_category: null,
+        order_type: orderType, bill_type: billType,
+        // The sub-category, when one was picked. IN4's name, number and all.
+        bill_category: usingOrder ? null : (subCat?.name ?? null),
         ct_other_dept: 'CT', order_no: orderNo, project_id: finalProjectId,
         vendor_id: null, vendor_text: contractor,
         discipline_id: finalDisciplineId,
@@ -286,12 +297,30 @@ export function BillForm({ projects, disciplines, in4Wos, in4Pos, in4Projects, s
                   <GroupedOptions rows={groupProjectRows(projects)} showCode />
                 </select>
               </div>
+              {/* IN4's own category tree, cascading. A category is a skill
+                  that has children ("03 Civil"); its sub-categories are those
+                  children ("302 Steel Works"). Verified on the work orders:
+                  every sub-category IN4 books names its category as parent.
+                  The numbers are IN4's and are kept — they are what the ERP
+                  prints and what the bill will be matched on later. */}
               <div>
-                <Label htmlFor="disc">Category</Label>
-                <select id="disc" value={disciplineId} onChange={e => setDisciplineId(e.target.value)} className={sel}>
+                <Label htmlFor="cat">Category (IN4)</Label>
+                <select id="cat" value={catId}
+                        onChange={e => { setCatId(e.target.value); setSubCatId('') }} className={sel}>
                   <option value="">— select —</option>
-                  {disciplines.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                  {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
+              </div>
+              <div>
+                <Label htmlFor="subcat">Sub-category (IN4)</Label>
+                <select id="subcat" value={subCatId} onChange={e => setSubCatId(e.target.value)}
+                        disabled={!cat} className={`${sel} disabled:bg-gray-50 disabled:text-gray-400`}>
+                  <option value="">{cat ? '— select —' : 'Pick a category first'}</option>
+                  {(cat?.subs ?? []).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+                {cat && cat.subs.length === 0 && (
+                  <p className="mt-1 text-[11px] text-gray-500">IN4 has no sub-categories under {cat.name}.</p>
+                )}
               </div>
             </>
           )}

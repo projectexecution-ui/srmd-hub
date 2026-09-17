@@ -34,7 +34,7 @@ export default async function DesksPage() {
   }
 
   const { data: projects } = await supabase
-    .from('projects').select('id, code, name, parent_project_id').is('archived_at', null).order('code')
+    .from('projects').select('id, code, name, parent_project_id, group_label').is('archived_at', null).order('code')
   const { data: people } = await supabase
     .from('profiles').select('id, full_name, name, email').eq('is_active', true).order('full_name')
 

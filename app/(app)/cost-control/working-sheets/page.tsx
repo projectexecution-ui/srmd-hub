@@ -141,7 +141,7 @@ export default async function WorkingSheetsPage({
 
   const [wsRes, projectsRes, profilesRes] = await Promise.all([
     q,
-    supabase.from('projects').select('id, code, name, parent_project_id').not('cc_status', 'is', null).order('code'),
+    supabase.from('projects').select('id, code, name, parent_project_id, group_label').not('cc_status', 'is', null).order('code'),
     supabase.from('profiles').select('id, full_name, name').eq('is_active', true),
   ])
 

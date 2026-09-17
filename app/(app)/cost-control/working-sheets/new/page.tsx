@@ -31,7 +31,7 @@ export default async function NewWorkingSheetPage({
 
   const { data: projects } = await supabase
     .from('projects')
-    .select('id, code, name, parent_project_id')
+    .select('id, code, name, parent_project_id, group_label')
     .not('cc_status', 'is', null)
     .order('code')
 

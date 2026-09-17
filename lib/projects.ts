@@ -16,6 +16,24 @@ export interface ProjectOpt {
   name: string
   /** The heading this project sits under in a picker. */
   group: string
+  /** This row IS the heading — a grouping shell, not a place work happens.
+   *
+   *  Aksha, 17 Sep 2026: "why NGHG - NGH and similar for Group of projects
+   *  coming … that is not a Sub Project and i dont have any Approvals across
+   *  at parent level projects."
+   *
+   *  Three projects exist only to gather the others: NGHG "NGH", P2G "P2",
+   *  VVG "VV". The database already says so — they are the only three rows
+   *  with `group_label` set — and they carry no approvers, no working sheets,
+   *  no bills, no BPH link and no IN4 sub-project between them. Offering them
+   *  in a picker is offering a bin to file work in, and it has already
+   *  happened three times in Material In & Out.
+   *
+   *  NOT every parent: Ekant Kutir, Admin Block, CV4, New Row House Infra,
+   *  Welcome Centre Extension and the Central Warehouse all have children AND
+   *  real work of their own (29, 41, 37 working sheets…). They stay pickable.
+   *  The test is `group_label`, never "has children". */
+  heading: boolean
 }
 
 /** Standalone projects — no parent, no children — go last, under this. */
@@ -32,7 +50,7 @@ export const UNGROUPED = 'On their own'
  * site.
  */
 export function groupProjects(
-  rows: ReadonlyArray<{ id: string; name: string; parentId: string | null }>,
+  rows: ReadonlyArray<{ id: string; name: string; parentId: string | null; groupLabel?: string | null }>,
 ): ProjectOpt[] {
   const nameById = new Map(rows.map(r => [r.id, r.name]))
   const hasKids = new Set(rows.map(r => r.parentId).filter(Boolean) as string[])
@@ -43,6 +61,9 @@ export function groupProjects(
     group: r.parentId
       ? nameById.get(r.parentId) ?? UNGROUPED
       : hasKids.has(r.id) ? r.name : UNGROUPED,
+    // A shell still HEADS its group — the heading is its name — it just is not
+    // one of the things inside it.
+    heading: !!r.groupLabel?.trim() && hasKids.has(r.id),
   }))
 
   return opts.sort((a, b) => {
@@ -66,12 +87,13 @@ export function groupProjects(
  * be told apart.
  */
 export function groupProjectRows(
-  rows: ReadonlyArray<{ id: string; name: string | null; parent_project_id?: string | null; code?: string | null }> | null,
+  rows: ReadonlyArray<{ id: string; name: string | null; parent_project_id?: string | null; code?: string | null; group_label?: string | null }> | null,
 ): Array<ProjectOpt & { code: string | null }> {
   const clean = (rows ?? []).map(r => ({
     id: r.id,
     name: (r.name ?? '').trim(),
     parentId: r.parent_project_id ?? null,
+    groupLabel: r.group_label ?? null,
     code: r.code ?? null,
   }))
   const codeById = new Map(clean.map(r => [r.id, r.code]))

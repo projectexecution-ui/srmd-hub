@@ -18,16 +18,26 @@ export interface GroupedRow {
   group: string
   /** Shown after the name when two rows would otherwise read alike. */
   code?: string | null
+  /** This row IS its own heading — a grouping shell, nothing happens in it.
+   *  Dropped from the list, because the heading above already says the name.
+   *  See ProjectOpt.heading in lib/projects.ts. */
+  heading?: boolean
 }
 
 export function GroupedOptions({
-  rows, showCode = false,
+  rows, showCode = false, keepId = null,
 }: {
   rows: ReadonlyArray<GroupedRow>
   showCode?: boolean
+  /** The value the select currently holds. A heading row is normally dropped,
+   *  but if something was already filed against it the option has to stay or
+   *  the select would show a blank and quietly lose the record. It is marked
+   *  so nobody picks it again on purpose. */
+  keepId?: string | null
 }) {
+  const shown = rows.filter(r => !r.heading || (keepId != null && r.id === keepId))
   const groups: Array<{ label: string; rows: GroupedRow[] }> = []
-  for (const r of rows) {
+  for (const r of shown) {
     const last = groups[groups.length - 1]
     if (last && last.label === r.group) last.rows.push(r)
     else groups.push({ label: r.group, rows: [r] })
@@ -40,6 +50,7 @@ export function GroupedOptions({
             {g.rows.map(r => (
               <option key={r.id} value={r.id}>
                 {showCode && r.code ? `${r.code} — ${r.name}` : r.name}
+                {r.heading ? ' (group — pick a building)' : ''}
               </option>
             ))}
           </optgroup>
