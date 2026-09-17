@@ -10,8 +10,29 @@ import { cn } from '@/lib/utils'
 import { VERIFY_PILL } from '@/lib/revamp/verify-pill'
 import {
   activeWorkspaceSlug, activeSubTab, workspaceHref, ribbonFor, findWorkspaceTab,
-  type WorkspaceTab,
+  type WorkspaceTab, type RibbonGroup,
 } from '@/lib/revamp/workspace'
+
+/**
+ * One colour per ribbon group, on the icon.
+ *
+ * Aksha, 17 Sep 2026 (option C): the caption row under the tabs — Money ·
+ * Procurement · Site · Documents · People — never changed and cost a whole
+ * text row on every project page. The grouping now reads from the hairline,
+ * the spacing and this colour; the words survive as the group's title/aria.
+ *
+ * Deliberately muted (the 600 weights, not 500): these are five quiet hues
+ * behind icons, not five accents competing with the indigo selection or with
+ * the amber and teal counts, which are the only colours on this bar that mean
+ * "act". Keyed by RibbonGroup so a new group must choose one.
+ */
+const GROUP_ICON: Record<RibbonGroup, string> = {
+  money: 'text-indigo-600/70',
+  procurement: 'text-amber-600/70',
+  site: 'text-teal-600/70',
+  documents: 'text-slate-500/80',
+  people: 'text-violet-600/70',
+}
 
 const ICONS: Record<string, LucideIcon> = {
   BarChart3, CircleCheck, Layers, CreditCard, ClipboardList, GitBranch, Package,
@@ -76,8 +97,17 @@ export function Ribbon({
         {groups.map((g, gi) => (
           <div
             key={g.id}
+            // The group's NAME is now on the container rather than printed under
+            // it (Aksha, 17 Sep 2026 — option C). The words never changed and
+            // cost a whole text row on every project page; the hairline, the
+            // spacing and the icon colour carry the grouping instead. Kept as
+            // title + aria-label so the name is still there for a hover and for
+            // a screen reader — dropping it from the DOM would make five
+            // unlabelled clusters.
+            title={g.label}
+            aria-label={g.label}
             className={cn(
-              'flex flex-col min-w-0 px-1.5',
+              'flex flex-col min-w-0 px-2',
               gi > 0 && 'border-l border-gray-200',
             )}
           >
@@ -105,7 +135,18 @@ export function Ribbon({
                     )}
                   >
                     <span className="relative flex-shrink-0">
-                      <Icon className="h-[17px] w-[17px]" strokeWidth={1.6} />
+                      <Icon
+                        className={cn(
+                          'h-[17px] w-[17px]',
+                          // The group's colour, carried by the icon now that the
+                          // caption row is gone. Only on a resting BUILT tab:
+                          // the active tab keeps indigo (it is the selection,
+                          // not a group), and an unbuilt one stays grey so
+                          // "coming soon" is never mistaken for a lane colour.
+                          isActive ? '' : tab.built ? GROUP_ICON[g.id] : 'text-gray-300',
+                        )}
+                        strokeWidth={1.6}
+                      />
                       {/* The count, pinned to the icon so it reads at both
                           ribbon widths — the label is hidden under 1180px and
                           a badge beside it would vanish with it. */}
@@ -136,9 +177,6 @@ export function Ribbon({
                   </Link>
                 )
               })}
-            </div>
-            <div className="hidden min-[1180px]:block text-center text-[12px] tracking-wide text-gray-400 mt-1 mb-1">
-              {g.label}
             </div>
           </div>
         ))}

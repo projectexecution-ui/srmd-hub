@@ -15,6 +15,7 @@ import { tabSlug, subSlug } from '@/lib/revamp/permissions'
 import { shownOr } from '@/lib/names'
 import { loadNameIndex, canName } from '@/lib/names-data'
 import { TabNames, type TabNameRow } from './TabNames'
+import { DeskChip, type DeskLine } from './DeskChip'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -85,6 +86,11 @@ export default async function ProjectWorkspaceLayout({
   // counts on Indents and WO / PO (Aksha, 10 Sep 2026). Zeros if IN4 is away.
   const verify = verifyBadges(await loadVerifyCounts(await subprojectIdsFor(id)))
 
+  // The desk chip's rows — the SAME two sources the ribbon badges use, named by
+  // the tab they sit on, so the chip can never disagree with the badges. Built
+  // from `namedTabs` below so a renamed tab (name layer) reads the same in both.
+  const deskCounts: Record<string, number> = { approvals: approvalCounts.byProject[id] ?? 0, ...verify.badges }
+
   // CT Hub names for the ribbon (name layer, Phase 3): a tab or pill renamed
   // everywhere or for THIS project. Keys are the registry slugs the permission
   // matrix already uses, so permissions and names never drift apart. The
@@ -95,6 +101,19 @@ export default async function ProjectWorkspaceLayout({
     const shownTab = shownOr(names, 'tab', tabSlug(t), ctx, t.ribbon)
     return { ...t, ribbon: shownTab, label: shownTab === t.ribbon ? t.label : shownTab, subs: t.subs.map(s => shownOr(names, 'pill', subSlug(t, s), ctx, s)) }
   })
+  // One row per tab that has a count, in ribbon order, carrying the CT Hub name
+  // the ribbon shows. `approvals` is the only amber one today — work on this
+  // person's own desk; everything from verifyBadges is teal, parked in IN4.
+  const deskLines: DeskLine[] = namedTabs
+    .filter(t => (deskCounts[t.slug] ?? 0) > 0)
+    .map(t => ({
+      slug: t.slug,
+      label: t.ribbon,
+      n: deskCounts[t.slug],
+      where: t.slug === 'approvals' ? ('mine' as const) : ('in4' as const),
+      note: t.slug === 'approvals' ? 'budget requests' : 'at Verify in IN4',
+    }))
+
   const tabNameRows: TabNameRow[] = tabs.map((t, i) => ({
     key: tabSlug(t), original: t.ribbon, shown: namedTabs[i].ribbon,
     pills: t.subs.map((s, j) => ({ key: subSlug(t, s), original: s, shown: namedTabs[i].subs[j] })),
@@ -168,6 +187,10 @@ export default async function ProjectWorkspaceLayout({
             </div>
 
             <div className="flex items-center gap-2 ml-auto flex-shrink-0">
+              {/* What this project wants from you, both platforms, in one place
+                  — the same counts the ribbon badges carry, totalled so nobody
+                  has to scan thirteen tabs to find them (Aksha, 17 Sep 2026). */}
+              <DeskChip projectId={id} lines={deskLines} />
               {namer && <TabNames projectId={id} projectLabel={head.chip ?? head.name} rows={tabNameRows} />}
               {head.syncedAt && (
                 <span className="hidden sm:inline text-[12px] text-gray-400 whitespace-nowrap">
