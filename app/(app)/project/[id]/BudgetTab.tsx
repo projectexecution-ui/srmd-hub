@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import ProjectInternalEstimatePage from '@/app/(app)/cost-control/projects/[id]/page'
 import { OrdersView } from './OrdersView'
 import { GroupBudgetView } from './GroupBudgetView'
+import { SubProjectsStrip } from './SubProjectsStrip'
 
 /**
  * Budget vs Actual (build order §2) — two views behind the sub-tab pills.
@@ -36,29 +37,61 @@ import { GroupBudgetView } from './GroupBudgetView'
  * `in_cockpit=1` is what stops that page bouncing back to this one on the
  * trial deployment, where every route into a project redirects here.
  */
-export async function BudgetTab({ projectId, view }: { projectId: string; view: number }) {
+export async function BudgetTab({ projectId, view, focus }: {
+  projectId: string
+  view: number
+  /** Where an approval link wants the estimate opened — work category,
+   *  sub-skill, and the sheet to offer. Passed straight through; the Internal
+   *  Estimate page has read these since the HOD asked for project-first
+   *  approvals. This tab used to hand it a hardcoded `{ in_cockpit: '1' }`,
+   *  which silently dropped them and landed the approver on a collapsed
+   *  project with nothing highlighted. */
+  focus?: { disc?: string; sub?: string; ws?: string }
+}) {
   if (view === 1) return <OrdersView projectId={projectId} />
-  // A grouping anchor (NGH, P2, VV) holds no disciplines of its own — its
-  // Internal Estimate is empty, which reads as broken. When the project has
-  // sub-projects, the landing rolls them up instead. Leaf projects fall through
-  // to the live Internal Estimate exactly as before.
-  if (await hasSubProjects(projectId)) return <GroupBudgetView projectId={projectId} />
-  return (
+
+  // Group or project? The SAME rule the landing and the sidebar use (Aksha,
+  // 16 Sep 2026, grouping flaw 1): a parent is a GROUP only when it holds no
+  // budget lines and no working sheets of its own. NGH / P2 / VV are groups
+  // and roll up their children. Admin Block, CV4, Ekant Kutir, WCE, CMCW and
+  // NRH have money of their own — they open on their own Internal Estimate,
+  // with the sub-projects one click away in a strip above it. Before this,
+  // any project with children got the roll-up, and Admin Block's own ₹1.43 Cr
+  // was unreachable behind its children's ₹33.7 L.
+  const shape = await projectShape(projectId)
+  if (shape.children > 0 && !shape.ownData) return <GroupBudgetView projectId={projectId} />
+
+  const estimate = (
     <ProjectInternalEstimatePage
       params={Promise.resolve({ id: projectId })}
-      searchParams={Promise.resolve({ in_cockpit: '1' })}
+      searchParams={Promise.resolve({
+        in_cockpit: '1',
+        focus_disc: focus?.disc,
+        focus_sub: focus?.sub,
+        ws: focus?.ws,
+      })}
     />
+  )
+  if (shape.children === 0) return estimate
+  return (
+    <div className="space-y-4">
+      <SubProjectsStrip projectId={projectId} />
+      {estimate}
+    </div>
   )
 }
 
-/** True when this project is a parent of one or more live sub-projects. One
- *  cheap head-count, so a leaf pays only a COUNT before its estimate loads. */
-async function hasSubProjects(projectId: string): Promise<boolean> {
+/** How many live sub-projects this project has, and whether it carries Cost
+ *  Control data of its own. Three head-counts in parallel — a leaf pays a few
+ *  milliseconds before its estimate loads. `ownData` mirrors shell_for's
+ *  hasOwnData (a budget line or a working sheet) so the tab and the sidebar
+ *  can never disagree about what is a group. */
+async function projectShape(projectId: string): Promise<{ children: number; ownData: boolean }> {
   const supabase = await createClient()
-  const { count } = await supabase
-    .from('projects')
-    .select('id', { count: 'exact', head: true })
-    .eq('parent_project_id', projectId)
-    .is('archived_at', null)
-  return (count ?? 0) > 0
+  const [kids, lines, sheets] = await Promise.all([
+    supabase.from('projects').select('id', { count: 'exact', head: true }).eq('parent_project_id', projectId).is('archived_at', null),
+    supabase.from('cc_budget_lines').select('id', { count: 'exact', head: true }).eq('project_id', projectId),
+    supabase.from('cc_working_sheets').select('id', { count: 'exact', head: true }).eq('project_id', projectId),
+  ])
+  return { children: kids.count ?? 0, ownData: (lines.count ?? 0) > 0 || (sheets.count ?? 0) > 0 }
 }
