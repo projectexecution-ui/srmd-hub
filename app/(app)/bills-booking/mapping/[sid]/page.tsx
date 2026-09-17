@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/card'
 import { DESKS } from '@/lib/bills-booking/desk-list'
 import { ProjectDeskEditor } from './ProjectDeskEditor'
 import { personName, formatINR } from '@/lib/utils'
+import { inScopeProjects } from '@/lib/bills-booking/scope'
 
 export const dynamic = 'force-dynamic'
 
@@ -122,7 +123,10 @@ export default async function BillsProjectPage({ params }: { params: Promise<{ s
         desks={DESKS as unknown as Array<{ key: string; label: string }>}
         seat={seat}
         people={people}
-        projects={(projects ?? []).map(p => ({ id: p.id as string, code: (p.code as string) ?? '', name: p.name as string }))}
+        /* The CHOOSER is filtered, the list above is not: `in4Linked` resolves a
+           mapping that already exists, and a sub-project mapped to a Design
+           project before this rule must still show its name (scope.ts). */
+        projects={inScopeProjects((projects ?? []).map(p => ({ id: p.id as string, code: (p.code as string) ?? '', name: p.name as string })))}
         copyFrom={(siblings ?? []).map(s => ({
           subprojectId: s.subproject_id as number,
           label: (s.short_name as string | null) || (s.in4_name as string | null) || `Sub-project ${s.subproject_id}`,

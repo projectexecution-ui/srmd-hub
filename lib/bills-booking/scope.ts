@@ -52,6 +52,25 @@ export async function loadOutOfScope(sb: SupabaseClient): Promise<Set<number>> {
 export const rowOutOfScope = (excluded: Set<number>, subprojectId: number | null | undefined): boolean =>
   subprojectId != null && excluded.has(subprojectId)
 
+/**
+ * The same rule applied to CT HUB projects (`projects`) rather than IN4
+ * sub-projects (`in4_subprojects`).
+ *
+ * Aksha, 17 Sep 2026: "in Project Selections while adding Bills i had said
+ * overall dont show Design and Professional Consultancy in any of the Option
+ * why its still coming". Because the rule above reads one table and every
+ * project CHOOSER reads the other, so five CT Hub projects — NGHIWD, PRHD,
+ * PSTPC, SH-D, WCED — were still on offer when a bill was raised.
+ *
+ * CHOOSERS ONLY. Never filter the id → name maps that RENDER a saved bill:
+ * a bill already booked against one of these must still show its project
+ * name, or the row reads as broken. Leaving it out of the list of things you
+ * may pick is a different act from pretending it does not exist.
+ */
+export function inScopeProjects<T extends { name: string }>(rows: readonly T[]): T[] {
+  return rows.filter(p => !isOutOfScope(p.name))
+}
+
 /** The one line every screen prints, so the number is never silently narrower
  *  than it looks. */
 export const SCOPE_NOTE =

@@ -4,6 +4,7 @@ import { PageHeader } from '@/components/PageHeader'
 import { BillForm, type BookingSeed } from './BillForm'
 import { loadPickList } from '@/lib/bills-booking/wo-picker'
 import { loadBookingMaps } from '@/lib/bills-booking/desks'
+import { inScopeProjects } from '@/lib/bills-booking/scope'
 
 export const dynamic = 'force-dynamic'
 
@@ -74,7 +75,9 @@ export default async function NewBillPage() {
     <div className="p-4 md:p-6 max-w-2xl mx-auto space-y-5">
       <PageHeader title="New bill" back="/bills-booking" subtitle="Enter a contractor (WO) or vendor (PO) bill to start the flow." />
       <BillForm
-        projects={(projects ?? []).map(p => ({ id: p.id as string, code: p.code as string, name: p.name as string, parent_project_id: p.parent_project_id as string | null, group_label: p.group_label as string | null }))}
+        /* Design and Professional Consultancy are out of this section, so they
+           are not on offer when a bill is raised either (lib/.../scope.ts). */
+        projects={inScopeProjects((projects ?? []).map(p => ({ id: p.id as string, code: p.code as string, name: p.name as string, parent_project_id: p.parent_project_id as string | null, group_label: p.group_label as string | null })))}
         categories={categories}
         in4Wos={pick.wos}
         in4Pos={pick.pos}

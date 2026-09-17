@@ -3,7 +3,7 @@ import { requireBillsAdmin } from '@/lib/bills-booking/access'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { loadDeskCoverage, type DeskCoverage } from '@/lib/bills-booking/desks'
-import { SCOPE_NOTE } from '@/lib/bills-booking/scope'
+import { SCOPE_NOTE, inScopeProjects } from '@/lib/bills-booking/scope'
 import { DeskRows } from './DeskRows'
 
 export const dynamic = 'force-dynamic'
@@ -33,8 +33,11 @@ export default async function DesksPage() {
     err = e instanceof Error ? e.message : String(e)
   }
 
-  const { data: projects } = await supabase
+  // A CHOOSER — so Design / Professional Consultancy are left out, the same as
+  // everywhere else in this section (lib/bills-booking/scope.ts).
+  const { data: projectRows } = await supabase
     .from('projects').select('id, code, name, parent_project_id, group_label').is('archived_at', null).order('code')
+  const projects = inScopeProjects((projectRows ?? []) as Array<{ id: string; code: string; name: string; parent_project_id: string | null; group_label: string | null }>)
   const { data: people } = await supabase
     .from('profiles').select('id, full_name, name, email').eq('is_active', true).order('full_name')
 
