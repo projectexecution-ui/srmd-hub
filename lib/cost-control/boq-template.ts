@@ -263,10 +263,14 @@ export function buildBoqTemplateModel(opts: BoqTemplateOptions = {}): BoqTemplat
     f(`SUM(${amtCol}${itemRowStart}:${amtCol}${itemRowEnd})`, MONEY_FMT)
 
   // Contingency + GST rows: the % sits in the Rate column (editable), the
-  // Amount is a formula off it. Pre-filled with SRMD's usual 5% / 18% — the
-  // engineer can change or clear the % (empty ⇒ 0, no error).
+  // Amount is a formula off it. GST is pre-filled with SRMD's usual 18%.
+  // Contingency is left BLANK (⇒ 0, the formula tolerates it) — Aksha,
+  // 17 Sep 2026: "remove Contingency 5% default from the Excel Format".
+  // Until then every request carried 5% unless the engineer noticed and
+  // cleared it, and the Head was approving contingency-on-GST by default.
+  // The row stays, so a request that genuinely needs contingency can still
+  // type a %.
   cells[addr(COL.description, contingencyRow)] = s('Contingency')
-  cells[addr(COL.rate, contingencyRow)] = n(5)
   cells[addr(COL.amount, contingencyRow)] =
     f(`ROUND(${amtCol}${subtotalRow}*${rateCol}${contingencyRow}/100,0)`, MONEY_FMT)
 

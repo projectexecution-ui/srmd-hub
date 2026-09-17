@@ -487,7 +487,11 @@ export function NewWSQuickForm({ projects, allDisciplines, allSubSkills, default
             }
           })
           setTplRows(grid)
-          setTplContPct(res.ladder?.contingencyPct ?? 5)
+          // A sheet that says nothing about contingency means NONE, not 5%.
+          // The template ships the % blank (Aksha, 17 Sep 2026); falling
+          // back to 5 here would have put the 5% straight back on every
+          // upload from it. The engineer can still type a % in the grid.
+          setTplContPct(res.ladder?.contingencyPct ?? 0)
           setTplGstPct(res.ladder?.gstPct ?? 18)
           setTplActive(true)
           if (res.ladder && !summaryTotal) setSummaryTotal(String(res.ladder.grandTotal))

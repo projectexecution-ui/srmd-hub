@@ -88,8 +88,11 @@ describe('buildBoqTemplateModel — shape', () => {
       .toBe(`I${m.subtotalRow}+I${m.contingencyRow}+I${m.gstRow}`)
   })
 
-  it('pre-fills 5% contingency and 18% GST in the Rate column', () => {
-    expect(boq.cells[`H${m.contingencyRow}`]?.v).toBe(5)
+  it('leaves the contingency % blank and pre-fills 18% GST in the Rate column', () => {
+    // Aksha, 17 Sep 2026: no 5% contingency by default. The row and its
+    // formula stay so a % can still be typed; the cell itself ships empty.
+    expect(boq.cells[`H${m.contingencyRow}`]).toBeUndefined()
+    expect(boq.cells[`I${m.contingencyRow}`]?.f).toBeDefined()
     expect(boq.cells[`H${m.gstRow}`]?.v).toBe(18)
   })
 
