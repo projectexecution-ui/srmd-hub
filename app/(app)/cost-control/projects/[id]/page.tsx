@@ -1191,7 +1191,7 @@ export default async function CostControlProjectDetailPage(
 
                 return (
                   <>
-                    <tr key={d.id} className="border-t border-gray-200 bg-slate-50 font-semibold">
+                    <tr key={d.id} className="group border-t border-gray-200 bg-slate-50 font-semibold">
                       <td className="px-3 py-2.5">
                         <CatChevron catId={d.id} />
                         <span className="font-mono text-[11px] text-gray-500 mr-2">{d.code}</span>
@@ -1324,9 +1324,9 @@ export default async function CostControlProjectDetailPage(
                       // Why the Request button is off, in words. A closed work category
                       // closes everything under it, so name whichever one is shut.
                       const sClosedReason = discCompletion.get(d.id)?.completedAt
-                        ? `The work category ${d.code} ${d.name} is marked Completed — reopen it to raise a request here.`
+                        ? `The work category ${d.code} ${d.name} is marked Closed — reopen it to raise a request here.`
                         : sCompletedAt
-                          ? `${s.code} ${s.name} is marked Completed — reopen it to raise a request.`
+                          ? `${s.code} ${s.name} is marked Closed — reopen it to raise a request.`
                           : null
                       const sCompletedBy = profileMap.get(subMeta.get(s.id)?.completedBy ?? '') ?? null
                       const wsCount = a?.chains.size ?? 0
@@ -1360,7 +1360,7 @@ export default async function CostControlProjectDetailPage(
                       const isFocus = focusSub === s.id
                       return (
                         <SubRow key={s.id} empty={isEmpty}>
-                        <tr id={`sub-${s.id}`} className={`border-t border-gray-100 hover:bg-gray-50/60 ${isFocus ? 'bg-amber-100/70 ring-2 ring-inset ring-amber-400' : ''}`}>
+                        <tr id={`sub-${s.id}`} className={`group border-t border-gray-100 hover:bg-gray-50/60 ${isFocus ? 'bg-amber-100/70 ring-2 ring-inset ring-amber-400' : ''}`}>
                           <td className="pl-4 pr-2 py-2 text-gray-700">
                             <RowDetailToggle id={s.id} count={(boqBySub.get(`${d.id}::${s.id}`) ?? []).reduce((n, b) => n + b.rows.length, 0)} />
                             <span className="font-mono text-[11px] text-gray-400 mr-2">{s.code}</span>
@@ -1731,9 +1731,9 @@ export default async function CostControlProjectDetailPage(
               // Why the Request button is off, in words. A closed work category
               // closes everything under it, so name whichever one is shut.
               const sClosedReason = discCompletion.get(d.id)?.completedAt
-                ? `The work category ${d.code} ${d.name} is marked Completed — reopen it to raise a request here.`
+                ? `The work category ${d.code} ${d.name} is marked Closed — reopen it to raise a request here.`
                 : sCompletedAt
-                  ? `${s.code} ${s.name} is marked Completed — reopen it to raise a request.`
+                  ? `${s.code} ${s.name} is marked Closed — reopen it to raise a request.`
                   : null
               const sCompletedBy = profileMap.get(subMeta.get(s.id)?.completedBy ?? '') ?? null
               const sEstShort = estimateShortfall(estLive, bl)

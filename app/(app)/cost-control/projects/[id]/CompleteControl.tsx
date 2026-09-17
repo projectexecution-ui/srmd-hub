@@ -1,5 +1,16 @@
 'use client'
-// "Completed" — closing finished work, at sub-category OR whole work category.
+// Closing finished work, at sub-category OR whole work category.
+//
+// TWO WORDS, NOT ONE. The button that closes a line says "Close"; the chip on
+// a line already closed says "CLOSED". Until 17 Sep 2026 both said
+// "Completed" — same word, same tick, same green — so NGH A showed 53 open
+// rows all reading "Completed" and Aksha could not tell which line was
+// actually finished. A verb for the action, a state for the state.
+//
+// On the desktop table the button is revealed on row hover / keyboard focus
+// (Aksha's pick): at rest the only pill on screen is a genuinely closed one,
+// which is the whole point. That table is `hidden xl:block`, so touch devices
+// never depend on hover — the phone card below keeps its full-width button.
 //
 // Only rendered where WO/PO committed equals Paid, so it stays a rare control
 // rather than another widget on every row (32 of SRAH's hundreds of rows).
@@ -91,7 +102,7 @@ export function CompleteControl({
     const ok = await confirm({
       title: `Close ${label}?`,
       message: `${owed}No new budget request can be raised on this ${noun} until it is reopened.\n\n${money}${cascade}`,
-      confirmLabel: 'Completed',
+      confirmLabel: 'Close',
       // Red only when there is money outstanding — otherwise this is
       // housekeeping and should not look like a hazard.
       danger: outstanding > 0 || (isDisc && outstandingLines > 0),
@@ -123,9 +134,9 @@ export function CompleteControl({
         <span className="inline-flex items-center gap-1">
           <span
             className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200 whitespace-nowrap"
-            title={`Completed ${when}${who}${savings > 0 ? ` · ${formatINR(savings)} to remove from ERP` : ''} · new requests are blocked`}
+            title={`Closed ${when}${who}${savings > 0 ? ` · ${formatINR(savings)} to remove from ERP` : ''} · new requests are blocked`}
           >
-            <CheckCircle2 className="h-3 w-3" /> COMPLETED
+            <CheckCircle2 className="h-3 w-3" /> CLOSED
           </span>
           {canWrite && (
             <button
@@ -143,7 +154,7 @@ export function CompleteControl({
     return (
       <div className="mt-2.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
         <p className="text-[13px] font-semibold text-emerald-900 inline-flex items-center gap-1.5">
-          <CheckCircle2 className="h-4 w-4" /> Completed
+          <CheckCircle2 className="h-4 w-4" /> Closed
         </p>
         <p className="text-[11px] text-emerald-800 mt-0.5">
           Closed {when}{who}. No new request can be raised here until it is reopened.
@@ -175,10 +186,22 @@ export function CompleteControl({
             : savings > 0
               ? `Close this and flag ${formatINR(savings)} to come out of the ERP budget`
               : `Close this ${noun}`}
-          className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold border border-emerald-300 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 whitespace-nowrap"
+          className={[
+            'inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold',
+            'border border-emerald-300 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 whitespace-nowrap',
+            // Revealed by the row, not standing on it. `group` is on the <tr>.
+            // Focus brings it back for the keyboard, and pointer-events follow
+            // the opacity so an invisible button can never be clicked by accident.
+            'opacity-0 pointer-events-none transition-opacity',
+            'group-hover:opacity-100 group-hover:pointer-events-auto',
+            'focus:opacity-100 focus:pointer-events-auto',
+            // While the close is running it must stay visible even if the
+            // pointer has left the row.
+            pending ? 'opacity-100 pointer-events-auto' : '',
+          ].join(' ')}
         >
           {pending ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
-          Completed
+          Close
         </button>
         {err && <span className="text-[10px] font-semibold text-rose-700 max-w-[180px] leading-tight">{err}</span>}
       </span>
@@ -192,7 +215,7 @@ export function CompleteControl({
         className={`flex w-full items-center justify-center gap-1.5 min-h-[44px] rounded-lg border text-sm font-semibold disabled:opacity-50 ${outstanding > 0 ? 'border-amber-300 bg-amber-50 text-amber-900' : 'border-emerald-300 bg-emerald-50 text-emerald-800'}`}
       >
         {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-        Completed
+        Close
         {savings > 0 && <span className="font-normal">· {formatINR(savings)} to remove from ERP</span>}
       </button>
       <p className="mt-1 text-[11px] text-gray-500">

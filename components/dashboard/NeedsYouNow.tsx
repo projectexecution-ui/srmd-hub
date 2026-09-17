@@ -41,13 +41,17 @@ const MAX_OTHER = 6
 
 // Soft, distinct colour per project (stable by project code) — same palette as
 // My Approvals so the two screens feel like one system.
+// `card` is the project card's full border (17 Sep 2026): the 4px rail alone
+// could not separate one project from the next, because a project header and a
+// category band were both full-width tinted strips. Now the three depths are
+// three shapes — card → box → row.
 const TONES = [
-  { rail: 'border-l-indigo-300', head: 'bg-indigo-50/70', code: 'bg-indigo-100 text-indigo-700', avatar: 'bg-indigo-100 text-indigo-700' },
-  { rail: 'border-l-teal-300',   head: 'bg-teal-50/70',   code: 'bg-teal-100 text-teal-700',     avatar: 'bg-teal-100 text-teal-700' },
-  { rail: 'border-l-violet-300', head: 'bg-violet-50/70', code: 'bg-violet-100 text-violet-700', avatar: 'bg-violet-100 text-violet-700' },
-  { rail: 'border-l-rose-300',   head: 'bg-rose-50/70',   code: 'bg-rose-100 text-rose-700',     avatar: 'bg-rose-100 text-rose-700' },
-  { rail: 'border-l-sky-300',    head: 'bg-sky-50/70',    code: 'bg-sky-100 text-sky-700',       avatar: 'bg-sky-100 text-sky-700' },
-  { rail: 'border-l-amber-300',  head: 'bg-amber-50/70',  code: 'bg-amber-100 text-amber-700',   avatar: 'bg-amber-100 text-amber-700' },
+  { card: 'border-indigo-200 border-l-indigo-500', head: 'bg-indigo-50/70', code: 'bg-indigo-100 text-indigo-700', avatar: 'bg-indigo-100 text-indigo-700' },
+  { card: 'border-teal-200 border-l-teal-500',     head: 'bg-teal-50/70',   code: 'bg-teal-100 text-teal-700',     avatar: 'bg-teal-100 text-teal-700' },
+  { card: 'border-violet-200 border-l-violet-500', head: 'bg-violet-50/70', code: 'bg-violet-100 text-violet-700', avatar: 'bg-violet-100 text-violet-700' },
+  { card: 'border-rose-200 border-l-rose-500',     head: 'bg-rose-50/70',   code: 'bg-rose-100 text-rose-700',     avatar: 'bg-rose-100 text-rose-700' },
+  { card: 'border-sky-200 border-l-sky-500',       head: 'bg-sky-50/70',    code: 'bg-sky-100 text-sky-700',       avatar: 'bg-sky-100 text-sky-700' },
+  { card: 'border-amber-200 border-l-amber-500',   head: 'bg-amber-50/70',  code: 'bg-amber-100 text-amber-700',   avatar: 'bg-amber-100 text-amber-700' },
 ]
 function toneFor(key: string) {
   let h = 0
@@ -126,11 +130,15 @@ export function NeedsYouNow({
         </Link>
       </div>
 
-      {/* ── Budget approvals — project → sub-discipline → every budget ── */}
+      {/* ── Budget approvals — project → sub-discipline → every budget ──
+          Each project is its OWN card, so the eye can find where one ends and
+          the next begins; each work category is an inset box inside it. */}
+      {budgetProjects.length > 0 && (
+      <div className="p-3 space-y-3 bg-gray-50/60">
       {budgetProjects.map(proj => {
         const tone = toneFor(proj.code || proj.projectId)
         return (
-          <div key={proj.projectId} className={`border-l-4 ${tone.rail} border-b border-gray-100`}>
+          <div key={proj.projectId} className={`rounded-xl border border-l-4 ${tone.card} bg-white overflow-hidden shadow-[0_1px_2px_rgba(16,24,40,0.04)]`}>
             <div className={`px-4 py-2.5 ${tone.head}`}>
               <div className="flex items-center gap-2 flex-wrap">
                 <span className={`inline-flex h-6 w-6 items-center justify-center rounded-md text-xs flex-shrink-0 ${tone.avatar}`}>🏢</span>
@@ -146,10 +154,10 @@ export function NeedsYouNow({
               </div>
             </div>
 
-            <div className="pb-1">
+            <div className="p-2.5 space-y-2">
               {proj.disciplines.map(disc => (
-                <div key={disc.disciplineId}>
-                  <div className="flex items-baseline justify-between gap-2 px-4 py-1.5 bg-gray-100/70 border-y border-gray-200">
+                <div key={disc.disciplineId} className="rounded-lg border border-gray-200 overflow-hidden bg-gray-50/70">
+                  <div className="flex items-baseline justify-between gap-2 px-3 py-1.5 bg-gray-100/80 border-b border-gray-200">
                     <span className="text-[11px] font-bold text-gray-700 uppercase tracking-wide truncate inline-flex items-center gap-2">
                       <span className="h-2.5 w-2.5 rounded-sm bg-gray-400 flex-shrink-0" />
                       {disc.name ?? '—'}
@@ -158,7 +166,7 @@ export function NeedsYouNow({
                       approved <b className="text-gray-800">{formatINR(disc.before)}</b> → <b className="text-emerald-700">{formatINR(disc.after)}</b>
                     </span>
                   </div>
-                  <div className="divide-y divide-gray-100 px-4">
+                  <div className="divide-y divide-gray-100 bg-white px-3">
                     {disc.items.map(it => {
                       const late = isLate(it.urgency, it.createdAt, now)
                       const age = ageDays(it.createdAt, now)
@@ -184,6 +192,8 @@ export function NeedsYouNow({
           </div>
         )
       })}
+      </div>
+      )}
 
       {/* ── Anything else waiting (non-budget) — kept as a simple list ── */}
       {shownOther.length > 0 && (
