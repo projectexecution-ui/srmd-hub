@@ -53,6 +53,20 @@ export default async function BillsBookingPage({ searchParams }: {
     view: (sp.view as View | undefined) ?? (me.onAnyDesk ? 'mine' : 'all'),
   }
   const shown = applyFilters(reg.rows, filters)
+
+  // Is the person actually LOOKING for something, or did they just open the
+  // page? Aksha, 17 Sep 2026: "remove Every Bill section - i will search
+  // whenevre i require keep the pending one". Whoever is on no desk fell
+  // through to view 'all', so opening Bills Approval dumped the entire
+  // register on them — the one list nobody had asked for. It now appears when
+  // it is asked for: a search, a filter, or a view picked on purpose.
+  //
+  // `sp.view` is the test for "on purpose": present means they chose it (the
+  // saved-view chips set it), absent means the fallback on line above chose it
+  // for them. So "Every bill" is still one click away, it is just no longer
+  // the thing you land on.
+  const browsing = !sp.view && !filters.q && !filters.project && !filters.type && !filters.late
+  const showRegister = !(browsing && filters.view === 'all')
   const dupes = duplicateKeys(reg.rows)
   const mine = waitingOnMe(reg.rows)
   const liveRows = reg.rows.filter(r => !isTerminal(r.stage))
@@ -289,9 +303,27 @@ export default async function BillsBookingPage({ searchParams }: {
             <EmptyState icon={<ReceiptText className="h-8 w-8" />} title="No bills yet"
               description="Bills raise themselves here when IN4 approves an abstract. Press Check IN4 to look now." />
           ) : (
-            <BillRows rows={shown} dupes={dupes}
-              title={viewTitle[filters.view ?? 'all']}
-              note={filters.q || filters.project || filters.type || filters.late ? 'filtered' : 'oldest first'} />
+            showRegister ? (
+              <BillRows rows={shown} dupes={dupes}
+                title={viewTitle[filters.view ?? 'all']}
+                note={filters.q || filters.project || filters.type || filters.late ? 'filtered' : 'oldest first'} />
+            ) : (
+              // The register is there, it is simply not shouted. One quiet line
+              // with the two ways in — search, or open the whole list on purpose.
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl border border-dashed border-gray-200 bg-white px-4 py-3">
+                <span className="text-[13px] text-gray-500">
+                  <b className="font-semibold text-gray-700">{reg.rows.length}</b> bills in the register.
+                </span>
+                <Link href={findHref}
+                      className="inline-flex min-h-[32px] items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 text-[12px] font-semibold text-gray-700 hover:bg-gray-50">
+                  <Search className="h-3.5 w-3.5" /> Search
+                </Link>
+                <Link href={qs(p => p.set('view', 'all'))}
+                      className="inline-flex min-h-[32px] items-center rounded-lg px-1 text-[12px] font-medium text-gray-500 hover:text-gray-900 hover:underline">
+                  or show every bill
+                </Link>
+              </div>
+            )
           )}
 
           <WhoHolds desks={desks} summary={holdSummary} />
