@@ -89,6 +89,9 @@ export function ProjectTree({ projects, approvals = {}, verify = {}, mobile = fa
 
   if (projects.length === 0) return null
 
+  /** On the portfolio page itself — the lane header is then the current page. */
+  const onProjectsPage = pathname === '/cost-control'
+
   const linkCls = (active: boolean) => cn(
     'flex items-center gap-2 text-sm rounded-lg transition-colors min-h-[36px]',
     mobile ? 'px-3 py-2' : 'px-2 py-1.5',
@@ -105,15 +108,43 @@ export function ProjectTree({ projects, approvals = {}, verify = {}, mobile = fa
 
   return (
     <div className={mobile ? '' : 'my-0.5'}>
-      <button type="button" onClick={toggleLane} aria-expanded={laneOpen}
-        className={cn('w-full flex items-center gap-2 text-sm font-semibold rounded-xl transition-colors', mobile ? 'px-4 py-2.5' : 'px-3 py-2', activeId ? 'text-blue-700' : 'text-gray-700 hover:bg-gray-50')}>
-        <FolderKanban className={cn('h-5 w-5 flex-shrink-0', activeId ? 'text-blue-600' : 'text-gray-400')} />
-        <span className="flex-1 text-left truncate">Projects</span>
-        {laneWaiting > 0 && <WaitPill n={laneWaiting} />}
-        {laneVerify > 0 && <VerifyPill n={laneVerify} />}
-        <span className="text-[11px] font-semibold text-gray-400 tabular-nums">{countTree(tree)}</span>
-        <ChevronDown className={cn('h-4 w-4 flex-shrink-0 text-gray-400 transition-transform', laneOpen && 'rotate-180')} />
-      </button>
+      {/* The lane header OPENS the Projects page; the chevron beside it is the
+          only thing that expands the tree. Aksha, 17 Sep 2026: "when i click
+          on Projects - this page also should open up". It was one button that
+          only toggled, so the portfolio page had no entry point in the nav at
+          all — you had to already be on it, or reach it from a project's back
+          arrow. The two jobs are now two controls, both ≥44px on a phone. */}
+      <div className="flex items-center">
+        <Link
+          href="/cost-control"
+          onClick={onNavigate}
+          aria-current={onProjectsPage ? 'page' : undefined}
+          className={cn(
+            'flex-1 min-w-0 flex items-center gap-2 text-sm font-semibold rounded-xl transition-colors',
+            mobile ? 'px-4 py-2.5' : 'px-3 py-2',
+            onProjectsPage ? 'text-blue-700 bg-blue-50' : activeId ? 'text-blue-700 hover:bg-gray-50' : 'text-gray-700 hover:bg-gray-50',
+          )}
+        >
+          <FolderKanban className={cn('h-5 w-5 flex-shrink-0', (activeId || onProjectsPage) ? 'text-blue-600' : 'text-gray-400')} />
+          <span className="flex-1 text-left truncate">Projects</span>
+          {laneWaiting > 0 && <WaitPill n={laneWaiting} />}
+          {laneVerify > 0 && <VerifyPill n={laneVerify} />}
+          <span className="text-[11px] font-semibold text-gray-400 tabular-nums">{countTree(tree)}</span>
+        </Link>
+        <button
+          type="button"
+          onClick={toggleLane}
+          aria-expanded={laneOpen}
+          aria-label={laneOpen ? 'Collapse the project list' : 'Expand the project list'}
+          title={laneOpen ? 'Collapse' : 'Expand'}
+          className={cn(
+            'flex-shrink-0 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-50 transition-colors',
+            mobile ? 'p-2.5 min-h-[44px] min-w-[44px] flex items-center justify-center' : 'p-1.5',
+          )}
+        >
+          <ChevronDown className={cn('h-4 w-4 transition-transform', laneOpen && 'rotate-180')} />
+        </button>
+      </div>
       {laneOpen && (
         <div className={cn('mt-0.5 space-y-0.5 border-l border-gray-200', mobile ? 'ml-6 pl-2' : 'ml-5 pl-2')}>
           {tree.length > 6 && (

@@ -37,7 +37,17 @@ import { SubProjectsStrip } from './SubProjectsStrip'
  * `in_cockpit=1` is what stops that page bouncing back to this one on the
  * trial deployment, where every route into a project redirects here.
  */
-export async function BudgetTab({ projectId, view }: { projectId: string; view: number }) {
+export async function BudgetTab({ projectId, view, focus }: {
+  projectId: string
+  view: number
+  /** Where an approval link wants the estimate opened — work category,
+   *  sub-skill, and the sheet to offer. Passed straight through; the Internal
+   *  Estimate page has read these since the HOD asked for project-first
+   *  approvals. This tab used to hand it a hardcoded `{ in_cockpit: '1' }`,
+   *  which silently dropped them and landed the approver on a collapsed
+   *  project with nothing highlighted. */
+  focus?: { disc?: string; sub?: string; ws?: string }
+}) {
   if (view === 1) return <OrdersView projectId={projectId} />
 
   // Group or project? The SAME rule the landing and the sidebar use (Aksha,
@@ -54,7 +64,12 @@ export async function BudgetTab({ projectId, view }: { projectId: string; view: 
   const estimate = (
     <ProjectInternalEstimatePage
       params={Promise.resolve({ id: projectId })}
-      searchParams={Promise.resolve({ in_cockpit: '1' })}
+      searchParams={Promise.resolve({
+        in_cockpit: '1',
+        focus_disc: focus?.disc,
+        focus_sub: focus?.sub,
+        ws: focus?.ws,
+      })}
     />
   )
   if (shape.children === 0) return estimate

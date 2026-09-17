@@ -135,7 +135,9 @@ export default async function CostControlLandingPage() {
   const myCover = new Set((myPaRows ?? []).map(r => `${r.project_id}:${r.role}`))
 
   const ccProjects = (projectsRes.data ?? []) as CCProject[]
-  const incompleteCount = ccProjects.filter(p => (p.setup_progress_pct ?? 0) < 100).length
+  // (Counted further down, off the rows this page actually lists — see
+  // `shownProjects`. Counting ccProjects here included the three grouping
+  // anchors and made the header say 42 where the sidebar says 39.)
 
   type WSRollup = { id: string; status: string; total_amount: number | null; approved_for_erp_amt: number | null; project_id: string; discipline_id: string; deadline_date: string | null; in4_entered_at: string | null; summary_notes: string | null }
   const { data: wsData, error: wsErr } = wsAllRes
@@ -353,6 +355,14 @@ export default async function CostControlLandingPage() {
     // Only label the leftovers when there ARE real groups to separate from.
     projGroups.push({ key: '_independent', label: projGroups.length > 0 ? 'Independent projects' : null, members: independents })
   }
+
+  // Every row this page lists. A grouping ANCHOR (NGH, P2, VV — no budget and
+  // no sheets of its own) is a heading, not a project, so it is already absent
+  // from `members` and must not be counted either. Aksha, 17 Sep 2026: the
+  // sidebar said 39 and this header said 42. Same rule, same number now —
+  // countTree() in lib/project-tree.ts skips anchors for exactly this reason.
+  const shownProjects = projGroups.flatMap(g => g.members)
+  const incompleteCount = shownProjects.filter(p => (p.setup_progress_pct ?? 0) < 100).length
   // Rollup across a group's members for the header band.
   const groupTotals = (members: CCProject[]) => members.reduce((t, p) => {
     const bud = budgetByProj.get(p.id) ?? { budget: 0, committed: 0, paid: 0 }
@@ -380,7 +390,7 @@ export default async function CostControlLandingPage() {
       <AutoBackup isAdmin={canAdmin} />
       <PageHeader
         title="Projects"
-        subtitle={`SRASSK — ${ccProjects.length} project${ccProjects.length === 1 ? '' : 's'}${incompleteCount ? ` · ${incompleteCount} need setup` : ''}`}
+        subtitle={`SRASSK — ${shownProjects.length} project${shownProjects.length === 1 ? '' : 's'}${incompleteCount ? ` · ${incompleteCount} need setup` : ''}`}
       >
         <div className="hidden sm:block">
           <CcQuickSearch projects={ccProjects.map(p => ({ id: p.id, code: p.code, name: p.name, group: p.group_label }))} />
@@ -476,7 +486,7 @@ export default async function CostControlLandingPage() {
         <QueryError message={(wsErr ?? draftsErr)?.message} what="the summary numbers" />
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 auto-rows-fr">
-          <Stat label="Projects" value={ccProjects.length} hint={incompleteCount ? `${incompleteCount} need setup` : 'all set up'} icon={<Calculator className="h-5 w-5" />} />
+          <Stat label="Projects" value={shownProjects.length} hint={incompleteCount ? `${incompleteCount} need setup` : 'all set up'} icon={<Calculator className="h-5 w-5" />} />
           <Link href="/cost-control/approvals" className="block h-full">
             <Stat
               label="My Approvals"
