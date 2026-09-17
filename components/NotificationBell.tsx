@@ -11,6 +11,7 @@ import { Bell, CheckCheck, Trash2, Settings as SettingsIcon } from 'lucide-react
 import { cn, formatDate } from '@/lib/utils'
 import { confirm } from '@/components/ui/confirm-dialog'
 import { useNotifications, type NotificationRow } from '@/components/NotificationProvider'
+import { bucket, deskUnread } from '@/lib/notifications/bucket'
 
 // `align` controls which way the dropdown opens:
 //   'right' (default) — anchors to the bell's right edge, opens leftward.
@@ -19,10 +20,20 @@ import { useNotifications, type NotificationRow } from '@/components/Notificatio
 //     Correct for the desktop sidebar bell, where 'right' would push the
 //     ~320px panel off the left screen edge and clip its text.
 export default function NotificationBell({ align = 'right' }: { align?: 'left' | 'right' }) {
-  const { items, loading, unread, markAllRead, markOneRead, clearAll } = useNotifications()
+  const { items, loading, unread, deskTotal, markAllRead, markOneRead, clearAll } = useNotifications()
   const [open, setOpen] = useState(false)
+  // Which half is on screen. Opens on the work, always.
+  const [tab, setTab] = useState<'desk' | 'news'>('desk')
   const panelRef = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
+
+  const split = bucket(items)
+  // The badge uses the SERVER count of the whole queue; the loaded rows are
+  // only a window onto it. They agree until the queue is longer than the
+  // window, and then the server one is the true answer.
+  const deskCount = Math.max(deskTotal, deskUnread(items))
+  const newsCount = split.news.reduce((n, i) => (i.is_read ? n : n + 1), 0)
+  const shownItems = tab === 'desk' ? split.desk : split.news
 
   // Close on outside click / ESC
   useEffect(() => {
@@ -52,9 +63,13 @@ export default function NotificationBell({ align = 'right' }: { align?: 'left' |
         className="relative p-2 rounded-lg text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-colors"
       >
         <Bell className="h-5 w-5" />
-        {unread > 0 && (
+        {/* The red count is WORK only (N1). It used to count everything,
+            which is how it reached "99+" and stopped being worth reading —
+            86 of 87 "budget approved" notices were sitting unread inside it.
+            News has its own quiet count on its own tab. */}
+        {deskCount > 0 && (
           <span className="absolute -top-0.5 -right-0.5 min-w-[1.1rem] h-[1.1rem] px-1 inline-flex items-center justify-center rounded-full bg-rose-600 text-white text-[10px] font-bold">
-            {unread > 99 ? '99+' : unread}
+            {deskCount > 99 ? '99+' : deskCount}
           </span>
         )}
       </button>
@@ -106,16 +121,51 @@ export default function NotificationBell({ align = 'right' }: { align?: 'left' |
             </div>
           </div>
 
+          {/* Two halves: what waits on you, and what merely happened. */}
+          <div className="flex gap-1 px-3 pt-2 pb-1 border-b border-gray-100">
+            {([
+              { key: 'desk' as const, label: 'On your desk', n: deskCount },
+              { key: 'news' as const, label: 'Just so you know', n: newsCount },
+            ]).map(t => (
+              <button
+                key={t.key}
+                onClick={() => setTab(t.key)}
+                aria-pressed={tab === t.key}
+                className={cn(
+                  'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11.5px] min-h-[28px]',
+                  tab === t.key
+                    ? 'border-indigo-200 bg-indigo-50 text-indigo-700 font-semibold'
+                    : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50',
+                )}
+              >
+                {t.label}
+                {t.n > 0 && (
+                  <span className={cn(
+                    'tabular-nums font-bold',
+                    t.key === 'desk' ? 'text-rose-600' : 'text-gray-400',
+                  )}>{t.n}</span>
+                )}
+              </button>
+            ))}
+          </div>
+
           <div className="flex-1 overflow-y-auto">
             {loading ? (
               <p className="text-xs text-gray-400 text-center py-8">Loading…</p>
-            ) : items.length === 0 ? (
+            ) : shownItems.length === 0 ? (
               <p className="text-xs text-gray-500 text-center py-8 px-4">
-                You&apos;re all caught up. Things waiting on you will show up here.
+                {tab === 'desk'
+                  ? 'Nothing is waiting on you.'
+                  : 'No news here yet.'}
+                {tab === 'desk' && newsCount > 0 && (
+                  <> <button onClick={() => setTab('news')} className="font-semibold text-indigo-700 hover:underline">
+                    {newsCount} thing{newsCount === 1 ? '' : 's'} happened
+                  </button> that you might want to see.</>
+                )}
               </p>
             ) : (
               <ul className="divide-y divide-gray-100">
-                {items.map(n => (
+                {shownItems.map(n => (
                   <li key={n.id}>
                     <NotifItem n={n} onClick={() => markOneRead(n.id)} closePanel={() => setOpen(false)} />
                   </li>
