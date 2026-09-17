@@ -24,12 +24,12 @@ import {
 // projects. Assigned by a stable hash of the project code, so a project keeps
 // the same colour on every visit.
 const TONES = [
-  { rail: 'border-l-indigo-300', head: 'bg-indigo-50/70', code: 'bg-indigo-100 text-indigo-700', avatar: 'bg-indigo-100 text-indigo-700', ba: 'bg-indigo-50/60 border-indigo-200 text-indigo-900' },
-  { rail: 'border-l-teal-300',   head: 'bg-teal-50/70',   code: 'bg-teal-100 text-teal-700',     avatar: 'bg-teal-100 text-teal-700',     ba: 'bg-teal-50/60 border-teal-200 text-teal-900' },
-  { rail: 'border-l-violet-300', head: 'bg-violet-50/70', code: 'bg-violet-100 text-violet-700', avatar: 'bg-violet-100 text-violet-700', ba: 'bg-violet-50/60 border-violet-200 text-violet-900' },
-  { rail: 'border-l-rose-300',   head: 'bg-rose-50/70',   code: 'bg-rose-100 text-rose-700',     avatar: 'bg-rose-100 text-rose-700',     ba: 'bg-rose-50/60 border-rose-200 text-rose-900' },
-  { rail: 'border-l-sky-300',    head: 'bg-sky-50/70',    code: 'bg-sky-100 text-sky-700',       avatar: 'bg-sky-100 text-sky-700',       ba: 'bg-sky-50/60 border-sky-200 text-sky-900' },
-  { rail: 'border-l-amber-300',  head: 'bg-amber-50/70',  code: 'bg-amber-100 text-amber-700',   avatar: 'bg-amber-100 text-amber-700',   ba: 'bg-amber-50/60 border-amber-200 text-amber-900' },
+  { card: 'border-indigo-200 border-l-indigo-500', head: 'bg-indigo-50/70', code: 'bg-indigo-100 text-indigo-700', avatar: 'bg-indigo-100 text-indigo-700', ba: 'bg-indigo-50/60 border-indigo-200 text-indigo-900' },
+  { card: 'border-teal-200 border-l-teal-500',   head: 'bg-teal-50/70',   code: 'bg-teal-100 text-teal-700',     avatar: 'bg-teal-100 text-teal-700',     ba: 'bg-teal-50/60 border-teal-200 text-teal-900' },
+  { card: 'border-violet-200 border-l-violet-500', head: 'bg-violet-50/70', code: 'bg-violet-100 text-violet-700', avatar: 'bg-violet-100 text-violet-700', ba: 'bg-violet-50/60 border-violet-200 text-violet-900' },
+  { card: 'border-rose-200 border-l-rose-500',   head: 'bg-rose-50/70',   code: 'bg-rose-100 text-rose-700',     avatar: 'bg-rose-100 text-rose-700',     ba: 'bg-rose-50/60 border-rose-200 text-rose-900' },
+  { card: 'border-sky-200 border-l-sky-500',    head: 'bg-sky-50/70',    code: 'bg-sky-100 text-sky-700',       avatar: 'bg-sky-100 text-sky-700',       ba: 'bg-sky-50/60 border-sky-200 text-sky-900' },
+  { card: 'border-amber-200 border-l-amber-500',  head: 'bg-amber-50/70',  code: 'bg-amber-100 text-amber-700',   avatar: 'bg-amber-100 text-amber-700',   ba: 'bg-amber-50/60 border-amber-200 text-amber-900' },
 ]
 export function toneFor(key: string) {
   let h = 0
@@ -73,8 +73,15 @@ export function ApprovalProjectCard({
         const discBefore = approvedByDisc.get(`${projectId}::${did}`) ?? 0
         const discInc = ditems.reduce((s, r) => s + increment(r), 0)
         return (
-          <div key={did}>
-            <div className="flex items-baseline justify-between gap-2 mb-2 px-3 py-1.5 rounded-lg bg-gray-100/70 border border-gray-200">
+          // The work category is a BOX that CONTAINS its requests — the same
+          // three shapes the home page uses since 17 Sep 2026: project card →
+          // category box → row. It used to be a rounded bar with the request
+          // cards floating below it as siblings, so nothing said which category
+          // a request belonged to; two categories on one screen just read as
+          // five loose cards. Aksha: "hope this page also follows as per
+          // Dashboard format which we decided now".
+          <div key={did} className="rounded-lg border border-gray-200 overflow-hidden bg-gray-50/70">
+            <div className="flex items-baseline justify-between gap-2 px-3 py-1.5 bg-gray-100/80 border-b border-gray-200">
               <span className="text-[11px] font-bold text-gray-700 uppercase tracking-wide truncate inline-flex items-center gap-2">
                 <span className="h-2.5 w-2.5 rounded-sm bg-gray-400 flex-shrink-0" />
                 {[disc?.code, disc?.name].filter(Boolean).join(' ') || '—'}
@@ -85,7 +92,9 @@ export function ApprovalProjectCard({
                 </span>
               )}
             </div>
-            <div className="space-y-2">
+            {/* The body is the white sheet the requests sit on; they are rows in
+                it, divided, not cards on top of a card. */}
+            <div className="bg-white divide-y divide-gray-100">
               {ditems.map(ws => {
                 const sub = pickFirst(ws.cc_sub_skills)
                 const ex = enrich.get(ws.id)
@@ -96,7 +105,7 @@ export function ApprovalProjectCard({
                 const d = daysWaiting(ws.submitted_at)
                 const ver = Number(ws.version_no ?? 1)
                 return (
-                  <div key={ws.id} className="rounded-xl border border-gray-200 bg-white p-3">
+                  <div key={ws.id} className="p-3">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
@@ -159,7 +168,9 @@ export function ApprovalProjectCard({
   if (!showProjectHeader) return bands
 
   return (
-    <Card className={`p-0 overflow-hidden border-l-4 ${tone.rail}`}>
+    // Full coloured border, like the home page's project cards — the 4px rail
+    // alone never separated one project from the next.
+    <Card className={`p-0 overflow-hidden border border-l-4 ${tone.card}`}>
       <div className={`px-4 py-3 ${tone.head} border-b border-gray-100`}>
         <div className="flex items-start justify-between gap-2">
           <div className="flex items-start gap-2 min-w-0 flex-1">
