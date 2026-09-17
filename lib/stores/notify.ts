@@ -44,6 +44,8 @@ export type StoresEvent =
   | 'mio_request_pending'
   | 'mio_request_decided'
   | 'mio_request_issued'
+  | 'mio_borrowed_out'
+  | 'mio_borrowed_back'
 
 /** Which roles hear each event. Empty = it goes to named people instead. */
 const AUDIENCE: Record<StoresEvent, readonly string[]> = {
@@ -57,6 +59,11 @@ const AUDIENCE: Record<StoresEvent, readonly string[]> = {
   mio_request_pending: ['admin', 'backoffice'],
   mio_request_decided: [],
   mio_request_issued: [],
+  // Both of these go to NAMED Atm Heads, resolved per project from
+  // cc_project_approvers — see atmHeadsOf. No role audience, because "every
+  // head" is exactly the blanket copy the comment above warns about.
+  mio_borrowed_out: [],
+  mio_borrowed_back: [],
 }
 
 async function idsWithRole(roles: readonly string[]): Promise<string[]> {
@@ -211,6 +218,136 @@ export async function notifyRequestIssued(input: {
         : `Part of it is on its way, as ${input.entryNo}. The rest stays open.`,
       '/stores/requests?status=',
       { requestNo: input.no, entryNo: input.entryNo },
+    )
+  } catch { return 0 }
+}
+
+/* ── Borrowing between projects ─────────────────────────────────────────── */
+
+/**
+ * The Atm Head of a project, from `cc_project_approvers`.
+ *
+ * Aksha, 16 Sep 2026: "when the Cross Project is enabled then the data should
+ * come to Atm Heads of that particular project that the Items are yet to
+ * recieve from the other project".
+ *
+ * That table is the hub's one answer to "who is the Atm Head of this project"
+ * — 68 rows on role `head` across 42 of the 45 projects — so this section asks
+ * it rather than growing a second list somebody has to keep in step. Founder
+ * and project_head rows are deliberately left out: the Atm Head is the `head`.
+ *
+ * Walks UP the project tree when a sub-project has nobody of its own, because
+ * the heads are generally set on the parent — the Atm Head of Admin Block is
+ * the Atm Head of Admin Block Ground Floor, and telling nobody would be worse
+ * than telling the parent.
+ */
+async function atmHeadsOf(projectId: string | null): Promise<string[]> {
+  if (!projectId) return []
+  const svc = svcClient()
+  if (!svc) return []
+
+  const walked = new Set<string>()
+  let at = projectId
+
+  // Bounded, and it refuses to revisit — a project that is its own ancestor is
+  // bad data, not a reason to loop for ever.
+  for (let hop = 0; hop < 6; hop++) {
+    const here: string = at
+    if (walked.has(here)) break
+    walked.add(here)
+
+    const { data } = await svc
+      .from('cc_project_approvers').select('user_id').eq('project_id', here).eq('role', 'head')
+    const ids = (data ?? []).map(r => r.user_id as string).filter(Boolean)
+    if (ids.length) return [...new Set(ids)]
+
+    const up = await svc.from('projects').select('parent_project_id').eq('id', here).maybeSingle()
+    const next = (up.data?.parent_project_id ?? null) as string | null
+    if (!next) break
+    at = next
+  }
+
+  /**
+   * Nothing above — so look BELOW.
+   *
+   * Checked against the live table: 42 of the 45 projects carry an Atm Head,
+   * and the three that do not are NGH, P2 and VV — the PARENTS. Their heads
+   * are set on the children. So a loan out of "NGH" itself would reach nobody
+   * by walking up, and NGH holds real stock.
+   *
+   * The Atm Heads of a family's children are the Atm Heads of that family, so
+   * they are the right people to tell. One hop down is enough for the shape
+   * this hub actually has.
+   */
+  const { data: kids } = await svc
+    .from('projects').select('id').eq('parent_project_id', projectId)
+  const kidIds = (kids ?? []).map(k => k.id as string)
+  if (kidIds.length === 0) return []
+
+  const { data: below } = await svc
+    .from('cc_project_approvers').select('user_id').in('project_id', kidIds).eq('role', 'head')
+  return [...new Set((below ?? []).map(r => r.user_id as string).filter(Boolean))]
+}
+
+/** A few item names, for a message that says what actually moved. */
+function itemLine(lines: ReadonlyArray<{ name: string; qty: number; unit: string }>): string {
+  const first = lines[0]
+  if (!first) return 'material'
+  const one = `${first.name} ${first.qty} ${first.unit}`.trim()
+  return lines.length === 1 ? one : `${one} and ${lines.length - 1} more`
+}
+
+/**
+ * Material has left THIS project's stock for somebody else's site.
+ *
+ * Goes to the LENDING project's Atm Head — the one now owed it back. Nobody on
+ * the borrowing side needs telling: they asked for it and they are about to
+ * sign for it.
+ */
+export async function notifyBorrowedOut(input: {
+  lendingProjectId: string | null
+  lendingProjectName: string | null
+  toProjectName: string | null
+  entryNo: string
+  requestNo: string
+  lines: ReadonlyArray<{ name: string; qty: number; unit: string }>
+  actorId: string
+}): Promise<number> {
+  try {
+    const ids = (await atmHeadsOf(input.lendingProjectId)).filter(id => id !== input.actorId)
+    return await send(
+      ids, 'mio_borrowed_out',
+      `Lent to ${input.toProjectName ?? 'another project'} — ${input.requestNo}`,
+      `${itemLine(input.lines)} has gone out of ${input.lendingProjectName ?? 'your project'}'s stock on ${input.entryNo}. It is owed back.`,
+      '/stores/returnables',
+      { entryNo: input.entryNo, requestNo: input.requestNo, to: input.toProjectName },
+    )
+  } catch { return 0 }
+}
+
+/**
+ * It came back, and the storekeeper has booked it in.
+ *
+ * Aksha: "the same to be notifies to Atm head once this entry is passed SRM
+ * IN". A debt that is chased and never closed out loud is one people stop
+ * believing, so the settlement is announced as loudly as the loan.
+ */
+export async function notifyBorrowedBack(input: {
+  lendingProjectId: string | null
+  lendingProjectName: string | null
+  fromProjectName: string | null
+  entryNo: string
+  lines: ReadonlyArray<{ name: string; qty: number; unit: string }>
+  actorId: string
+}): Promise<number> {
+  try {
+    const ids = (await atmHeadsOf(input.lendingProjectId)).filter(id => id !== input.actorId)
+    return await send(
+      ids, 'mio_borrowed_back',
+      `Returned by ${input.fromProjectName ?? 'another project'} — ${input.entryNo}`,
+      `${itemLine(input.lines)} is back in ${input.lendingProjectName ?? 'your project'}'s stock.`,
+      '/stores/returnables',
+      { entryNo: input.entryNo, from: input.fromProjectName },
     )
   } catch { return 0 }
 }

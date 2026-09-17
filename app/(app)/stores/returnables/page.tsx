@@ -2,6 +2,8 @@ import Link from 'next/link'
 import { PauseCircle } from 'lucide-react'
 import { loadReturnables, loadLists, listsOf } from '@/lib/stores/queries'
 import { RETURNABLES_ON } from '@/lib/stores/core'
+import { crossProjectOn } from '@/lib/stores/settings'
+import { guardStoreTab } from '../guard'
 import { Section } from '../ui'
 import { ReturnClient } from './ReturnClient'
 
@@ -16,13 +18,23 @@ export const dynamic = 'force-dynamic'
  * suddenly dies reads as a fault, and somebody would spend an afternoon on it.
  */
 export default async function ReturnablesPage() {
-  if (!RETURNABLES_ON) return <SwitchedOff />
+  const blocked = await guardStoreTab('returnables')
+  if (blocked) return blocked
+
+  // ON WHEN BORROWING IS ON. Aksha, 16 Sep 2026: "this flow of returnable items
+  // should be also on when cross project transfer is enabled". Material lent to
+  // another project is forced returnable, so the moment that is switched on
+  // there IS a debt to track — and this is the page the Atm Head's notification
+  // points at. RETURNABLES_ON stays as the override for the VENDOR side, which
+  // he switched off on 14 September and has not asked back.
+  const borrowing = await crossProjectOn()
+  if (!RETURNABLES_ON && !borrowing) return <SwitchedOff />
 
   const [rows, lists] = await Promise.all([loadReturnables(), loadLists()])
   return (
     <Section
       title="Still to come back"
-      note="Every returnable that has not been returned — oldest first, because that is what needs chasing"
+      note="Every returnable that has not been returned — oldest first, because that is what needs chasing. The lending project’s Atm Head is told when something goes out and when it comes back."
     >
       <ReturnClient
         rows={rows}

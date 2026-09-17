@@ -5,6 +5,7 @@ import { Warehouse } from 'lucide-react'
 import { StoresNav } from './StoresNav'
 import { canSeeStores, visibleStoreTabs } from '@/lib/stores/core'
 import { loadCounts } from '@/lib/stores/queries'
+import { crossProjectOn } from '@/lib/stores/settings'
 
 export const dynamic = 'force-dynamic'
 
@@ -25,7 +26,9 @@ export default async function StoresLayout({ children }: { children: React.React
 
   // The tabs carry what is waiting behind them, so "is anything on me?" is
   // answered from whichever screen you happen to be standing on.
-  const tabs = visibleStoreTabs(profile?.role)
+  // "To come back" only exists while borrowing between projects is on.
+  const borrowing = await crossProjectOn()
+  const tabs = visibleStoreTabs(profile?.role, { borrowing })
   const counts = await loadCounts()
 
   return (

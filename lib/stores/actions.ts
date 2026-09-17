@@ -13,6 +13,7 @@ import { loadStock, loadReturnables } from './queries'
 import { formatINR } from '@/lib/utils'
 import {
   notifyGateWaiting, notifyRequestPending, notifyRequestDecided, notifyRequestIssued,
+  notifyBorrowedOut, notifyBorrowedBack,
 } from './notify'
 
 /**
@@ -487,6 +488,38 @@ export async function issueRequest(input: IssueInput): Promise<Result<{ id: stri
     raisedBy: (req.raised_by as string | null) ?? null,
     actorId: profile.id, complete: fullyServed,
   })
+
+  /**
+   * Borrowed from another project — tell the Atm Head who is now owed it.
+   *
+   * Aksha, 16 Sep 2026: "when the Cross Project is enabled then the data should
+   * come to Atm Heads of that particular project that the Items are yet to
+   * recieve from the other project".
+   *
+   * At ISSUE rather than at approval, because this is the moment the material
+   * actually leaves their stock — before that there is nothing owed. Nobody on
+   * the borrowing side is copied: they asked for it and are about to sign.
+   */
+  if (req.from_project_id) {
+    const [{ data: lender }, { data: borrower }] = await Promise.all([
+      supabase.from('projects').select('name').eq('id', req.from_project_id).maybeSingle(),
+      supabase.from('projects').select('name').eq('id', req.project_id as string).maybeSingle(),
+    ])
+    const names = new Map<string, string>()
+    const { data: itemRows } = await supabase
+      .from('mio_items').select('id, name').in('id', lines.map(l => l.itemId))
+    for (const i of itemRows ?? []) names.set(i.id as string, i.name as string)
+
+    await notifyBorrowedOut({
+      lendingProjectId: req.from_project_id as string,
+      lendingProjectName: (lender?.name as string | null) ?? null,
+      toProjectName: (borrower?.name as string | null) ?? null,
+      entryNo: no,
+      requestNo: req.no as string,
+      lines: lines.map(l => ({ name: names.get(l.itemId) ?? 'Material', qty: l.qty, unit: l.unit })),
+      actorId: profile.id,
+    })
+  }
   revalidatePath('/stores')
   return done(fullyServed
     ? `Issued as ${no}. ${req.no} is complete.`
@@ -525,7 +558,7 @@ export async function returnItems(input: ReturnItemsInput): Promise<Result<{ no:
   const supabase = await createClient()
 
   const { data: origin } = await supabase
-    .from('mio_entries').select('id, no, register, stage, project_id, party_name')
+    .from('mio_entries').select('id, no, register, stage, project_id, party_name, request_id')
     .eq('id', input.entryId).maybeSingle()
   if (!origin) return fail('That entry no longer exists.')
   if (origin.stage === 'void') return fail('That entry was voided — there is nothing to return against it.')
@@ -581,6 +614,39 @@ export async function returnItems(input: ReturnItemsInput): Promise<Result<{ no:
     })),
   )
   if (lineErr) return fail(explain(lineErr, 'save the returned lines'))
+
+  /**
+   * If this was borrowed from another project, the lender is owed nothing more
+   * for these lines — say so.
+   *
+   * Aksha: "the same to be notifies to Atm head once this entry is passed SRM
+   * IN". A debt that is chased loudly and settled in silence is one people stop
+   * believing, so the return is announced the same way the loan was.
+   *
+   * The lender is on the REQUEST behind the original issue, not on the entry:
+   * the entry's own project is the borrower's, which is where it went.
+   */
+  if (origin.request_id) {
+    const { data: req } = await supabase
+      .from('mio_requests').select('from_project_id, project_id')
+      .eq('id', origin.request_id).maybeSingle()
+    if (req?.from_project_id) {
+      const [{ data: lender }, { data: borrower }, { data: itemRows }] = await Promise.all([
+        supabase.from('projects').select('name').eq('id', req.from_project_id).maybeSingle(),
+        supabase.from('projects').select('name').eq('id', req.project_id as string).maybeSingle(),
+        supabase.from('mio_items').select('id, name').in('id', lines.map(l => l.itemId)),
+      ])
+      const names = new Map((itemRows ?? []).map(i => [i.id as string, i.name as string]))
+      await notifyBorrowedBack({
+        lendingProjectId: req.from_project_id as string,
+        lendingProjectName: (lender?.name as string | null) ?? null,
+        fromProjectName: (borrower?.name as string | null) ?? null,
+        entryNo: no,
+        lines: lines.map(l => ({ name: names.get(l.itemId) ?? 'Material', qty: l.qty, unit: l.unit })),
+        actorId: profile.id,
+      })
+    }
+  }
 
   const after = await loadReturnables()
   const stillOut = after.filter(r => r.entryId === origin.id).length

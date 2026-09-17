@@ -707,23 +707,23 @@ describe('who sees which screen', () => {
   })
 
   it('gives the storekeeper what they actually hold and hand out', () => {
-    expect(roleStoreTabs('store_manager')).toEqual(['gate', 'requests', 'issue', 'receive', 'stock'])
+    expect(roleStoreTabs('store_manager')).toEqual(['gate', 'requests', 'issue', 'receive', 'returnables', 'stock'])
   })
 
   it('gives an engineer the asking, not the store’s books', () => {
-    expect(roleStoreTabs('engineer')).toEqual(['requests', 'receive', 'stock'])
+    expect(roleStoreTabs('engineer')).toEqual(['requests', 'receive', 'returnables', 'stock'])
   })
 
   it('lets Mayank reach the requests he is mailed about', () => {
     // He is `backoffice`, and until 16 Sep 2026 that role could not open the
     // section at all — notify.ts would have told him a request was waiting and
     // the app would then have refused him the screen to act on it.
-    expect(roleStoreTabs('backoffice')).toEqual(['requests', 'stock', 'reports'])
+    expect(roleStoreTabs('backoffice')).toEqual(['requests', 'returnables', 'stock', 'reports'])
   })
 
   it('gives the people who run it everything', () => {
     for (const role of ['admin', 'founder', 'head']) {
-      expect(roleStoreTabs(role)).toEqual(['overview', 'gate', 'requests', 'issue', 'receive', 'stock', 'reports', 'masters'])
+      expect(roleStoreTabs(role)).toEqual(['overview', 'gate', 'requests', 'issue', 'receive', 'returnables', 'stock', 'reports', 'masters'])
     }
   })
 
@@ -762,7 +762,12 @@ describe('who sees which screen', () => {
         expect(visibleStoreTabs(role)).toEqual([])
         expect(canOpenStoreTab(role, 'gate')).toBe(false)
       }
+      // Nine screens exist; "To come back" only appears once borrowing between
+      // projects is on, because nothing can be owed back before that.
       expect(visibleStoreTabs('admin')).toHaveLength(8)
+      expect(visibleStoreTabs('admin')).not.toContain('returnables')
+      expect(visibleStoreTabs('admin', { borrowing: true })).toHaveLength(9)
+      expect(visibleStoreTabs('admin', { borrowing: true })).toContain('returnables')
     }
   })
 })

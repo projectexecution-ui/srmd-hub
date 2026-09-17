@@ -62,7 +62,7 @@ export function canSeeStores(role: string | null | undefined): boolean {
 /* ── Which screens are whose ────────────────────────────────────────────── */
 
 export type StoreTab =
-  | 'overview' | 'gate' | 'requests' | 'issue' | 'receive' | 'stock' | 'reports' | 'masters'
+  | 'overview' | 'gate' | 'requests' | 'issue' | 'receive' | 'returnables' | 'stock' | 'reports' | 'masters'
 
 /**
  * Who sees which screen — Aksha, 16 Sep 2026: "Role-aware tabs, one status
@@ -91,6 +91,8 @@ const TAB_ROLES: Record<StoreTab, readonly string[]> = {
   // foot of one entry page, which is exactly why he could not find it:
   // "Where will the reciever do the entry - i cant see the page or section".
   receive:  ['admin', 'founder', 'head', 'store_manager', 'engineer'],
+  // Only shown while borrowing between projects is on — see visibleStoreTabs.
+  returnables: ['admin', 'founder', 'head', 'backoffice', 'store_manager', 'engineer'],
   stock:    ['admin', 'founder', 'head', 'backoffice', 'store_manager', 'engineer'],
   reports:  ['admin', 'founder', 'head', 'backoffice'],
   masters:  ['admin', 'founder', 'head'],
@@ -98,7 +100,7 @@ const TAB_ROLES: Record<StoreTab, readonly string[]> = {
 
 /** Reading order, which is also the order of the nav. */
 export const STORE_TABS: readonly StoreTab[] =
-  ['overview', 'gate', 'requests', 'issue', 'receive', 'stock', 'reports', 'masters']
+  ['overview', 'gate', 'requests', 'issue', 'receive', 'returnables', 'stock', 'reports', 'masters']
 
 /**
  * What this JOB needs, before asking whether the section is open yet.
@@ -120,8 +122,15 @@ export function canOpenStoreTab(role: string | null | undefined, tab: StoreTab):
 }
 
 /** What goes in the nav — nothing at all while the section is closed to them. */
-export function visibleStoreTabs(role: string | null | undefined): StoreTab[] {
-  return canSeeStores(role) ? roleStoreTabs(role) : []
+export function visibleStoreTabs(
+  role: string | null | undefined,
+  opts: { borrowing?: boolean } = {},
+): StoreTab[] {
+  if (!canSeeStores(role)) return []
+  // Nothing can be owed back until borrowing between projects is switched on,
+  // so "To come back" would otherwise be a tab onto an empty list.
+  return roleStoreTabs(role)
+    .filter(t => t !== 'returnables' || opts.borrowing === true || RETURNABLES_ON)
 }
 
 /**
@@ -148,6 +157,7 @@ export const STORE_TAB_LABEL: Record<StoreTab, string> = {
   requests: 'Requests',
   issue: 'To issue',
   receive: 'Received at site',
+  returnables: 'To come back',
   stock: 'Stock',
   reports: 'Reports',
   masters: 'Masters',
