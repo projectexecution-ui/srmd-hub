@@ -4,7 +4,7 @@ import { requireBillsAccess } from '@/lib/bills-booking/access'
 import { PageHeader } from '@/components/PageHeader'
 import { QueryError } from '@/components/ui/query-error'
 import { EmptyState } from '@/components/ui/empty-state'
-import { Plus, ReceiptText, Clock, Users, Landmark, PackageCheck, ShieldCheck, CalendarDays, FileQuestion, MapPin, ChevronRight, Wallet } from 'lucide-react'
+import { Plus, ReceiptText, Clock, Users, Landmark, PackageCheck, ShieldCheck, CalendarDays, FileQuestion, MapPin, ChevronRight, Wallet, Search, X } from 'lucide-react'
 import { isTerminal } from '@/lib/bills-booking/stages'
 import { BillingTree, type TrustNode, type Leaf } from './BillingTree'
 import { WhoHolds } from './WhoHolds'
@@ -32,7 +32,7 @@ export const dynamic = 'force-dynamic'
  *  Everything that decides is in lib/bills-booking (register.ts, holding.ts,
  *  money.ts) and tested; this page fetches, shapes and lays out. */
 export default async function BillsBookingPage({ searchParams }: {
-  searchParams: Promise<{ q?: string; project?: string; type?: string; late?: string; view?: string }>
+  searchParams: Promise<{ q?: string; project?: string; type?: string; late?: string; view?: string; find?: string }>
 }) {
   const me = await requireBillsAccess()
   const sp = await searchParams
@@ -65,6 +65,34 @@ export default async function BillsBookingPage({ searchParams }: {
   const projectOptions = [...new Map(
     reg.rows.filter(r => r.project).map(r => [r.project as string, r.project as string]),
   ).keys()].sort().map(code => ({ id: code, code }))
+
+  // Search is behind an icon. Aksha, 17 Sep 2026: "THIS section can be hidden
+  // as search in an icon on top right corner - when required we can open."
+  //
+  // Open/closed is in the URL rather than component state, so the icon can sit
+  // in the page header (a server component) beside the other actions, and an
+  // opened search survives a reload and can be sent to somebody.
+  //
+  // What is NOT hidden: a filter that is actually ON. Narrowing a list behind
+  // a closed panel is exactly the silent blocker that makes somebody think the
+  // register has lost their bills — so the icon carries a count and the active
+  // filters stay on screen as chips with a way to drop each one.
+  const qs = (mut: (p: URLSearchParams) => void): string => {
+    const p = new URLSearchParams()
+    for (const [k, v] of Object.entries(sp)) if (typeof v === 'string' && v) p.set(k, v)
+    mut(p)
+    const s = p.toString()
+    return s ? `/bills-booking?${s}` : '/bills-booking'
+  }
+  const active: Array<{ label: string; clear: string }> = [
+    ...(sp.q ? [{ label: `“${sp.q}”`, clear: qs(p => p.delete('q')) }] : []),
+    ...(sp.project ? [{ label: sp.project, clear: qs(p => p.delete('project')) }] : []),
+    ...(sp.type ? [{ label: `${sp.type} only`, clear: qs(p => p.delete('type')) }] : []),
+    ...(sp.late === '1' ? [{ label: 'Late only', clear: qs(p => p.delete('late')) }] : []),
+  ]
+  const findOpen = sp.find === '1'
+  const findHref = qs(p => { if (findOpen) p.delete('find'); else p.set('find', '1') })
+  const clearAll = qs(p => { for (const k of ['q', 'project', 'type', 'late', 'find']) p.delete(k) })
 
   // Who I am, in words — the subtitle. Desk keys are permanent; the labels are display.
   const deskLabel = (k: string) => DESKS.find(d => d.key === k)?.label ?? k
@@ -145,6 +173,21 @@ export default async function BillsBookingPage({ searchParams }: {
           ? `Signed in as ${myDesks.join(' · ')}${me.isAdmin ? ' · admin' : ''}`
           : me.isAdmin ? 'Admin — every desk' : 'Contractor & vendor bills — by trust, project and sub-project.'}>
         <div className="flex flex-wrap items-center gap-2">
+          <Link href={findHref} scroll={false}
+                aria-expanded={findOpen}
+                title={findOpen ? 'Hide search and filters' : 'Search and filter the register'}
+                className={`relative inline-flex min-h-[40px] items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-semibold ${
+                  findOpen || active.length
+                    ? 'border-indigo-300 bg-indigo-50 text-indigo-700'
+                    : 'border-gray-300 text-gray-700 hover:bg-gray-50'}`}>
+            {findOpen ? <X className="h-4 w-4" /> : <Search className="h-4 w-4" />}
+            <span className="sr-only sm:not-sr-only">{findOpen ? 'Close' : 'Search'}</span>
+            {active.length > 0 && !findOpen && (
+              <span className="absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-indigo-600 px-1 text-[10px] font-bold tabular-nums text-white">
+                {active.length}
+              </span>
+            )}
+          </Link>
           {/* The Disc Head and every desk above waits on IN4. Twice a day is
               the schedule; this is the same two sweeps — raise, then advance —
               on demand, so a bill approved this morning is not left sitting. */}
@@ -204,7 +247,24 @@ export default async function BillsBookingPage({ searchParams }: {
             </p>
           )}
 
-          <RegisterFilters projects={projectOptions} counts={counts} onDesk={me.onAnyDesk} />
+          {findOpen && <RegisterFilters projects={projectOptions} counts={counts} onDesk={me.onAnyDesk} closeHref={findHref} />}
+
+          {/* Closed, but something is filtering the list. Never silent. */}
+          {!findOpen && active.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5 text-[12px]">
+              <span className="text-gray-500">Filtered:</span>
+              {active.map(a => (
+                <Link key={a.label} href={a.clear} scroll={false}
+                      title={`Remove ${a.label}`}
+                      className="inline-flex min-h-[28px] items-center gap-1 rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-1 font-semibold text-indigo-800 hover:bg-indigo-100">
+                  {a.label} <X className="h-3 w-3" />
+                </Link>
+              ))}
+              <Link href={clearAll} scroll={false} className="ml-0.5 min-h-[28px] px-1 py-1 font-semibold text-gray-500 underline underline-offset-2 hover:text-gray-800">
+                Clear all
+              </Link>
+            </div>
+          )}
 
           {reg.rows.length === 0 ? (
             <EmptyState icon={<ReceiptText className="h-8 w-8" />} title="No bills yet"

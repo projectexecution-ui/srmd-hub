@@ -17,6 +17,7 @@ export interface RawEvent {
   /** 'forward' | 'send_back' | 'hold' | 'resume' | 'reject' | 'undo' | … */
   action?: string | null
   comment?: string | null
+  amount?: number | null
 }
 
 export interface TimelineSeg {
@@ -28,6 +29,13 @@ export interface TimelineSeg {
   leftAction: string | null
   /** What they said when they moved it — the send-back reason, chiefly. */
   leftComment: string | null
+  /** The figure on the bill as it left. Shown only where it CHANGED: printing
+   *  the same rupee figure against all six desks is what made the trail read
+   *  as noise (Aksha, 17 Sep 2026: "why showing so much info - its looking
+   *  like garbage"). */
+  leftAmount: number | null
+  /** When it left. */
+  leftAt: string | null
   /** True when nobody moved it: IN4's approval did, or a bill raised itself. */
   automatic: boolean
   current: boolean
@@ -50,6 +58,8 @@ export function buildTimeline(eventsAsc: RawEvent[], currentStage: BbStage, nowM
       movedBy: left?.actor ?? null,
       leftAction: left?.action ?? null,
       leftComment: left?.comment ?? null,
+      leftAmount: left?.amount ?? null,
+      leftAt: left?.created_at ?? null,
       automatic: !!left && !left.actor,
       current, sla,
       breached: sla != null && days > sla,

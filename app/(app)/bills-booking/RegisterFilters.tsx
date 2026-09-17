@@ -29,11 +29,14 @@ const VIEWS: Array<{ key: View; label: string; count?: keyof FilterCounts }> = [
 type Saved = { name: string; qs: string }
 const KEY = 'bb-saved-views'
 
-export function RegisterFilters({ projects, counts, onDesk }: {
+export function RegisterFilters({ projects, counts, onDesk, closeHref }: {
   projects: Array<{ id: string; code: string }>
   counts: FilterCounts
   /** Whether "My desk" means anything for this person. */
   onDesk: boolean
+  /** Where the panel's own close link goes — the same URL the header's icon
+   *  toggles, so the two can never disagree about what "closed" means. */
+  closeHref?: string
 }) {
   const router = useRouter()
   const sp = useSearchParams()
@@ -103,6 +106,12 @@ export function RegisterFilters({ projects, counts, onDesk }: {
               title="Download what is on screen as a spreadsheet">
           <Download className="h-4 w-4" /> Export
         </Link>
+        {closeHref && (
+          <Link href={closeHref} scroll={false} aria-label="Hide search and filters"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700">
+            <X className="h-4 w-4" />
+          </Link>
+        )}
       </form>
 
       <div className="mt-2.5 flex flex-wrap items-center gap-1.5">

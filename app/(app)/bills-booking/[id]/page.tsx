@@ -103,14 +103,23 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
     return {
       from_stage: e.from_stage, to_stage: e.to_stage, created_at: e.created_at,
       actor: w?.full_name || w?.email || null, action: e.action, comment: e.comment,
+      amount: e.amount_snapshot,
     }
   })
   const segs = buildTimeline(asc, stage)
+  // Events that changed the bill without moving it. The flow card covers every
+  // event that DID move it, so listing those again is the duplication that
+  // made this page unreadable.
+  const edits = evs.filter(e => e.to_stage === e.from_stage || e.action === 'abstract')
 
-  // The way home: the last thing done was a send-back, by this person, inside
-  // ten minutes. The database enforces the same three conditions.
+  // The way home: the last thing done was a send-back or a reject, by this
+  // person, inside ten minutes. The database enforces the same three
+  // conditions — this only decides whether to draw the button.
   const lastEv = evs[0]
-  const undoUntil = lastEv && lastEv.action === 'send_back' && lastEv.actor_id === me.userId
+  const undoWhat = lastEv && lastEv.actor_id === me.userId
+    && (lastEv.action === 'send_back' || lastEv.action === 'reject')
+    ? (lastEv.action as 'send_back' | 'reject') : null
+  const undoUntil = undoWhat && lastEv
     ? new Date(new Date(lastEv.created_at).getTime() + 10 * 60_000).toISOString()
     : null
 
@@ -343,30 +352,32 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
         </p>
       )}
 
-      {/* Audit trail */}
-      <Card className="p-4">
-        <p className="mb-3 text-xs font-bold uppercase tracking-wide text-gray-400">History</p>
-        <ol className="space-y-3">
-          {evs.map(e => {
-            const who = one(e.profiles)
-            return (
-              <li key={e.id} className="flex gap-3 text-sm">
-                <div className="mt-1 h-2 w-2 shrink-0 rounded-full bg-indigo-400" />
-                <div className="min-w-0">
-                  <p className="text-gray-800">
-                    <b>{e.action === 'send_back' ? 'Sent back' : e.action === 'undo' ? 'Pulled back' : e.action === 'hold' ? 'Put on hold' : e.action === 'reject' ? 'Rejected' : e.action === 'abstract' ? 'Abstract' : 'Moved'}</b>
-                    {e.from_stage && e.from_stage !== e.to_stage && <> from <span className="font-medium">{stageDef(e.from_stage).label}</span></>}
-                    {e.to_stage && e.to_stage !== e.from_stage && <> → <span className="font-medium">{stageDef(e.to_stage).label}</span></>}
-                    {e.amount_snapshot != null && <> · {money(e.amount_snapshot)}</>}
-                  </p>
-                  {e.comment && <p className="mt-0.5 text-[13px] text-gray-600">“{e.comment}”</p>}
-                  <p className="mt-0.5 text-[11px] text-gray-400">{who?.full_name || who?.email || (e.actor_id ? 'Someone' : 'IN4')} · {formatDateTime(e.created_at)}</p>
-                </div>
-              </li>
-            )
-          })}
-        </ol>
-      </Card>
+      {/* Edits that changed the bill without moving it — recording the
+          abstract number, say. They are not part of the flow, and there are
+          usually none, so this is a line rather than a second trail.
+          The flow itself (who held it, what they said) is the card above;
+          printing the same six events twice is what made this page unreadable
+          (Aksha, 17 Sep 2026: "why showing so much info - its looking like
+          garbage"). */}
+      {edits.length > 0 && (
+        <Card className="p-4">
+          <p className="mb-2 text-xs font-bold uppercase tracking-wide text-gray-400">Edits</p>
+          <ul className="space-y-1.5 text-[13px]">
+            {edits.map(e => {
+              const who = one(e.profiles)
+              return (
+                <li key={e.id} className="flex flex-wrap items-baseline gap-x-2">
+                  <b className="text-gray-900">{e.action === 'abstract' ? 'Abstract number' : e.action}</b>
+                  {e.comment && <span className="text-gray-600">{e.comment}</span>}
+                  <span className="ml-auto text-[11px] text-gray-400">
+                    {who?.full_name || who?.email || 'Someone'} · {formatDateTime(e.created_at)}
+                  </span>
+                </li>
+              )
+            })}
+          </ul>
+        </Card>
+      )}
 
       {canAct && (
         <ActionBar billId={bill.id as string} stage={stage}
@@ -374,7 +385,7 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
           preHoldStage={(bill.pre_hold_stage as BbStage | null) ?? null}
           measured={measured} orderType={bill.order_type as string | null}
           hasStampedBill={hasStampedBill} navCollapsed={navCollapsed}
-          undoUntil={undoUntil}
+          undoUntil={undoUntil} undoWhat={undoWhat}
           reconciles={calc?.sheet?.reconciles ?? calc?.grn?.reconciles ?? null} />
       )}
     </div>

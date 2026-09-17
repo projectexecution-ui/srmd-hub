@@ -1,0 +1,23 @@
+-- Applied live on 17 Sep 2026. Recorded here so the schema is reproducible.
+--
+-- Aksha: "Hold or Reject and send back - dont keep hiddenn - also remove HOLD
+-- option only."
+--
+-- Hold is gone from the screens: a held bill sat at a desk nobody owned and
+-- nothing chased it. The `on_hold` stage stays in the enum and stays
+-- resolvable so any bill already parked there still renders and can be
+-- resumed -- there are none today, and deleting an enum value that a history
+-- row might name is how a page starts crashing on old data.
+--
+-- Reject is now reversible for ten minutes, exactly like a send-back. It is
+-- the only step in the flow that ends a bill, and it was one click from a desk
+-- holding lakhs. The full body of bb_rpc_move() is in the database; the change
+-- is the undo branch, which now accepts 'send_back' OR 'reject':
+--
+--   if v_last is null or v_last.action not in ('send_back', 'reject') then
+--     raise exception 'Nothing to undo -- the last thing done to this bill
+--                      was not a send-back or a reject';
+--   end if;
+--
+-- plus the comment it writes ("Reject pulled back within ten minutes") and the
+-- wording of the reason check, which no longer mentions holding.
