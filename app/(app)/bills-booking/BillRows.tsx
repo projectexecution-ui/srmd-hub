@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { StagePill } from './StagePill'
 import { formatINR } from '@/lib/utils'
 import { ageTone, daysAtStage, type AgeTone } from '@/lib/bills-booking/stages'
-import { tagsFor, whyHere, type RegisterRow, type Tag } from '@/lib/bills-booking/register'
+import { tagsFor, whyHere, whyTitle, type RegisterRow, type Tag } from '@/lib/bills-booking/register'
 
 /** The register's rows, as a desk reads them.
  *
@@ -34,24 +34,44 @@ export function BillRows({ rows, dupes, title, note }: {
   title: string
   note?: string
 }) {
+  // Said once in the header instead of on every row.
+  const allExamples = rows.length > 0 && rows.every(r => r.isExample)
+  // "claimed" on a WO, "gross" on a PO. Ten rows of the same word is noise;
+  // when the list is all one kind the word moves up here, and it stays on the
+  // rows only where a list actually mixes the two.
+  const allWo = rows.length > 0 && rows.every(r => r.orderType !== 'PO')
+  const allPo = rows.length > 0 && rows.every(r => r.orderType === 'PO')
+  const oneKind = allWo || allPo
+  const kindWord = allPo ? 'gross' : 'claimed'
+
   return (
     <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 bg-gray-50/70 px-4 py-2">
         <p className="text-[13px] font-bold text-gray-900">{title}</p>
-        <p className="text-[11px] text-gray-500">{rows.length} {rows.length === 1 ? 'bill' : 'bills'}{note ? ` · ${note}` : ''}</p>
+        <p className="text-[11px] text-gray-500">
+          {rows.length} {rows.length === 1 ? 'bill' : 'bills'}{note ? ` · ${note}` : ''}
+          {allExamples && <span className="text-gray-400"> · all examples</span>}
+          {oneKind && <span className="text-gray-400"> · amounts {kindWord}</span>}
+        </p>
       </div>
       {rows.length === 0 ? (
         <p className="px-4 py-6 text-center text-sm text-gray-500">Nothing matches. Clear a filter, or pick another view.</p>
       ) : (
         <ul className="divide-y divide-gray-100">
           {rows.map(r => {
-            const tags = tagsFor(r, dupes)
+            // When EVERY row is an example, the tag distinguishes nothing — it
+            // is ten copies of a fact the header chip already states once. It
+            // comes back the moment the list is mixed, which is when it starts
+            // meaning something again.
+            const tags = tagsFor(r, dupes).filter(t => t !== 'example' || !allExamples)
             const why = whyHere(r)
+            const routine = whyTitle(r)
             const days = Math.round(daysAtStage(r.stageSince))
             const tone = ageTone(r.stage, r.stageSince)
             return (
               <li key={r.id}>
                 <Link href={`/bills-booking/${r.id}`}
+                      title={routine}
                       className="flex min-h-[44px] flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3 hover:bg-gray-50/60">
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
@@ -71,7 +91,9 @@ export function BillRows({ rows, dupes, title, note }: {
                   </div>
                   <div className="text-right">
                     <div className="text-sm font-semibold tabular-nums text-gray-900">{formatINR(r.amount)}</div>
-                    <div className="text-[10.5px] text-gray-400">{r.orderType === 'PO' ? 'gross' : 'claimed'}</div>
+                    {!oneKind && (
+                      <div className="text-[10.5px] text-gray-400">{r.orderType === 'PO' ? 'gross' : 'claimed'}</div>
+                    )}
                   </div>
                   <span className={`rounded-md px-2 py-1 text-[11px] font-bold tabular-nums ${AGE[tone]}`}
                         title={tone === 'late' ? 'Past twice the desk turnaround' : tone === 'warn' ? 'Past the desk turnaround' : tone === 'ok' ? 'Within turnaround' : 'Followed, not held here'}>

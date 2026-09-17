@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { applyFilters, duplicateKeys, tagsFor, whyHere, waitingOnMe, toCsv, type RegisterRow } from './register'
+import { applyFilters, duplicateKeys, tagsFor, whyHere, whyTitle, waitingOnMe, toCsv, type RegisterRow } from './register'
 import { stageDef } from './stages'
 
 const NOW = new Date('2026-09-16T00:00:00Z').getTime()
@@ -59,11 +59,24 @@ describe('the register as a desk reads it', () => {
     expect(tagsFor(row(), none)).toEqual(['arrived'])
   })
 
-  it('puts the send-back reason on the row', () => {
+  it('puts a DECISION on the row and leaves a routine forward to the tooltip', () => {
+    // A decision is worth a line.
     expect(whyHere(row({ lastAction: 'send_back', lastComment: 'quantity on item 4 above BOQ' })))
       .toBe('Sent back — "quantity on item 4 above BOQ"')
-    expect(whyHere(row())).toBe('Abstract approved in IN4 — moved on automatically')
+    expect(whyHere(row({ lastAction: 'hold', lastComment: 'waiting on the stamped copy' })))
+      .toBe('waiting on the stamped copy')
+    expect(whyHere(row({ lastAction: 'reject', lastComment: 'billed twice' }))).toBe('billed twice')
+
+    // A routine forward is not. Aksha, 17 Sep 2026: ten rows each restating
+    // the stage pill beside them is what made the screen unreadable.
+    expect(whyHere(row())).toBeNull()                       // lastAction 'forward'
     expect(whyHere(row({ lastComment: null }))).toBeNull()
+
+    // Nothing is lost — the routine comment moves to the row's tooltip, and
+    // is never repeated there when the line is already showing it.
+    expect(whyTitle(row())).toBe('Abstract approved in IN4 — moved on automatically')
+    expect(whyTitle(row({ lastAction: 'send_back', lastComment: 'x' }))).toBeUndefined()
+    expect(whyTitle(row({ lastComment: null }))).toBeUndefined()
   })
 
   it('totals what is waiting on me, examples left out, worst age wins', () => {

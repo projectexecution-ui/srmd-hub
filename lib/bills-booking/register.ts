@@ -69,11 +69,38 @@ export function tagsFor(r: RegisterRow, dupes: Set<string>): Tag[] {
   return t
 }
 
-/** One line under the name: why this is on your desk. */
+/** Actions that are a DECISION somebody took, rather than the routine step of
+ *  passing a bill on. Same four the bill page's trail uses — one definition of
+ *  "worth saying out loud" for both screens. */
+const DECISION = new Set(['send_back', 'hold', 'reject', 'undo'])
+
+/**
+ * One line under the name — only when there is something to say.
+ *
+ * Aksha, 17 Sep 2026: "there are lot of Data on main screen - can u make the
+ * screen less garbage". Every row was printing its last comment, and on a
+ * routine forward that comment is boilerplate the action writes itself:
+ * "Entered against the order", "Measurement checked against the order",
+ * "Verified net payable locked", "Sanctioned by the Atm Head". Ten rows, ten
+ * grey lines, each one restating the stage pill already beside it.
+ *
+ * So: a decision gets a line; a routine forward gets none. It is the rule the
+ * bill page's trail already settled on the same day, for the same complaint —
+ * the routine comment still exists, it just lives in the row's tooltip
+ * (`whyTitle`) where it costs no space.
+ */
 export function whyHere(r: RegisterRow): string | null {
-  if (r.lastAction === 'send_back' && r.lastComment) return `Sent back — "${r.lastComment}"`
-  if (r.lastComment) return r.lastComment
+  if (!r.lastComment) return null
+  if (r.lastAction === 'send_back') return `Sent back — "${r.lastComment}"`
+  if (r.lastAction && DECISION.has(r.lastAction)) return r.lastComment
   return null
+}
+
+/** The routine comment, for the row's tooltip — nothing is lost, it is only
+ *  no longer shouted. Null when `whyHere` is already showing it. */
+export function whyTitle(r: RegisterRow): string | undefined {
+  if (!r.lastComment || whyHere(r)) return undefined
+  return r.lastComment
 }
 
 export function matches(r: RegisterRow, f: RegisterFilters, now: number): boolean {
