@@ -14,7 +14,6 @@ import { buildNavTree, type SidebarGroup } from '@/lib/sidebar-groups'
 import { isRevampNow } from '@/lib/revamp/live'
 import { buildRevampNav } from '@/lib/revamp/nav'
 import { canSeeStores } from '@/lib/stores/core'
-import { canSeeOldIndentToPo } from '@/lib/old-indent-to-po'
 import { readOpenMap, writeOpenMap } from '@/lib/nav-prefs'
 import NotificationBell from '@/components/NotificationBell'
 import { ProjectTree } from '@/components/nav/ProjectTree'
@@ -38,6 +37,9 @@ interface NavBarProps {
   /** Whether this person is on the Accounts list. Resolved on the server —
    *  it is a named list in settings, not something a role implies. */
   canSeeAccounts?: boolean
+  /** OLD INDENT TO PO is a named list resolved on the server — see
+   *  lib/old-indent-to-po.ts. A role cannot draw this line. */
+  canSeeOldIndent?: boolean
   /** Collapsed flag read from the cookie on the server, so the first paint is
    *  already right and nothing has to stay invisible until hydration. */
   initialCollapsed?: boolean
@@ -64,7 +66,7 @@ const GROUPS_OPEN_KEY = 'srmd_nav_groups_open'
 
 type NavItem = { href: string; label: string; icon: typeof LayoutDashboard; slug: string | null }
 
-export default function NavBar({ profile, permissions, disabledSlugs = [], isPortalOwner = false, moduleLabels = {}, sidebarGroups = [], projects = [], approvals = {}, verify = {}, canSeeAccounts = false, initialCollapsed, revampOn = isRevampNow() }: NavBarProps) {
+export default function NavBar({ profile, permissions, disabledSlugs = [], isPortalOwner = false, moduleLabels = {}, sidebarGroups = [], projects = [], approvals = {}, verify = {}, canSeeAccounts = false, canSeeOldIndent = false, initialCollapsed, revampOn = isRevampNow() }: NavBarProps) {
   const disabled = new Set(disabledSlugs)
   const pathname = usePathname()
   const router = useRouter()
@@ -124,7 +126,7 @@ export default function NavBar({ profile, permissions, disabledSlugs = [], isPor
   // hiding the lane was never the whole gate, and two copies of "who may see
   // this" is how a section ends up one typed URL wide.
   const showStores = canSeeStores(profile.role)
-  const showOldIndent = canSeeOldIndentToPo(profile.role)
+  const showOldIndent = canSeeOldIndent
   const adminLink: NavItem | null = canSeeAdmin
     ? { href: '/admin', label: 'Admin', icon: Shield, slug: null }
     : null
@@ -141,7 +143,7 @@ export default function NavBar({ profile, permissions, disabledSlugs = [], isPor
   // well as the trial (lib/revamp/live.ts); with the "CT Hub V1" toggle on,
   // the old sidebar below is what renders.
   const revamp = revampOn
-    ? buildRevampNav(permissions, disabled, { canSeeAdmin, canSeeAccounts, canSeeStores: showStores, canSeeOldIndent: showOldIndent })
+    ? buildRevampNav(permissions, disabled, { canSeeAdmin, canSeeAccounts, canSeeStores: showStores, canSeeOldIndent })
     : null
 
   // Fold the module links into admin-defined groups. When no groups exist,
@@ -158,7 +160,7 @@ export default function NavBar({ profile, permissions, disabledSlugs = [], isPor
   // dashboard tile and a permissions row. So it is appended here instead,
   // behind the same one rule, rather than being missing on that sidebar and
   // reachable only by typing the URL.
-  const oldIndentLink: NavItem[] = showOldIndent
+  const oldIndentLink: NavItem[] = canSeeOldIndent
     ? [{ href: '/old-indent-to-po', label: 'OLD INDENT TO PO', icon: ClipboardList, slug: null }]
     : []
 

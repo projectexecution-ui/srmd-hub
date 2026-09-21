@@ -15,6 +15,7 @@ import { getRevampOn } from '@/lib/revamp/shell-switch'
 import { getMyApprovalCounts, rollUpCounts } from '@/lib/revamp/approval-counts'
 import { loadVerifyPortfolio, verifyTotal } from '@/lib/revamp/verify-counts'
 import { canOpenAccounts } from '@/lib/revamp/accounts-access'
+import { canOpenOldIndentToPo } from '@/lib/old-indent-to-po'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const [profile, permissions, disabledSlugs, portalOwner, moduleLabelsMap, sidebarGroups, shell, approvalCounts, revampOn] = await Promise.all([
@@ -41,6 +42,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // The Accounts lane is a named list, not a role — resolved here because
   // the NavBar is a client component and cannot read app_settings.
   const canSeeAccounts = await canOpenAccounts()
+  // A named list, not a role — Ambrish is one of three engineers.
+  const canSeeOldIndent = await canOpenOldIndentToPo()
 
   // Flatten { label, description } → just label for the NavBar prop shape.
   const moduleLabels: Record<string, string> = Object.fromEntries(
@@ -84,6 +87,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             shell?.projects ?? [],
           )}
           canSeeAccounts={canSeeAccounts}
+          canSeeOldIndent={canSeeOldIndent}
           initialCollapsed={navCollapsed}
           revampOn={revampOn}
         />

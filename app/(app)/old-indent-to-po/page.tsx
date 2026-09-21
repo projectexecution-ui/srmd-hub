@@ -4,7 +4,7 @@ import { Radio, FileDown } from 'lucide-react'
 import { getMyProfile } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { readFeedModes, readLastFeedSync } from '@/lib/in4/feeds'
-import { canSeeOldIndentToPo, OLD_INDENT_TO_PO_SRC } from '@/lib/old-indent-to-po'
+import { canOpenOldIndentToPo, OLD_INDENT_TO_PO_SRC } from '@/lib/old-indent-to-po'
 import { ProcurementTrackerClient } from './client'
 
 export const dynamic = 'force-dynamic'
@@ -41,10 +41,12 @@ export const maxDuration = 60
  * value is fidelity.
  */
 export default async function OldIndentToPoPage() {
+  // Not a redirect and not a polite message: for anybody not on the list this
+  // screen does not exist. Same refusal the lane's absence implies.
+  if (!(await canOpenOldIndentToPo())) notFound()
+
   const profile = await getMyProfile()
-  // Not a redirect and not a polite message: for anybody else this screen does
-  // not exist. Same refusal the lane's absence implies.
-  if (!canSeeOldIndentToPo(profile?.role)) notFound()
+  const isAdmin = profile?.role === 'admin'
 
   // Projects the team marked "closed" — always rolled up under Cleared on the
   // filter strip, even when IN4 still shows a few stray pending items on them.
@@ -104,7 +106,10 @@ export default async function OldIndentToPoPage() {
         </div>
       </div>
 
-      <ProcurementTrackerClient isAdmin closedProjects={closedProjects} in4={in4} />
+      {/* The real role, not a hard-coded true. Being ON the list gets you the
+          tracker; it does not get you the admin link beside it, which leads to
+          a page that would refuse anybody who is not an admin. */}
+      <ProcurementTrackerClient isAdmin={isAdmin} closedProjects={closedProjects} in4={in4} />
     </div>
   )
 }
