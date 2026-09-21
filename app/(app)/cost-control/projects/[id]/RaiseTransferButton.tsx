@@ -34,7 +34,7 @@ export function RaiseTransferButton({
   disciplineId?: string
   subSkillId?: string
   label?: string
-  variant: 'card' | 'row' | 'header'
+  variant: 'card' | 'row' | 'header' | 'menu'
   /** How far past its budget the destination already is, when known. */
   shortfall?: number
 }) {
@@ -148,6 +148,16 @@ export function RaiseTransferButton({
       >
         <ArrowLeftRight className="h-3.5 w-3.5" />
         <span className="hidden sm:inline">Move budget</span>
+      </button>
+    ) : variant === 'menu' ? (
+      // A row in the phone's ⋯ menu (PhoneMoreMenu) — the same dialog, reached
+      // from the one place the phone keeps the list's tools.
+      <button
+        type="button" onClick={() => setOpen(true)}
+        role="menuitem"
+        className="flex w-full items-center gap-2.5 min-h-[44px] px-3.5 text-left text-[13px] text-gray-800 hover:bg-gray-50"
+      >
+        <ArrowLeftRight className="h-4 w-4 text-gray-500" /> Move budget between categories
       </button>
     ) : (
       <button

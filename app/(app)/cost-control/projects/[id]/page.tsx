@@ -10,7 +10,7 @@ import { PageHeader } from '@/components/PageHeader'
 import { getModuleLabels, labelFor } from '@/lib/module-labels'
 import { SetupProgressBanner } from '@/components/ProjectSetupWizard/SetupProgressBanner'
 import { Plus, Flame, Info, Settings, Download, Ruler, ArrowRight } from 'lucide-react'
-import { formatINR, formatDate, istCalendarDaysAgo, istDateKey } from '@/lib/utils'
+import { formatINR, formatINRCompact, formatDate, istCalendarDaysAgo, istDateKey } from '@/lib/utils'
 import { getCcSettings } from '@/lib/cost-control/settings'
 import { computeMoneyRollup, type RollupWSRow, type RollupVersionRow, type RollupBudgetLine } from '@/lib/cost-control/project-rollup'
 import { sortDisciplines } from '@/lib/cost-control/discipline-order'
@@ -33,6 +33,8 @@ import { AddToProject } from './AddToProject'
 import { QueryError } from '@/components/ui/query-error'
 import { DeadlineBadge } from '@/components/cost-control/DeadlineBadge'
 import { TreeProvider, TreeToolbar, CatChevron, CatRows, SubRow, RowDetailProvider, RowDetailToggle, RowDetail } from '@/components/cost-control/project-tree'
+import { PhoneViewProvider, TableBox, CardBox, PhoneViewToggle, JumpChips, PhoneMoreMenu, PhoneCat, PhoneCard } from '@/components/cost-control/phone-view'
+import { FIGURE_NAMES, phoneLines, countFlags, anyFlags, type CardFlags, type MoneyLine } from '@/lib/cost-control/phone-view'
 import { FocusScroll } from '@/components/cost-control/FocusScroll'
 import { wsStatusLabel } from '@/components/cost-control/WSStatusPill'
 import { SubSkillBoq, type BoqRow, type BoqSheet } from '@/components/cost-control/SubSkillBoq'
@@ -816,6 +818,31 @@ export default async function CostControlProjectDetailPage(
 
   // Hoisted so it can render in its usual place on the standalone page and
   // at the foot of the sheet inside the workspace, from one piece of markup.
+  // Phone (M11): the three facts a card can be filtered on, per sub-skill —
+  // counted once here for the jump chips, then handed to every card and
+  // category bar so the chips and the stack can never disagree. Empty
+  // sub-skills (nothing on them at all) are not cards, so they do not count.
+  const phoneFlags = new Map<string, CardFlags>()
+  for (const s of subSkills) {
+    const d = disciplines.find(x => x.id === s.discipline_id)
+    if (!d) continue
+    const key = `${d.id}::${s.id}`
+    const a = wsAgg.get(key)
+    const bl = blMap.get(key)
+    const estLive = ieMap.get(key)?.amt ?? a?.planTotal ?? 0
+    const isEmpty = estLive === 0 && (a?.pendingAmount ?? 0) === 0 && (a?.chains.size ?? 0) === 0
+      && (bl?.budget ?? 0) === 0 && (bl?.wo ?? 0) === 0 && (bl?.paid ?? 0) === 0
+    if (isEmpty) continue
+    phoneFlags.set(s.id, {
+      awaiting: (a?.pendingAmount ?? 0) > 0,
+      over: showErp && overBudgetAmount(bl) > 0,
+      closed: !!(subMeta.get(s.id)?.completedAt || discCompletion.get(d.id)?.completedAt),
+    })
+  }
+  const jumpCounts = countFlags([...phoneFlags.values()])
+  // Budget (CT Hub) for the whole project — the summary card's third figure.
+  const totalCtHub = Array.from(discAgg.values()).reduce((s, v) => s + (v.approvedTotal ?? 0), 0)
+
   const alertsBar = (
   <ProjectAlerts
     pending={pendingCount > 0 && canWrite ? {
@@ -845,7 +872,10 @@ export default async function CostControlProjectDetailPage(
   )
 
   return (
-    <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-4">
+    <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-4" data-page-scroll="">
+      {/* data-page-scroll: below lg the shell lets this page scroll as a page,
+          so the phone's category bars can stick under the app bar (M3). See
+          main in app/(app)/layout.tsx. */}
       {/* Breadcrumb — not when embedded: the workspace header carries both the
           back arrow and the parent's name already. */}
       {!embedded && (
@@ -995,7 +1025,32 @@ export default async function CostControlProjectDetailPage(
 
       {/* KPI strip — portfolio-level numbers for this project. The ERP
           tiles (from Budget vs Actual) hide when the toggle is off. */}
-      <div className={`grid grid-cols-2 sm:grid-cols-3 ${showErp ? 'lg:grid-cols-5' : ''} gap-3`}>
+      {/* Phone (M9): one card in place of five tiles — the same six names as
+          the category bar and the cards under it, ₹/sft or % under each, no
+          bar (his NO to M5). Five tiles took the whole first screen and left
+          the fifth on its own. */}
+      <div className="lg:hidden bg-white rounded-lg border border-gray-200 px-3.5 py-3">
+        <div className="flex items-baseline justify-between gap-2 text-[11px] text-gray-500">
+          <span className="font-semibold text-gray-900 text-[13px] truncate">{project.name}</span>
+          <span className="tabular-nums whitespace-nowrap">
+            {sft > 0 && `${sft.toLocaleString('en-IN')} sft`}
+            {pendingCount > 0 && `${sft > 0 ? ' · ' : ''}${pendingCount} sheet${pendingCount === 1 ? '' : 's'} waiting`}
+          </span>
+        </div>
+        <div className="mt-2 grid grid-cols-3 gap-x-3 gap-y-2.5">
+          <SummaryFigure label={FIGURE_NAMES.estimate} amount={totalEstimate} tone="text-indigo-800" sub={perSft(totalEstimate)} />
+          <SummaryFigure label={FIGURE_NAMES.awaiting} amount={pendingTotal} tone="text-amber-700" sub={pendingCount > 0 ? `${pendingCount} sheet${pendingCount === 1 ? '' : 's'}` : null} />
+          <SummaryFigure label={FIGURE_NAMES.ctHub} amount={totalCtHub} tone="text-emerald-700" sub={perSft(totalCtHub)} />
+          {showErp && (
+            <>
+              <SummaryFigure label={FIGURE_NAMES.erp} amount={totalBudget} sub={perSft(totalBudget)} />
+              <SummaryFigure label={FIGURE_NAMES.wo} amount={totalWO} sub={totalBudget > 0 ? `${Math.round((totalWO / totalBudget) * 100)} % of ERP` : perSft(totalWO)} />
+              <SummaryFigure label={FIGURE_NAMES.paid} amount={totalPaid} sub={totalBudget > 0 ? `${utilPct} % used` : perSft(totalPaid)} />
+            </>
+          )}
+        </div>
+      </div>
+      <div className={`hidden lg:grid grid-cols-3 ${showErp ? 'lg:grid-cols-5' : ''} gap-3`}>
         <KPI
           label="Internal Estimate"
           value={totalEstimate > 0 ? formatINR(totalEstimate) : '—'}
@@ -1101,22 +1156,36 @@ export default async function CostControlProjectDetailPage(
         transfers={transfers}
         projectId={project.id}
       />
-      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-        <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 bg-gray-50/60">
+      <PhoneViewProvider>
+      {/* overflow-hidden only from lg: below it, an overflow-hidden ancestor
+          would both clip the ⋯ menu and pin the sticky category bars to this
+          box instead of the page (M3). */}
+      <div className="bg-white rounded-lg border border-gray-200 lg:overflow-hidden">
+        <div className="flex items-center justify-between rounded-t-lg px-3 py-2 border-b border-gray-100 bg-gray-50/60">
           {/* On a phone the sentence stole the whole row and forced the toolbar
               buttons to wrap onto two lines each. */}
           <span className="text-[11px] font-medium text-gray-500">
-            Work categories<span className="hidden sm:inline"> — click a row to collapse; totals roll up.</span>
+            Work categories<span className="hidden lg:inline"> — click a row to collapse; totals roll up.</span>
           </span>
-          <span className="flex items-center gap-2">
-            {/* Moving budget acts on these lines, so it belongs here rather
-                than as a fifth button in the page header. */}
+          {/* From lg: the desktop tools. Moving budget acts on these lines, so
+              it belongs here rather than as a fifth button in the page header. */}
+          <span className="hidden lg:flex items-center gap-2">
             {canRaiseTransfer && (
               <RaiseTransferButton projectId={project.id} variant="header" />
             )}
             <TreeToolbar />
           </span>
+          {/* Phone: Cards | Table (M13) and the same tools behind one ⋯ (M10).
+              Three 9 px buttons crammed beside the title were not tappable. */}
+          <span className="flex lg:hidden items-center gap-2">
+            <PhoneViewToggle />
+            <PhoneMoreMenu>
+              {canRaiseTransfer && <RaiseTransferButton projectId={project.id} variant="menu" />}
+            </PhoneMoreMenu>
+          </span>
         </div>
+        {/* Phone (M11): All · Awaiting n · Over budget n · Closed n. */}
+        <JumpChips counts={jumpCounts} />
         {/* The header row stays visible while you read down the table. Sticky
             needs a scrollport that actually scrolls, so the table body scrolls
             INSIDE this box (max-h) rather than with the page: `main` in
@@ -1127,24 +1196,26 @@ export default async function CostControlProjectDetailPage(
             this wide table needs, since overflow-x:auto cannot pair with
             overflow-y:visible. max-h (not h) means a short table still renders
             at its natural height with no scrollbar and no dead space. */}
-        <div className="overflow-auto max-h-[75vh] hidden xl:block">
-          <table className="w-full text-[13px]">
+        <TableBox>
+          <table className="w-full min-w-[960px] text-[13px]">
             <thead className="bg-gray-50 text-left">
               <tr>
-                <Th className="min-w-[220px]">Work Category / Sub-skill</Th>
-                <Th align="right" className="w-32">Internal Estimate</Th>
-                <Th align="right" className="w-32">Awaiting Approval</Th>
+                {/* The name column is frozen while the rest scrolls sideways
+                    (M12: the table is back from 1,024 px, where it does not fit). */}
+                <Th className="min-w-[220px] left-0 z-20">Work Category / Sub-skill</Th>
+                <Th align="right" className="w-32">{FIGURE_NAMES.estimate}</Th>
+                <Th align="right" className="w-32">{FIGURE_NAMES.awaiting}</Th>
                 {/* "Released via WS" named the mechanism, not the meaning. This
                     is money approved through CT Hub's own approval chain — the
                     counterpart to "Budget (ERP)", which is what IN4 says. */}
-                <Th align="right" className="w-32">Budget (CT Hub)</Th>
+                <Th align="right" className="w-32">{FIGURE_NAMES.ctHub}</Th>
                 {showErp && (
                   <>
-                    <Th align="right">Budget (ERP)</Th>
-                    <Th align="right">WO / PO</Th>
-                    <Th align="right">Paid</Th>
+                    <Th align="right">{FIGURE_NAMES.erp}</Th>
+                    <Th align="right">{FIGURE_NAMES.wo}</Th>
+                    <Th align="right">{FIGURE_NAMES.paid}</Th>
                     <Th align="right" className="w-24">
-                      % Used
+                      {FIGURE_NAMES.used}
                       {/* The formula, in the header — four money columns sit
                           beside this and nothing said which two made it. */}
                       <span className="block font-normal normal-case tracking-normal text-[9px] text-gray-400 leading-tight">
@@ -1192,7 +1263,7 @@ export default async function CostControlProjectDetailPage(
                 return (
                   <>
                     <tr key={d.id} className="group border-t border-gray-200 bg-slate-50 font-semibold">
-                      <td className="px-3 py-2.5">
+                      <td className="px-3 py-2.5 sticky left-0 z-[1] bg-inherit">
                         <CatChevron catId={d.id} />
                         <span className="font-mono text-[11px] text-gray-500 mr-2">{d.code}</span>
                         <span className="text-gray-900">{d.name}</span>
@@ -1360,8 +1431,11 @@ export default async function CostControlProjectDetailPage(
                       const isFocus = focusSub === s.id
                       return (
                         <SubRow key={s.id} empty={isEmpty}>
-                        <tr id={`sub-${s.id}`} className={`group border-t border-gray-100 hover:bg-gray-50/60 ${isFocus ? 'bg-amber-100/70 ring-2 ring-inset ring-amber-400' : ''}`}>
-                          <td className="pl-4 pr-2 py-2 text-gray-700">
+                        <tr id={`sub-${s.id}`} className={`group border-t border-gray-100 hover:bg-gray-50/60 ${isFocus ? 'bg-amber-100/70 ring-2 ring-inset ring-amber-400' : 'bg-white'}`}>
+                          {/* bg-inherit: the frozen cell takes the row's own colour
+                              (white, hover grey, focus amber) so scrolled columns
+                              never show through it. */}
+                          <td className="pl-4 pr-2 py-2 text-gray-700 sticky left-0 z-[1] bg-inherit">
                             <RowDetailToggle id={s.id} count={(boqBySub.get(`${d.id}::${s.id}`) ?? []).reduce((n, b) => n + b.rows.length, 0)} />
                             <span className="font-mono text-[11px] text-gray-400 mr-2">{s.code}</span>
                             <span>{s.name}</span>
@@ -1693,25 +1767,42 @@ export default async function CostControlProjectDetailPage(
               })}
             </tbody>
           </table>
-        </div>
+        </TableBox>
 
-        {/* Mobile: the same Internal Estimate as stacked cards — the table above
-            is far too wide for a phone. Read + navigate; heavy editing (mode,
-            deadlines, IE decision, remove) stays on the desktop table. */}
-        {/* A card stack has no header ROW to freeze, so the mobile equivalent is
-            the category bar: it pins while you scroll that category's cards, so
-            you always know which discipline the amounts belong to. Same
-            mechanism as the desktop table — the list scrolls inside this box,
-            because a page-scroll sticky cannot work under `main`'s overflow
-            (see AGENTS.md). Each bar is pushed out by the next one. */}
-        <div className="xl:hidden divide-y divide-gray-100 overflow-auto max-h-[75vh]">
+        {/* Phone: the same Internal Estimate as stacked cards — the table above
+            is far too wide for a phone. Read + navigate; configuration (mode,
+            deadlines, remove) stays on the desktop table.
+
+            Aksha, 21 Sep 2026 ("its showing less info and confusing us"), from
+            the preview he decided on:
+              M1  every card has the same lines — a nil prints "—", never a
+                  missing line. ₹/sft under every amount.
+              M2  one name per number: the desktop column headers, nowhere else.
+              M3  no inner scrollport — the page scrolls, the category bar sticks
+                  under the app bar (main is no longer a scroll container below
+                  lg; see app/(app)/layout.tsx).
+              M4  the category bar carries the whole desktop row.
+              M8  Accept / Reject the estimate from the phone — Trustee / Admin,
+                  IE review on, same rule as the desktop cell.
+              M10 44 px Request; the toolbar behind one ⋯ (header above).
+              M11 jump chips filter the stack (PhoneCard / PhoneCat).
+              M13 Cards | Table (CardBox / TableBox).
+            And his NOs: no colour bars on the phone (M5), no deadline line
+            (M6), no chip row under the name (M7) — the name row is as it was. */}
+        <CardBox>
           {disciplines.length === 0 && (
             <p className="px-4 py-8 text-center text-sm text-gray-500">No disciplines enabled yet. Open the setup wizard to pick them.</p>
           )}
           {disciplines.map(d => {
             const dAgg = discAgg.get(d.id) ?? { budget: 0, wo: 0, paid: 0, approvedTotal: 0, estimate: 0, pending: 0 }
             const dOver = overBudgetAmount(dAgg)
+            const dEst = discEstimate.get(d.id) ?? dAgg.estimate
+            const dPct = dAgg.budget > 0 ? Math.round((dAgg.paid / dAgg.budget) * 100) : null
             const subs = subSkills.filter(s => s.discipline_id === d.id)
+            const dPendingLines = subs.filter(s => (wsAgg.get(`${d.id}::${s.id}`)?.pendingAmount ?? 0) > 0).length
+            let dWsCount = 0
+            for (const s of subs) dWsCount += wsAgg.get(`${d.id}::${s.id}`)?.chains.size ?? 0
+            const dFlags = anyFlags(subs.map(s => phoneFlags.get(s.id)).filter((f): f is CardFlags => !!f))
             const cards = subs.map(s => {
               const a = wsAgg.get(`${d.id}::${s.id}`)
               const bl = blMap.get(`${d.id}::${s.id}`)
@@ -1724,7 +1815,6 @@ export default async function CostControlProjectDetailPage(
               const wsCount = a?.chains.size ?? 0
               const baseline = estLive
               const overBy = baseline > 0 && ask > baseline ? ask - baseline : 0
-              const sPct = bl && bl.budget > 0 ? (bl.paid / bl.budget) * 100 : 0
               const sOver = overBudgetAmount(bl)
               const sOverBy = overBudgetDriver(bl)
               const sCompletedAt = subMeta.get(s.id)?.completedAt ?? null
@@ -1745,14 +1835,19 @@ export default async function CostControlProjectDetailPage(
               const isFocus = focusSub === s.id
               if (isEmpty && !isFocus) return null
               const effMode = subMeta.get(s.id)?.mode ?? discMeta.get(d.id)?.mode ?? 'detailed'
+              const flags = phoneFlags.get(s.id) ?? { awaiting: ask > 0, over: showErp && sOver > 0, closed: !!(sCompletedAt || discCompletion.get(d.id)?.completedAt) }
+              const lines = phoneLines({ estimate: estLive, awaiting: ask, ctHub: released, erp: bl?.budget ?? 0, wo: bl?.wo ?? 0, paid: bl?.paid ?? 0, showErp })
+              const askHref = ask > 0
+                ? awaitingHref(awaitingBySub.get(`${d.id}::${s.id}`) ?? [], `/cost-control/working-sheets?project=${project.id}&discipline=${d.id}&sub_skill=${s.id}`)
+                : null
               return (
+                <PhoneCard key={s.id} flags={flags}>
                 <div
-                  key={s.id}
                   id={`subm-${s.id}`}
                   className={`mx-3 my-2 rounded-xl border bg-white p-3.5 ${isFocus ? 'border-amber-400 ring-2 ring-amber-300' : 'border-gray-200'}`}
                 >
-                  {/* Name + sheets chip */}
-                  <div className="flex items-start justify-between gap-2 mb-0.5">
+                  {/* Name + sheets chip. As it was — his NO to the chip row (M7). */}
+                  <div className="flex items-start justify-between gap-2 mb-1">
                     <p className="text-sm text-gray-900 min-w-0">
                       <RowDetailToggle id={s.id} count={(boqBySub.get(`${d.id}::${s.id}`) ?? []).reduce((n, b) => n + b.rows.length, 0)} />
                       <span className="font-mono text-[11px] text-gray-400 mr-1.5">{s.code}</span>{s.name}
@@ -1782,47 +1877,74 @@ export default async function CostControlProjectDetailPage(
                     {wsCount > 0 && (
                       <Link
                         href={`/cost-control/working-sheets?project=${project.id}&discipline=${d.id}&sub_skill=${s.id}`}
-                        className="flex-shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200"
+                        className="flex-shrink-0 inline-flex items-center min-h-[28px] gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200"
                       >
                         {wsCount} sheet{wsCount === 1 ? '' : 's'}
                       </Link>
                     )}
                   </div>
 
-                  {/* Money read top-to-bottom, one line at a time — calmer than
-                      three competing tiles. Estimate anchors; Awaiting is the
-                      highlighted action; Released is the outcome. */}
-                  <div className="flex items-center justify-between gap-3 py-1.5 border-t border-gray-100">
-                    <span className="text-[13px] text-gray-600">Estimate</span>
-                    <span className="text-[14px] font-semibold tabular-nums text-indigo-800 text-right"><Money amt={estLive} /></span>
-                  </div>
-                  {/* An estimate below what ERP already released is usually a
-                      placeholder nobody filled in. Reported, never blocked. (HOD #5) */}
-                  {sEstShort > 0 && (
-                    <p className="-mt-0.5 mb-1 text-[11px] font-bold text-violet-700">
-                      Estimate is {formatINR(sEstShort)} BELOW the ERP budget — it cannot be lower than what is already approved
-                    </p>
-                  )}
-                  {sNoEstimate && (
-                    <p className="-mt-0.5 mb-1 text-[11px] font-semibold text-violet-700">
-                      No Internal Estimate set, but ERP has released {formatINR(bl?.budget ?? 0)}
-                    </p>
-                  )}
-                  {ask > 0 && (() => {
-                    const ids = awaitingBySub.get(`${d.id}::${s.id}`) ?? []
-                    const href = awaitingHref(ids, `/cost-control/working-sheets?project=${project.id}&discipline=${d.id}&sub_skill=${s.id}`)
-                    const cls = `flex items-center justify-between gap-3 -mx-1 my-1 px-2 py-1.5 rounded-lg ${overBy > 0 ? 'bg-rose-50' : 'bg-amber-50'}`
-                    const body = (
-                      <>
-                        <span className={`text-[13px] font-semibold ${overBy > 0 ? 'text-rose-800' : 'text-amber-800'}`}>Awaiting your approval{href ? ' ›' : ''}</span>
-                        <span className={`text-[14px] font-semibold tabular-nums text-right ${overBy > 0 ? 'text-rose-700' : 'text-amber-800'}`}><Money amt={ask} /></span>
-                      </>
-                    )
-                    return href ? <Link href={href} className={cls}>{body}</Link> : <div className={cls}>{body}</div>
-                  })()}
-                  {overBy > 0 && (
-                    <p className="text-[10px] font-semibold text-rose-600 mb-0.5">▲ over the Internal Estimate by {formatINR(overBy)}</p>
-                  )}
+                  {/* M1 · M2: the same lines on every card, in the desktop column
+                      order, under the desktop column names. Awaiting is the one
+                      highlighted line, and only while there is something to
+                      approve. Text only — his NO to M5. */}
+                  {lines.map(l => (
+                    <PhoneLine
+                      key={l.key}
+                      line={l}
+                      rate={l.amount !== null ? perSft(l.amount) : null}
+                      tone={l.key === 'estimate' ? 'text-indigo-800' : l.key === 'ctHub' ? 'text-emerald-700' : l.key === 'awaiting' ? (overBy > 0 ? 'text-rose-700' : 'text-amber-800') : 'text-gray-900'}
+                      href={l.key === 'awaiting' ? askHref : null}
+                      highlight={l.key === 'awaiting' && l.amount !== null ? (overBy > 0 ? 'rose' : 'amber') : null}
+                    >
+                      {l.key === 'estimate' && (
+                        <>
+                          {/* An estimate below what ERP already released is usually a
+                              placeholder nobody filled in. Reported, never blocked. (HOD #5) */}
+                          {sEstShort > 0 && (
+                            <p className="mb-1 text-[11px] font-bold text-violet-700">
+                              Estimate is {formatINR(sEstShort)} BELOW the ERP budget — it cannot be lower than what is already approved
+                            </p>
+                          )}
+                          {sNoEstimate && (
+                            <p className="mb-1 text-[11px] font-semibold text-violet-700">
+                              No Internal Estimate set, but ERP has released {formatINR(bl?.budget ?? 0)}
+                            </p>
+                          )}
+                          {/* M8: the desktop cell's Accept / Reject, on the phone. The
+                              decided state shows to every reader; the buttons only to
+                              whoever canDecideIE names — Trustee / Admin, review on. */}
+                          {ccSettings.ie_review && (estLive > 0 || ie) && (
+                            <div className="mb-1.5 flex items-center justify-between gap-2">
+                              <span className="text-[11px] text-gray-500">Estimate baseline</span>
+                              <InternalEstimateDecision
+                                projectId={project.id}
+                                disciplineId={d.id}
+                                subSkillId={s.id}
+                                liveAmount={estLive}
+                                decision={ie?.decision ?? null}
+                                acceptedAmt={ie?.amt ?? null}
+                                canDecide={canDecideIE}
+                                size="card"
+                              />
+                            </div>
+                          )}
+                        </>
+                      )}
+                      {l.key === 'awaiting' && overBy > 0 && (
+                        <p className="mb-1 text-[10.5px] font-semibold text-rose-600">▲ over the Internal Estimate by {formatINR(overBy)}</p>
+                      )}
+                      {/* The desktop table says this in the "% Used" column; the
+                          phone gets its own line so the two never disagree. (HOD #4) */}
+                      {l.key === 'paid' && sOver > 0 && (
+                        <p className="mb-1 text-[11px] font-bold text-rose-700">
+                          Over the ERP budget by {formatINR(sOver)}
+                          <span className="font-normal text-rose-600"> ({sOverBy === 'paid' ? 'already paid' : 'committed on WO/PO'})</span>
+                        </p>
+                      )}
+                    </PhoneLine>
+                  ))}
+
                   {/* Same one-tap route into the voucher on the phone, where the
                       card — not the table row — is what he actually lands on. */}
                   {isFocus && focusPending && focusSheetHref && (
@@ -1833,54 +1955,7 @@ export default async function CostControlProjectDetailPage(
                       Open the sheet to approve <ArrowRight className="h-4 w-4" />
                     </Link>
                   )}
-                  {released > 0 && (
-                    <div className="flex items-center justify-between gap-3 py-1.5 border-t border-gray-100">
-                      <span className="text-[13px] text-gray-600">Budget (CT Hub)</span>
-                      <span className="text-[14px] font-semibold tabular-nums text-emerald-700 text-right"><Money amt={released} /></span>
-                    </div>
-                  )}
 
-                  {/* Actuals (ERP) — one slim strip: % used headline + a bar +
-                      the three amounts in a quiet caption. Replaces the old
-                      four-cell grid that crowded the card. ERP-toggle-gated. */}
-                  {showErp && ((bl?.budget ?? 0) > 0 || (bl?.wo ?? 0) > 0 || (bl?.paid ?? 0) > 0) && (
-                    <div className="mt-2.5 pt-2.5 border-t border-gray-100">
-                      <div className="flex items-center justify-between gap-2 mb-1.5">
-                        <span className="text-[10px] uppercase tracking-wider text-gray-400">Actuals (ERP)</span>
-                        {bl && bl.budget > 0
-                          ? (
-                            <span className={`text-[11px] font-semibold tabular-nums ${sOver > 0 ? 'text-rose-700' : sPct > 95 ? 'text-red-600' : sPct > 80 ? 'text-amber-700' : 'text-emerald-700'}`}>
-                              {sPct.toFixed(0)}% used
-                              {/* No hover on a phone, so the sum is printed. */}
-                              <span className="ml-1 font-normal text-gray-400">(paid ÷ budget)</span>
-                            </span>
-                          )
-                          : <span className="text-[11px] text-gray-400">No budget yet</span>}
-                      </div>
-                      {bl && bl.budget > 0 && (
-                        <div className="h-1.5 rounded-full bg-gray-100 overflow-hidden">
-                          <div className={`h-full rounded-full ${sOver > 0 ? 'bg-rose-600' : sPct > 95 ? 'bg-red-500' : sPct > 80 ? 'bg-amber-500' : 'bg-emerald-500'}`} style={{ width: `${Math.min(sPct, 100)}%` }} />
-                        </div>
-                      )}
-                      {/* The desktop table says this in the "% Used" column; the
-                          phone gets its own line so the two never disagree. (HOD #4) */}
-                      {sOver > 0 && (
-                        <p className="mt-1.5 text-[11px] font-bold text-rose-700">
-                          Over the ERP budget by {formatINR(sOver)}
-                          <span className="font-normal text-rose-600"> ({sOverBy === 'paid' ? 'already paid' : 'committed on WO/PO'})</span>
-                        </p>
-                      )}
-                      <p className="mt-1.5 text-[11px] text-gray-500 tabular-nums leading-snug">
-                        ERP Budget {formatINR(bl?.budget ?? 0)}{perSftInline(bl?.budget ?? 0)}
-                        {(bl?.wo ?? 0) > 0 && <> · WO {formatINR(bl?.wo ?? 0)}{perSftInline(bl?.wo ?? 0)}</>}
-                        {(bl?.paid ?? 0) > 0 && <> · Paid {formatINR(bl?.paid ?? 0)}{perSftInline(bl?.paid ?? 0)}</>}
-                      </p>
-                    </div>
-                  )}
-
-                  {/* Close the line — only where WO equals Paid, so most cards
-                      never show this. Full-width 44px tap: this is the phone,
-                      where nearly everyone reads this screen. (HOD #3) */}
                   {/* Same rule as the desktop row. */}
                   {canRaiseTransfer && sOver > 0
                     && !(transferReqBySub.get(`${d.id}::${s.id}`) ?? []).some(t => t.status === 'pending_atm' || t.status === 'pending_trustee' || t.status === 'awaiting_in4' || t.status === 'awaiting_sync') && (
@@ -1893,6 +1968,9 @@ export default async function CostControlProjectDetailPage(
                       variant="card"
                     />
                   )}
+                  {/* Close the line — only where WO equals Paid, so most cards
+                      never show this. Full-width 44px tap: this is the phone,
+                      where nearly everyone reads this screen. (HOD #3) */}
                   {(
                     <CompleteControl
                       projectId={project.id}
@@ -1943,8 +2021,9 @@ export default async function CostControlProjectDetailPage(
                     </div>
                   </RowDetail>
 
-                  {/* A closed line still shows the button, greyed, with the
-                      reason on it — hiding it would read as a bug. */}
+                  {/* M10: a 44 px full-width tap, not a 22 px pill. A closed line
+                      still shows it, greyed, with the reason — hiding it would
+                      read as a bug. */}
                   {canWrite && (sClosedReason ? (
                     <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
                       <p className="text-[12px] font-semibold text-gray-500 inline-flex items-center gap-1.5">
@@ -1953,33 +2032,36 @@ export default async function CostControlProjectDetailPage(
                       <p className="text-[11px] text-gray-500 mt-0.5">{sClosedReason}</p>
                     </div>
                   ) : (
-                    <div className="mt-3">
-                      <Link
-                        href={effMode === 'thumbrule'
-                          ? `/cost-control/working-sheets/new-thumbrule?project=${project.id}&discipline=${d.id}&sub_skill=${s.id}`
-                          : `/cost-control/working-sheets/new-quick?project=${project.id}&discipline=${d.id}&sub_skill=${s.id}`}
-                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold border border-blue-300 text-blue-700"
-                        title="Raise a budget request for this sub-category"
-                      >
-                        <Plus className="h-3 w-3" /> Request
-                      </Link>
-                    </div>
+                    <Link
+                      href={effMode === 'thumbrule'
+                        ? `/cost-control/working-sheets/new-thumbrule?project=${project.id}&discipline=${d.id}&sub_skill=${s.id}`
+                        : `/cost-control/working-sheets/new-quick?project=${project.id}&discipline=${d.id}&sub_skill=${s.id}`}
+                      className="mt-3 flex w-full items-center justify-center gap-1.5 min-h-[44px] rounded-lg border border-blue-300 bg-white text-[13px] font-semibold text-blue-700"
+                      title="Raise a budget request for this sub-category"
+                    >
+                      <Plus className="h-4 w-4" /> Request
+                    </Link>
                   ))}
                 </div>
+                </PhoneCard>
               )
             }).filter(Boolean)
             if (cards.length === 0) return null
             return (
-              <div key={d.id}>
-                {/* Name on its own line, money underneath. Side by side, the
-                    money block never shrinks and squeezed the name down to
-                    "07 E." / "03 C.." on a 375px phone — the one thing on the
-                    row you actually need to read. */}
-                <div className="sticky top-0 z-10 px-4 py-2 bg-slate-50 border-t border-b border-gray-200">
+              <PhoneCat key={d.id} flags={dFlags}>
+              <div>
+                {/* M3: sticks under the phone's app bar (h-14, sticky, md:hidden);
+                    from md the side nav takes over and nothing sits above, so
+                    top-0. Name on its own line, money underneath — side by side
+                    the money block squeezed the name to "07 E." on a 375px phone. */}
+                <div className="sticky top-14 md:top-0 z-10 px-4 py-2 bg-slate-50 border-t border-b border-gray-200">
                   <span className="flex items-center text-[13px] font-semibold text-gray-900">
                     <CatChevron catId={d.id} />
                     <span className="font-mono text-[11px] text-gray-500 mr-1.5">{d.code}</span>
                     <span>{d.name}</span>
+                    {dWsCount > 0 && (
+                      <span className="ml-2 text-[11px] font-normal text-gray-500">{dWsCount} sheet{dWsCount === 1 ? '' : 's'}</span>
+                    )}
                     {/* Same wording as the desktop "% Used" column — "net",
                         because sub-categories with budget left are netted off. */}
                     {dOver > 0 && (
@@ -2009,27 +2091,29 @@ export default async function CostControlProjectDetailPage(
                       />
                     </div>
                   )}
-                  {/* Three columns so each figure can carry its ₹/sft beneath —
-                      the phone was the only place showing money with no rate. */}
-                  <div className="mt-1 pl-6 grid grid-cols-3 gap-2 text-[11px] leading-tight tabular-nums">
-                    <div>
-                      <span className="text-gray-400">Est</span>{' '}
-                      <span className="font-semibold text-indigo-800">{(discEstimate.get(d.id) ?? dAgg.estimate) > 0 ? formatINR(discEstimate.get(d.id) ?? dAgg.estimate) : '—'}</span>
-                      {perSft(discEstimate.get(d.id) ?? dAgg.estimate) && <span className="block text-[10px] text-gray-400">{perSft(discEstimate.get(d.id) ?? dAgg.estimate)}</span>}
-                    </div>
-                    <div>
-                      <span className="text-gray-400" title="Budget (CT Hub) — through our own approval chain">CT Hub</span>{' '}
-                      <span className="font-semibold text-emerald-700">{dAgg.approvedTotal > 0 ? formatINR(dAgg.approvedTotal) : '—'}</span>
-                      {perSft(dAgg.approvedTotal) && <span className="block text-[10px] text-gray-400">{perSft(dAgg.approvedTotal)}</span>}
-                    </div>
+                  {/* M4: the whole desktop row on the bar — the same six names,
+                      ₹/sft under each. Awaiting opens the sheets, as the desktop
+                      cell does. */}
+                  <div className="mt-1.5 pl-6 grid grid-cols-3 gap-x-2 gap-y-1.5 text-[11px] leading-tight tabular-nums">
+                    <CatFigure label={FIGURE_NAMES.estimate} amount={dEst} tone="text-indigo-800" sub={perSft(dEst)} />
+                    <CatFigure
+                      label={FIGURE_NAMES.awaiting}
+                      amount={dAgg.pending}
+                      tone="text-amber-700"
+                      sub={dPendingLines > 0 ? `${dPendingLines} line${dPendingLines === 1 ? '' : 's'}` : null}
+                      href={awaitingHref(awaitingByDisc.get(d.id) ?? [], `/cost-control/working-sheets?project=${project.id}&discipline=${d.id}`)}
+                    />
+                    <CatFigure label={FIGURE_NAMES.ctHub} amount={dAgg.approvedTotal} tone="text-emerald-700" sub={perSft(dAgg.approvedTotal)} />
                     {showErp && (
-                      <div>
-                        {/* "ERP", not "Bud" — this figure comes from IN4 and the
-                            KPI tile above calls it Approved Budget (ERP). */}
-                        <span className="text-gray-400" title="Budget approved in ERP (IN4)">ERP</span>{' '}
-                        <span className="font-semibold text-gray-800">{dAgg.budget > 0 ? formatINR(dAgg.budget) : '—'}</span>
-                        {perSft(dAgg.budget) && <span className="block text-[10px] text-gray-400">{perSft(dAgg.budget)}</span>}
-                      </div>
+                      <>
+                        <CatFigure label={FIGURE_NAMES.erp} amount={dAgg.budget} sub={perSft(dAgg.budget)} />
+                        <CatFigure label={FIGURE_NAMES.wo} amount={dAgg.wo} sub={perSft(dAgg.wo)} />
+                        <CatFigure
+                          label={FIGURE_NAMES.paid}
+                          amount={dAgg.paid}
+                          sub={[dPct !== null ? `${dPct} % used` : null, perSft(dAgg.paid)].filter(Boolean).join(' · ') || null}
+                        />
+                      </>
                     )}
                   </div>
                 </div>
@@ -2051,9 +2135,10 @@ export default async function CostControlProjectDetailPage(
                   </CatRows>
                 </div>
               </div>
+              </PhoneCat>
             )
           })}
-        </div>
+        </CardBox>
 
         {/* Add a whole work category to the project. Outside the two layouts
             because it belongs to the table as a whole, not to either
@@ -2068,6 +2153,7 @@ export default async function CostControlProjectDetailPage(
           </div>
         )}
       </div>
+      </PhoneViewProvider>
       </RowDetailProvider>
       </TreeProvider>
 
@@ -2132,6 +2218,79 @@ function Td({
     <td title={title} className={`px-2 py-2 text-${align} ${mono ? 'tabular-nums' : ''} ${className}`}>
       {children}
     </td>
+  )
+}
+
+/** One line of a phone card (M1 · M2): the desktop column's name on the left,
+ *  the amount on the right with its ₹/sft and any note under it. A nil amount
+ *  prints "—" so the line is never missing. `highlight` is the amber (or rose,
+ *  when the ask is over the estimate) Awaiting row; `href` makes it a tap. */
+function PhoneLine({
+  line, rate, tone, href, highlight, children,
+}: {
+  line: MoneyLine
+  rate: string | null
+  tone: string
+  href?: string | null
+  highlight?: 'amber' | 'rose' | null
+  children?: React.ReactNode
+}) {
+  const nil = line.amount === null
+  const sub = [line.note, rate].filter(Boolean).join(' · ')
+  const body = (
+    <>
+      <span className={`text-[12.5px] ${highlight === 'rose' ? 'font-semibold text-rose-800' : highlight === 'amber' ? 'font-semibold text-amber-800' : 'text-gray-600'}`}>
+        {line.label}{href ? ' ›' : ''}
+      </span>
+      <span className="text-right">
+        <span className={`block text-[14px] font-semibold tabular-nums ${nil ? 'text-gray-400 font-medium' : tone}`}>
+          {nil ? '—' : formatINR(line.amount as number)}
+        </span>
+        {!nil && sub && <span className="block text-[10.5px] text-gray-500 tabular-nums leading-tight">{sub}</span>}
+      </span>
+    </>
+  )
+  const row = 'flex items-start justify-between gap-3 py-1.5'
+  const inner = highlight
+    ? <div className={`${row} -mx-1.5 px-1.5 my-0.5 rounded-lg ${highlight === 'rose' ? 'bg-rose-50' : 'bg-amber-50'}`}>{body}</div>
+    : <div className={row}>{body}</div>
+  return (
+    <div className="border-t border-gray-100">
+      {href ? <Link href={href} className="block">{inner}</Link> : inner}
+      {children}
+    </div>
+  )
+}
+
+/** One figure on the phone's category bar (M4): name, amount, ₹/sft or note. */
+function CatFigure({
+  label, amount, sub, tone = 'text-gray-800', href,
+}: { label: string; amount: number; sub?: string | null; tone?: string; href?: string | null }) {
+  const has = amount > 0
+  const inner = (
+    <>
+      <span className="block text-[9.5px] text-gray-500 leading-tight">{label}</span>
+      <span className={`block font-semibold ${has ? tone : 'text-gray-400 font-medium'}`}>{has ? formatINR(amount) : '—'}</span>
+      {has && sub && <span className="block text-[9.5px] text-gray-400">{sub}</span>}
+    </>
+  )
+  return href && has
+    ? <Link href={href} className="min-w-0 block rounded -mx-1 px-1 hover:bg-amber-50">{inner}</Link>
+    : <div className="min-w-0">{inner}</div>
+}
+
+/** One figure on the phone's summary card (M9). Compact rupees — ₹46.22 Cr,
+ *  not ₹46,22,40,131 — because three sit on one 375 px row. */
+function SummaryFigure({
+  label, amount, sub, tone = 'text-gray-900',
+}: { label: string; amount: number; sub?: string | null; tone?: string }) {
+  const has = amount > 0
+  return (
+    <div className="min-w-0">
+      <p className="text-[9.5px] leading-tight text-gray-500">{label}</p>
+      <p className={`text-[13px] font-bold tabular-nums leading-tight ${has ? tone : 'text-gray-400 font-medium'}`}>{has ? formatINRCompact(amount) : '—'}</p>
+      {has && sub && <p className="text-[9.5px] text-gray-500 tabular-nums">{sub}</p>}
+    </div>
   )
 }
 

@@ -55,7 +55,7 @@ export function TreeProvider({ allCatIds, emptyCount = 0, initialCollapsedIds, i
   return <Ctx.Provider value={api}>{children}</Ctx.Provider>
 }
 
-function useTree(): TreeCtx {
+export function useTree(): TreeCtx {
   const v = useContext(Ctx)
   if (!v) throw new Error('Tree components must be inside <TreeProvider>')
   return v

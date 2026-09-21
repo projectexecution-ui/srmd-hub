@@ -91,7 +91,17 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           initialCollapsed={navCollapsed}
           revampOn={revampOn}
         />
-        <main className="flex-1 min-w-0 overflow-x-auto">
+        {/* `main` is a horizontal scroll container, and that has a side
+            effect: position:sticky pins to the nearest scrolling ancestor,
+            and this one never scrolls itself (it grows with its content), so
+            a sticky bar inside any page simply scrolls away. The Internal
+            Estimate's phone layout used to work round that by scrolling its
+            list inside a 75vh box. Aksha, 21 Sep 2026 (M3): "The page
+            scrolls, not a box inside it." So a page that marks itself
+            data-page-scroll gets main's overflow lifted below lg — that page
+            only; every other screen (some still have tables with no scroll
+            box of their own) keeps the behaviour it has. */}
+        <main className="flex-1 min-w-0 overflow-x-auto max-lg:[&:has([data-page-scroll])]:overflow-x-visible">
           {children}
         </main>
         <InstallPrompt />

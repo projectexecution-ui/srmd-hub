@@ -479,7 +479,7 @@ function ModeChip({ mode, override }: { mode: 'detailed' | 'thumbrule'; override
 // it for management to revise. Everyone else just sees the resulting badge.
 // ──────────────────────────────────────────────────────────────────────
 export function InternalEstimateDecision({
-  projectId, disciplineId, subSkillId, liveAmount, decision, acceptedAmt, canDecide,
+  projectId, disciplineId, subSkillId, liveAmount, decision, acceptedAmt, canDecide, size = 'row',
 }: {
   projectId: string
   disciplineId: string
@@ -488,7 +488,10 @@ export function InternalEstimateDecision({
   decision: 'accepted' | 'rejected' | null
   acceptedAmt: number | null
   canDecide: boolean
+  /** 'card' = the phone card (M8): 40 px labelled buttons, not 20 px icons. */
+  size?: 'row' | 'card'
 }) {
+  const big = size === 'card'
   const router = useRouter()
   const [busy, startTransition] = useTransition()
   const [err, setErr] = useState<string | null>(null)
@@ -539,12 +542,16 @@ export function InternalEstimateDecision({
       ) : (
         <>
           <button onClick={() => run('accept')} title="Accept this Internal Estimate as the approved baseline"
-            className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-green-300 text-green-600 hover:bg-green-50">
-            <Check className="h-3 w-3" />
+            className={big
+              ? 'inline-flex items-center gap-1 min-h-[40px] px-3 rounded-lg border border-green-300 text-green-700 text-[12.5px] font-semibold hover:bg-green-50'
+              : 'inline-flex h-5 w-5 items-center justify-center rounded-full border border-green-300 text-green-600 hover:bg-green-50'}>
+            <Check className={big ? 'h-4 w-4' : 'h-3 w-3'} />{big && 'Accept'}
           </button>
           <button onClick={() => run('reject')} title="Reject this Internal Estimate"
-            className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-rose-300 text-rose-600 hover:bg-rose-50">
-            <X className="h-3 w-3" />
+            className={big
+              ? 'inline-flex items-center gap-1 min-h-[40px] px-3 rounded-lg border border-rose-300 text-rose-700 text-[12.5px] font-semibold hover:bg-rose-50'
+              : 'inline-flex h-5 w-5 items-center justify-center rounded-full border border-rose-300 text-rose-600 hover:bg-rose-50'}>
+            <X className={big ? 'h-4 w-4' : 'h-3 w-3'} />{big && 'Reject'}
           </button>
         </>
       )}
