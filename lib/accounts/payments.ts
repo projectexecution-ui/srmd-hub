@@ -153,6 +153,62 @@ export function foldDuplicates(rows: Payment[]): { kept: Payment[]; groups: Dupl
   return { kept, groups }
 }
 
+/**
+ * One row of cc_accounts_ledger — the view both Accounts screens read since
+ * 21 Sep 2026. Contractor and supplier certificates already in one shape, with
+ * the cancelled / advance / retention-release flags and the aged-by date
+ * (invoice → certificate → PO) decided in the database, so this file never
+ * re-derives them.
+ */
+export interface LedgerCertRow {
+  kind: 'contractor' | 'supplier'
+  certificate_id: number
+  cert_kind: string | null; cert_type: string | null
+  status_code: number | null; status_name: string | null
+  is_cancelled: boolean; is_advance: boolean; is_retention_release: boolean
+  party_id: number | null; party_name: string | null; party_key: string | null
+  project_id: number | null; subproject_id: number | null
+  wo_id: number | null; po_id: number | null
+  order_no: string | null; ref_no: string | null; display_no: string | null
+  doc_date: string | null; date_source: string | null
+  gross: number | string | null; certified: number | string | null; paid: number | string | null
+  outstanding: number | string | null; retention: number | string | null
+  deductions: number | string | null; adv_recovery: number | string | null
+}
+
+const num = (v: number | string | null | undefined): number => { const x = typeof v === 'string' ? Number(v) : v; return typeof x === 'number' && isFinite(x) ? x : 0 }
+
+function fromLedger(r: LedgerCertRow, conf: Confirmation | null, raw: boolean): Payment {
+  const source: Source = r.kind === 'contractor' ? 'wo' : 'supplier'
+  const bankDate = conf?.status === 'confirmed' || conf?.status === 'explained' ? day(conf.bank_date) : null
+  const billDate = day(r.doc_date)
+  const kind = source === 'wo'
+    ? (r.cert_type?.trim() || (r.cert_kind === 'advance' ? 'Advance' : r.cert_kind === 'misc' ? 'Misc' : 'Running'))
+    : (r.is_advance ? 'Supplier advance' : 'Supplier')
+  return {
+    id: paymentId(source, r.certificate_id), source, certificateId: r.certificate_id,
+    party: r.party_name?.trim() || '(no party named in IN4)', partyId: r.party_id,
+    against: r.order_no?.trim() || null, billNo: r.ref_no?.trim() || null,
+    kind, billDate, bankDate, date: bankDate ?? billDate,
+    gross: num(r.gross),
+    // Contractor rows: IN4's deductions already fold the advance recovery in.
+    // Supplier rows keep it separate, so it is added here — as fromSup did.
+    deductions: num(r.deductions) + (source === 'supplier' ? num(r.adv_recovery) : 0),
+    retention: num(r.retention), paid: num(r.paid),
+    // An advance's "outstanding" is the balance still to be recovered through
+    // bills, not money owed to the party — the same rule as the hub lane.
+    outstanding: raw || !r.is_advance ? num(r.outstanding) : 0,
+    confirmation: conf, duplicateOf: null, cancelled: r.is_cancelled,
+  }
+}
+
+/** The same book, read from cc_accounts_ledger. */
+export function buildPaymentsFromLedger(rows: readonly LedgerCertRow[], confirmations: readonly Confirmation[], opts: { raw?: boolean } = {}): PaymentsBook {
+  const conf = new Map(confirmations.map(c => [paymentId(c.source, c.certificate_id), c]))
+  const all = rows.map(r => fromLedger(r, conf.get(paymentId(r.kind === 'contractor' ? 'wo' : 'supplier', r.certificate_id)) ?? null, !!opts.raw))
+  return assemble(all, opts)
+}
+
 export function buildPayments(
   wo: readonly WoCertRow[], sup: readonly SupCertRow[], confirmations: readonly Confirmation[],
   opts: { raw?: boolean } = {},
@@ -162,6 +218,10 @@ export function buildPayments(
     ...wo.map(r => fromWo(r, conf.get(paymentId('wo', r.certificate_id)) ?? null)),
     ...sup.map(r => fromSup(r, conf.get(paymentId('supplier', r.certificate_id)) ?? null)),
   ]
+  return assemble(all, opts)
+}
+
+function assemble(all: Payment[], opts: { raw?: boolean }): PaymentsBook {
   // True figures: cancelled certificates out, genuine repeats folded. Raw: IN4 as it is.
   const live = all.filter(p => !p.cancelled)
   const folded = foldDuplicates(live)

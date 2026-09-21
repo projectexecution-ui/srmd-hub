@@ -1,10 +1,16 @@
 // Server side of the Accounts tab: the project's IN4 certificates (through the
 // two human-confirmed link tables, never a name match) plus the Trust's
 // confirmations, handed to the pure builders in ./payments.
+//
+// Since 21 Sep 2026 the rows come from cc_accounts_ledger — the same view the
+// hub-wide Accounts lane reads — so cancelled, advance and retention-release
+// flags and the date a certificate is aged by are decided in ONE place. Before
+// that the two screens read the raw mirrors separately and could disagree about
+// the same rupee.
 
 import { createClient } from '@/lib/supabase/server'
 import { fetchAll } from '@/lib/revamp/orders-tree'
-import { buildPayments, type WoCertRow, type SupCertRow, type Confirmation, type PaymentsBook } from './payments'
+import { buildPaymentsFromLedger, type LedgerCertRow, type Confirmation, type PaymentsBook } from './payments'
 
 export interface AccountsLoad {
   linked: boolean
@@ -35,23 +41,20 @@ export async function loadAccounts(projectId: string, opts: { raw?: boolean } = 
   if (error) return { linked: false, error, subprojectIds: [], book: EMPTY_BOOK, confirmations: [], statements: [] }
   if (ids.length === 0) return { linked: false, error: null, subprojectIds: [], book: EMPTY_BOOK, confirmations: [], statements: [] }
 
-  const [woRes, supRes, confRes, stmtRes] = await Promise.all([
-    fetchAll<WoCertRow>((f, t) => supabase.from('in4_wo_certificates')
-      .select('certificate_id, kind, certificate_type, status, contractor_id, contractor_name, wo_id, wo_no, invoice_no, invoice_date, creation_dt, gross_bill_amt, deductions, recoveries, retention_amt, paid_amt, outstanding_amt')
-      .in('subproject_id', ids).range(f, t)),
-    fetchAll<SupCertRow>((f, t) => supabase.from('in4_supplier_certificates')
-      .select('certificate_id, kind, certificate_no, status, supplier_id, supplier_name, po_id, category, certificate_date, invoice_date, certified_amt, landed_cost, tax_deduction, adv_recovery, debit_note_adj, retention, payable, paid, outstanding')
+  const [ledgerRes, confRes, stmtRes] = await Promise.all([
+    fetchAll<LedgerCertRow>((f, t) => supabase.from('cc_accounts_ledger')
+      .select('kind, certificate_id, cert_kind, cert_type, status_code, status_name, is_cancelled, is_advance, is_retention_release, party_id, party_name, party_key, project_id, subproject_id, wo_id, po_id, order_no, ref_no, display_no, doc_date, date_source, gross, certified, paid, outstanding, retention, deductions, adv_recovery')
       .in('subproject_id', ids).range(f, t)),
     supabase.from('accounts_payment_confirmations').select('source, certificate_id, bank_date, bank_ref, amount_in_books, status, remark').eq('project_id', projectId),
     supabase.from('accounts_statements').select('id, created_at, range_label, row_count, file_name').eq('project_id', projectId).order('created_at', { ascending: false }).limit(12),
   ])
-  const err = woRes.error ?? supRes.error ?? confRes.error?.message ?? stmtRes.error?.message ?? null
+  const err = ledgerRes.error ?? confRes.error?.message ?? stmtRes.error?.message ?? null
   if (err) return { linked: true, error: err, subprojectIds: ids, book: EMPTY_BOOK, confirmations: [], statements: [] }
 
   const confirmations = ((confRes.data ?? []) as Array<Confirmation & { amount_in_books: number | string | null }>).map(c => ({ ...c, amount_in_books: c.amount_in_books == null ? null : Number(c.amount_in_books) }))
   return {
     linked: true, error: null, subprojectIds: ids,
-    book: buildPayments(woRes.rows, supRes.rows, confirmations, opts),
+    book: buildPaymentsFromLedger(ledgerRes.rows, confirmations, opts),
     confirmations,
     statements: (stmtRes.data ?? []) as AccountsLoad['statements'],
   }
