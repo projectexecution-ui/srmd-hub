@@ -93,7 +93,8 @@ describe('revamped left pane', () => {
   // became the section over IN4's live certificate ledger. Both are admin-only,
   // so most people still see five.
   it('is eight lanes — Dashboard, Projects, Bills, Accounts, Stores, Bills Approval, Masters, Admin', () => {
-    expect(REVAMP_PRIMARY.map(i => i.label)).toEqual(['Dashboard', 'Projects', 'Bills', 'Accounts', 'Stores', 'Bills Approval', 'Masters', 'Admin'])
+    // Nine since 21 Sep 2026: OLD INDENT TO PO, which only Aksha ever sees.
+    expect(REVAMP_PRIMARY.map(i => i.label)).toEqual(['Dashboard', 'Projects', 'Bills', 'Accounts', 'Stores', 'OLD INDENT TO PO', 'Bills Approval', 'Masters', 'Admin'])
     expect(REVAMP_OLD_SCREENS.length).toBeGreaterThan(0)
   })
 
@@ -147,5 +148,36 @@ describe('revamped left pane', () => {
   it('has no duplicate hrefs between the main lanes and the old branch', () => {
     const hrefs = [...REVAMP_PRIMARY, ...REVAMP_OLD_SCREENS].map(i => i.href)
     expect(new Set(hrefs).size).toBe(hrefs.length)
+  })
+})
+
+/**
+ * OLD INDENT TO PO — restored 21 Sep 2026 because Aksha missed it: "it was
+ * very helpful for me to check all Projects in one screen ... can u make which
+ * is only visible to me only".
+ *
+ * "Only visible to me" is the whole requirement, so it gets its own tests: the
+ * lane must be absent for everybody else, and absent is not the same as
+ * greyed — a greyed lane still announces that the screen exists.
+ */
+describe('OLD INDENT TO PO is his alone', () => {
+  const labels = (opts: Parameters<typeof buildRevampNav>[2]) =>
+    buildRevampNav({}, new Set(), opts).primary.map(i => i.label)
+
+  it('appears only when the flag says so', () => {
+    expect(labels({ canSeeAdmin: true, canSeeOldIndent: true })).toContain('OLD INDENT TO PO')
+    expect(labels({ canSeeAdmin: true })).not.toContain('OLD INDENT TO PO')
+    expect(labels({ canSeeAdmin: true, canSeeOldIndent: false })).not.toContain('OLD INDENT TO PO')
+  })
+
+  it('is off unless asked for — a missing flag never opens a lane', () => {
+    // undefined must read as "no", not as "not specified, so allow".
+    expect(labels({ canSeeAdmin: false })).not.toContain('OLD INDENT TO PO')
+  })
+
+  it('does not drag the live tracker out of the old-screens fold', () => {
+    // The restored V1 sits beside /procurement-tracker, it does not replace it.
+    expect(REVAMP_OLD_SCREENS.map(i => i.href)).toContain('/procurement-tracker')
+    expect(REVAMP_PRIMARY.map(i => i.href)).not.toContain('/procurement-tracker')
   })
 })

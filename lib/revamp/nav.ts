@@ -20,6 +20,7 @@
 
 import {
   LayoutDashboard, Building2, Receipt, Library, Shield, Archive, CreditCard, Warehouse, ReceiptText,
+  ClipboardList,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -67,6 +68,12 @@ export const REVAMP_PRIMARY: RevampNavItem[] = [
   // Shown to ADMIN ONLY for now — Aksha, 13 Sep 2026: "for now keep it
   // visible for me only Admin - so we can check and do any changes required".
   { href: '/stores',         label: 'Stores',    icon: Warehouse,       slug: null,             built: true },
+  // OLD INDENT TO PO — the V1 tracker, restored 21 Sep 2026 on Aksha's ask:
+  // "it was very helpful for me to check all Projects in one screen ... can u
+  // make which is only visible to me only - name it OLD INDENT TO PO".
+  // Admin-only, which is how this hub says "only him". The live
+  // /procurement-tracker is untouched and stays for everybody who has it.
+  { href: '/old-indent-to-po', label: 'OLD INDENT TO PO', icon: ClipboardList, slug: null, built: true },
   // Bills Approval — every contractor and vendor bill across every project,
   // from entry to Approved. It was parked when it held 2 records; it now sits
   // over the live IN4 certificate ledger and is the section Aksha asked for in
@@ -126,7 +133,10 @@ export function buildRevampNav(
   disabledSlugs: Set<string>,
   /** canSeeAccounts is the named list in Cost Control settings, resolved on
    *  the server — roles cannot draw that line, four people hold `head`. */
-  opts: { canSeeAdmin: boolean; canSeeAccounts?: boolean; canSeeStores?: boolean },
+  opts: {
+    canSeeAdmin: boolean; canSeeAccounts?: boolean; canSeeStores?: boolean
+    canSeeOldIndent?: boolean
+  },
 ): { primary: RevampNavItem[]; groups: RevampNavGroup[] } {
   const allowed = (it: RevampNavItem) => {
     if (it.slug === null) return true
@@ -148,6 +158,10 @@ export function buildRevampNav(
     // up this becomes a permission slug like every other lane — the flag is
     // the pilot, not the design.
     .filter(it => it.href !== '/stores' || opts.canSeeStores === true)
+    // His alone. canSeeOldIndentToPo in lib/old-indent-to-po.ts is the one
+    // rule, and the page behind this calls the same function — a lane hidden
+    // by one test and a page guarded by another is how the two drift.
+    .filter(it => it.href !== '/old-indent-to-po' || opts.canSeeOldIndent === true)
     .filter(allowed)
 
   // Five lanes and nothing under them. The groups array stays in the shape so

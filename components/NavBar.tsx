@@ -7,13 +7,14 @@ import { cn } from '@/lib/utils'
 import type { Profile, PermissionMap } from '@/lib/types'
 import {
   LayoutDashboard, LogOut, Menu, X, LayoutGrid,
-  ChevronsLeft, ChevronsRight, Shield, Folder, ChevronDown,
+  ChevronsLeft, ChevronsRight, Shield, Folder, ChevronDown, ClipboardList,
 } from 'lucide-react'
 import { MODULES } from '@/lib/modules'
 import { buildNavTree, type SidebarGroup } from '@/lib/sidebar-groups'
 import { isRevampNow } from '@/lib/revamp/live'
 import { buildRevampNav } from '@/lib/revamp/nav'
 import { canSeeStores } from '@/lib/stores/core'
+import { canSeeOldIndentToPo } from '@/lib/old-indent-to-po'
 import { readOpenMap, writeOpenMap } from '@/lib/nav-prefs'
 import NotificationBell from '@/components/NotificationBell'
 import { ProjectTree } from '@/components/nav/ProjectTree'
@@ -123,6 +124,7 @@ export default function NavBar({ profile, permissions, disabledSlugs = [], isPor
   // hiding the lane was never the whole gate, and two copies of "who may see
   // this" is how a section ends up one typed URL wide.
   const showStores = canSeeStores(profile.role)
+  const showOldIndent = canSeeOldIndentToPo(profile.role)
   const adminLink: NavItem | null = canSeeAdmin
     ? { href: '/admin', label: 'Admin', icon: Shield, slug: null }
     : null
@@ -139,7 +141,7 @@ export default function NavBar({ profile, permissions, disabledSlugs = [], isPor
   // well as the trial (lib/revamp/live.ts); with the "CT Hub V1" toggle on,
   // the old sidebar below is what renders.
   const revamp = revampOn
-    ? buildRevampNav(permissions, disabled, { canSeeAdmin, canSeeAccounts, canSeeStores: showStores })
+    ? buildRevampNav(permissions, disabled, { canSeeAdmin, canSeeAccounts, canSeeStores: showStores, canSeeOldIndent: showOldIndent })
     : null
 
   // Fold the module links into admin-defined groups. When no groups exist,
@@ -150,13 +152,23 @@ export default function NavBar({ profile, permissions, disabledSlugs = [], isPor
     ? { groups: revamp.groups.map(g => ({ id: g.id, name: g.name, items: g.items as unknown as NavItem[] })), ungrouped: [] as NavItem[] }
     : buildNavTree(moduleLinks, sidebarGroups)
 
+  // The restored V1 tracker. The revamp pane gets it from REVAMP_PRIMARY; the
+  // old "CT Hub V1" sidebar builds itself from MODULES, which this is
+  // deliberately not in — it is one person's screen, not a module with a
+  // dashboard tile and a permissions row. So it is appended here instead,
+  // behind the same one rule, rather than being missing on that sidebar and
+  // reachable only by typing the URL.
+  const oldIndentLink: NavItem[] = showOldIndent
+    ? [{ href: '/old-indent-to-po', label: 'OLD INDENT TO PO', icon: ClipboardList, slug: null }]
+    : []
+
   const primaryLinks: NavItem[] = revamp
     ? (revamp.primary as unknown as NavItem[])
-    : [dashboardLink, ...tree.ungrouped]
+    : [dashboardLink, ...tree.ungrouped, ...oldIndentLink]
 
   const flatLinks: NavItem[] = revamp
     ? [...revamp.primary as unknown as NavItem[], ...revamp.groups.flatMap(g => g.items as unknown as NavItem[])]
-    : [dashboardLink, ...moduleLinks, ...bottomLinks] // collapsed desktop
+    : [dashboardLink, ...moduleLinks, ...oldIndentLink, ...bottomLinks] // collapsed desktop
 
   const groupOpen = (g: { id: string; items: NavItem[] }) =>
     (g.id in openGroups) ? openGroups[g.id] : g.items.some(it => isActive(pathname, it.href))
