@@ -12,7 +12,10 @@ export const HISTORY_KEEP = 30
 /** Delete every row beyond the newest `keep`, ordered by `orderCol`. Best effort — a failure here must never fail the sync. */
 export async function pruneHistory(
   sb: Pick<SupabaseClient, 'from'>,
-  table: 'budget_hub_state_history' | 'contractor_report_state_history' | 'supplier_report_state_history',
+  // procurement_tracker_state_history came back on 21 Sep 2026 with the
+  // OLD INDENT TO PO restore; the 30-snapshot rule applies to it as before.
+  table: 'budget_hub_state_history' | 'contractor_report_state_history' | 'supplier_report_state_history'
+    | 'procurement_tracker_state_history',
   orderCol: 'snapshot_at' | 'created_at',
   keep: number = HISTORY_KEEP,
 ): Promise<number> {

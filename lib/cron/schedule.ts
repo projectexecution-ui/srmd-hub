@@ -69,6 +69,10 @@ export const CRON_JOBS: CronJob[] = [
   { key: 'in4-sync',              policy: 'each',  am: '/api/cron/in4-sync?cron=1',    pm: '/api/cron/in4-sync?cron=1' },
   // The other IN4 feeds — Indent → PO tracker, Contractor and Supplier reports,
   // and the masters mirror. One job each so a slow one cannot time out another.
+  // The Indent → PO tracker feed, back on 21 Sep 2026 with OLD INDENT TO PO.
+  // Without it in4_indent_items froze on 10 September, which is the day the
+  // feed was removed — the mirror does not refresh itself.
+  { key: 'in4-tracker',           policy: 'each',  am: '/api/cron/in4-sync?cron=1&feed=tracker',     pm: '/api/cron/in4-sync?cron=1&feed=tracker' },
   { key: 'in4-contractor',        policy: 'each',  am: '/api/cron/in4-sync?cron=1&feed=contractor', pm: '/api/cron/in4-sync?cron=1&feed=contractor' },
   { key: 'in4-supplier',          policy: 'each',  am: '/api/cron/in4-sync?cron=1&feed=supplier',   pm: '/api/cron/in4-sync?cron=1&feed=supplier' },
   { key: 'in4-masters',           policy: 'each',  am: '/api/cron/in4-sync?cron=1&feed=masters',    pm: '/api/cron/in4-sync?cron=1&feed=masters' },

@@ -14,11 +14,13 @@
 import { createClient as createServiceClient, type SupabaseClient } from '@supabase/supabase-js'
 import { extractProjects, extractSubprojects, extractSkills, extractWoBoqItems, extractWoAbstractItems } from './extract'
 import {
-  extractContractorCerts, extractSupplierCerts,
+  extractIndentRows, extractContractorCerts, extractSupplierCerts,
   extractParties, extractMaterials, extractStores, extractCompanies, extractCompanyGstins, extractUoms,
   extractLastPoByMaterial, extractPurchaseOrders, extractPoItems, extractGrnItems, extractSupplierPayLines,
   extractCertEvents,
 } from './extract-feeds'
+import { buildTracker, buildTrackerState, compareTracker, type TrackerStoredState } from './tracker'
+import { revalidateTrackerSoon } from '@/lib/procurement/tracker-cache'
 import { buildContractorDocs, compareContractor } from './contractor'
 import { buildSupplierDocs, compareSupplier } from './supplier'
 import { splitCode } from './compute'
@@ -28,17 +30,18 @@ import type { ReportDoc as SupplierDoc } from '@/lib/supplier-report'
 import { pruneHistory } from './history-retention'
 import { readManualUpload } from './manual-upload'
 
-export type Feed = 'budget' | 'contractor' | 'supplier' | 'masters' | 'boq' | 'purchase' | 'trail'
+export type Feed = 'budget' | 'tracker' | 'contractor' | 'supplier' | 'masters' | 'boq' | 'purchase' | 'trail'
 export type FeedMode = 'shadow' | 'live' | 'mirror'
-export const FEEDS: Feed[] = ['budget', 'contractor', 'supplier', 'masters', 'boq', 'purchase', 'trail']
+export const FEEDS: Feed[] = ['budget', 'tracker', 'contractor', 'supplier', 'masters', 'boq', 'purchase', 'trail']
 
 export const FEED_LIVE_KEY: Partial<Record<Feed, string>> = {
-  budget: 'in4_budget_live', contractor: 'in4_contractor_live', supplier: 'in4_supplier_live', boq: 'in4_boq_live',
+  budget: 'in4_budget_live', tracker: 'in4_tracker_live', contractor: 'in4_contractor_live', supplier: 'in4_supplier_live', boq: 'in4_boq_live',
 }
 export function feedLastKey(feed: Feed): string { return feed === 'budget' ? 'in4_last_sync' : `in4_last_sync_${feed}` }
 
 export const FEED_META: Record<Feed, { label: string; replaces: string; page: string; source: string }> = {
   budget:     { label: 'Budget vs Expenses report', replaces: 'the weekly ENGG_CONSOLIDATED_SRMDBUDGET… Excel upload (page removed 10 Sep 2026)', page: '/admin/in4', source: 'ENGG_SUBPROJECT_BUDGET · BI.FACT_ENGG_WORK_ORDER · BI.FACT_ENGG_WO_PAYMENTS · BI.FACT_PURCHASE_SUPPLIER_PAY' },
+  tracker:    { label: 'Indent → PO tracker', replaces: 'both uploads on OLD INDENT TO PO (Indent-to-Issue and PO report)', page: '/old-indent-to-po', source: 'PURCH_INDENT_TO_ISSUE · BI.FACT_PURCHASE_ORDER_DETAILS · BI.FACT_PURCHASE_GRN_DETAILS' },
   contractor: { label: 'Contractor report', replaces: 'the "All Types Certificates Details" Excel on /contractor-report', page: '/contractor-report', source: 'ENGG_RPT_WO_CERTIFICATE_DETAILS · BI.ENGG_ADVANCE_PAYMENTS_HEADER · BI.ENGG_MISC_PAYMENTS_HEADER' },
   supplier:   { label: 'Supplier report', replaces: 'the "All Purchase Payments Report" Excel on /supplier-report', page: '/supplier-report', source: 'BI.FACT_PURCHASE_SUPPLIER_PAY · BI.FACT_PURCHASE_SUPPLIER_ADV_PAY' },
   masters:    { label: 'Masters (contractors, suppliers, materials, stores, trusts, units)', replaces: 'nothing — mirrors IN4 for the Masters screens', page: '/admin/masters', source: 'ENGG_SERVICE_PROVIDER · PURCH_SUPPLIER · PURCH_MATERIAL_LOOKUP · BI.DIM_STORE · COMMON.TBLCOMMONCOMPANY · COMMON_UOM_LOOKUP' },
@@ -242,6 +245,54 @@ async function writeReportState<D extends { projectName: string; areaBySub?: Rec
   revalidateReportState(table)
 }
 
+async function runTracker(sb: SupabaseClient, now: string, mode: FeedMode, actorId: string | null) {
+  const rows = await extractIndentRows()
+  const { lines, items } = buildTracker(rows)
+  const state = buildTrackerState(lines, `IN4 live sync ${now.slice(0, 10)}`, now)
+
+  await upsertAll(sb, 'in4_indent_items', items.map(i => ({ ...i, synced_at: now })), 'indent_item_id')
+  await dropStale(sb, 'in4_indent_items', now)
+
+  const { data: slots, error } = await sb.from('procurement_tracker_state').select('id, state, version').in('id', ['global', 'po'])
+  if (error) throw new Error(`procurement_tracker_state: ${error.message}`)
+  const global = (slots ?? []).find(s => s.id === 'global')
+  const po = (slots ?? []).find(s => s.id === 'po')
+  const hubState = (global?.state ?? null) as TrackerStoredState | null
+  const comparison = compareTracker(hubState, state)
+
+  let wrote = false
+  if (mode === 'live') {
+    // Snapshot both slots, then write: everything in the indent slot, and an
+    // empty PO slot — IN4's rates are already on every line, so the second
+    // report has nothing left to add and the merge just passes the first through.
+    for (const s of [global, po]) {
+      if (!s) continue
+      const { error: snapErr } = await sb.from('procurement_tracker_state_history').insert({ state_id: s.id, state: s.state, version: s.version, snapshot_by: actorId })
+      if (snapErr) console.warn('[in4-tracker] history snapshot failed:', snapErr.message)
+    }
+    // Keep the last 30 snapshots only (clean-up round 1, 10 Sep 2026).
+    await pruneHistory(sb, 'procurement_tracker_state_history', 'snapshot_at')
+    const emptyPo: TrackerStoredState = { format: 'flat', fileName: 'IN4 live sync — rates are on the indent lines', savedAt: now, projects: [], pendingLineCount: 0, totalGrnValue: 0, pendingValue: 0, indentStatuses: [], lineStatuses: [] }
+    const { error: w1 } = await sb.from('procurement_tracker_state').upsert({ id: 'global', state: state, version: (global?.version ?? 0) + 1, updated_at: now, updated_by: actorId })
+    if (w1) throw new Error(`procurement_tracker_state(global): ${w1.message}`)
+    const { error: w2 } = await sb.from('procurement_tracker_state').upsert({ id: 'po', state: emptyPo, version: (po?.version ?? 0) + 1, updated_at: now, updated_by: actorId })
+    if (w2) throw new Error(`procurement_tracker_state(po): ${w2.message}`)
+    revalidateTrackerSoon()
+    wrote = true
+
+    // The known-projects registry the visibility picker uses.
+    const known = state.projects.map(p => p.projectName?.trim()).filter((x): x is string => !!x).map(name => ({ name, last_seen_at: now, last_seen_by: actorId }))
+    if (known.length) {
+      const { error: kErr } = await sb.from('procurement_known_projects').upsert(known, { onConflict: 'name' })
+      if (kErr) console.warn('[in4-tracker] known projects:', kErr.message)
+    }
+  }
+
+  const t = comparison.totals
+  const summary = `${state.lineStatuses.length} lines · ${state.projects.length} projects · ${state.pendingLineCount} pending (upload had ${t.hubLines} lines · ${t.hubPending} pending)`
+  return { rows: rows.length, comparison, wrote, summary }
+}
+
 async function runContractor(sb: SupabaseClient, now: string, mode: FeedMode, actorId: string | null) {
   const certs = await extractContractorCerts()
   const names = await namesFor(sb)
@@ -327,7 +378,8 @@ export async function runFeed(feed: Exclude<Feed, 'budget'>, opts: FeedOptions):
   }
   try {
     let out: { rows: number; comparison?: unknown; wrote?: boolean; summary: string }
-    if (feed === 'masters') out = await runMasters(sb, startedAt)
+    if (feed === 'tracker') out = await runTracker(sb, startedAt, mode, opts.actorId ?? null)
+    else if (feed === 'masters') out = await runMasters(sb, startedAt)
     else if (feed === 'purchase') out = await runPurchase(sb, startedAt)
     else if (feed === 'boq') out = await runBoq(sb, startedAt)
     else if (feed === 'trail') out = await runTrail(sb, startedAt)
