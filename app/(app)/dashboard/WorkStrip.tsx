@@ -1,25 +1,26 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { formatDate } from '@/lib/utils'
-import { MessageSquare, Trash2, Upload, ArrowRight } from 'lucide-react'
+import { Trash2, Upload, ArrowRight } from 'lucide-react'
 
 /**
- * The rest of the hub's work, on the dashboard.
+ * The hub's housekeeping, on the ADMIN's dashboard only (the page gates it).
  *
  * The revamp's rule for this page is "work, not money" — portfolio totals
  * belong inside a project, not on a home screen. "Needs you now" already
- * covers approvals and stays exactly as it is (Aksha's instruction). This adds
- * the work that had no home at all: material requests, deletions waiting on
- * someone, whether the weekly uploads are current, and recent conversation.
+ * covers approvals and stays exactly as it is (Aksha's instruction). This is
+ * the work only an admin does: deletions waiting on them, and whether the two
+ * IN4 report feeds refreshed. It used to render for everyone and count
+ * "comments this week" too — an engineer opened his home on 23 Sep 2026 to
+ * "0 delete requests waiting on an admin" and asked why. A counter nobody
+ * acts on does not earn a place, and admin work does not belong on an
+ * engineer's home.
  */
 export async function WorkStrip() {
   const supabase = await createClient()
 
-  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
-
-  const [delRes, commentRes, contractorRes, supplierRes] = await Promise.all([
+  const [delRes, contractorRes, supplierRes] = await Promise.all([
     supabase.from('delete_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
-    supabase.from('cc_ws_comments').select('id', { count: 'exact', head: true }).gte('created_at', sevenDaysAgo),
     supabase.from('contractor_report_state').select('updated_at').limit(1).maybeSingle(),
     supabase.from('supplier_report_state').select('updated_at').limit(1).maybeSingle(),
   ])
@@ -45,21 +46,13 @@ export async function WorkStrip() {
       hint: 'waiting on an admin',
       href: '/admin/delete-requests',
     },
-    {
-      key: 'talk',
-      icon: MessageSquare,
-      label: 'Comments this week',
-      value: commentRes.count ?? 0,
-      hint: 'across every budget sheet',
-      href: '/cost-control',
-    },
   ]
 
   return (
     <section className="space-y-3">
       <h2 className="text-sm font-bold text-gray-900">Across the hub</h2>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {cards.map(c => {
           const Icon = c.icon
           return (
@@ -80,13 +73,14 @@ export async function WorkStrip() {
         })}
       </div>
 
-      {/* Upload freshness. Everything downstream — Budget vs Actual, the
-          Reports tabs — is only as current as these,
-          and nothing else on the hub says when they last arrived. */}
+      {/* Report freshness. Both reports come from the IN4 feeds now (twice a
+          day, 09:00 and 15:00 IST), not a weekly Excel — so a date older than
+          a week means a feed has been failing, which is exactly what an
+          admin should see here. */}
       <div className={`rounded-xl border p-4 ${staleUploads.length ? 'border-amber-200 bg-amber-50/70' : 'border-gray-200 bg-white'}`}>
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <p className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide font-semibold text-gray-500">
-            <Upload className="h-3.5 w-3.5" /> Weekly uploads
+            <Upload className="h-3.5 w-3.5" /> Reports from IN4 · last refreshed
           </p>
           {staleUploads.length > 0 && (
             <p className="text-[11px] font-semibold text-amber-800">
@@ -111,8 +105,8 @@ export async function WorkStrip() {
           ))}
         </ul>
 
-        <Link href="/procurement-tracker" className="inline-flex items-center gap-1 mt-2 text-xs font-medium text-indigo-700 hover:underline">
-          Upload page <ArrowRight className="h-3.5 w-3.5" />
+        <Link href="/admin/in4" className="inline-flex items-center gap-1 mt-2 text-xs font-medium text-indigo-700 hover:underline">
+          IN4 feeds <ArrowRight className="h-3.5 w-3.5" />
         </Link>
       </div>
     </section>

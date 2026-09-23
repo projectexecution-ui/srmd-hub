@@ -94,6 +94,14 @@ export default async function DashboardPage() {
     }
   }
 
+  // Admin housekeeping (delete requests, whether the IN4 reports refreshed)
+  // is for the people who act on it. Bhoya Vatsal, an engineer, opened his
+  // home on 23 Sep 2026 to "0 delete requests waiting on an admin" and two
+  // report dates — "why unnecessary data is being shown which is not relevant".
+  const isAdmin = profile.role === 'admin' || !!profile.is_portal_owner
+  const badges = tileBadges(inbox)
+  const anyBadge = Object.values(badges).some(n => n > 0)
+
   const firstName = profile.name || profile.full_name?.split(' ')[0] || 'there'
   const today = new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata' })
   const waitingTotal = inbox.length
@@ -105,12 +113,15 @@ export default async function DashboardPage() {
           <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Good {istGreeting()}, {firstName}</h1>
           <p className="text-gray-500 text-sm">{today}</p>
         </div>
-        <p className="text-sm text-gray-500 tabular-nums">
-          {waitingTotal === 0
-            ? 'Nothing waiting on you'
-            : `${waitingTotal} ${waitingTotal === 1 ? 'thing' : 'things'} waiting on you`}
-          {verify.rows.length > 0 && ` · ${verify.rows.reduce((t, r) => t + r.indents + r.wos + r.pos, 0)} to verify in IN4`}
-        </p>
+        {/* Only when there IS something: the green "all caught up" card
+            below already says so once, and saying it twice is clutter. */}
+        {(waitingTotal > 0 || verify.rows.length > 0) && (
+          <p className="text-sm text-gray-500 tabular-nums">
+            {waitingTotal > 0 && `${waitingTotal} ${waitingTotal === 1 ? 'thing' : 'things'} waiting on you`}
+            {waitingTotal > 0 && verify.rows.length > 0 && ' · '}
+            {verify.rows.length > 0 && `${verify.rows.reduce((t, r) => t + r.indents + r.wos + r.pos, 0)} to verify in IN4`}
+          </p>
+        )}
       </header>
 
       {/* Needs you now — the actionable heart of the home, above everything else */}
@@ -139,21 +150,21 @@ export default async function DashboardPage() {
           that don't appear in the approval inbox). Self-hides when there's none. */}
       {showCC && <CostControlSnapshot counts={ccWork} />}
 
-      {/* REVAMP: the rest of the hub's WORK — deletions, conversation and
-          whether the weekly uploads are current. Live is unaffected. */}
-      {revampOn && <WorkStrip />}
+      {/* REVAMP, admins only: the hub's housekeeping — deletions waiting on
+          an admin, and whether the IN4 report feeds refreshed. */}
+      {revampOn && isAdmin && <WorkStrip />}
 
       {/* Module tiles — role-filtered, each with its live "waiting" count */}
       <section>
         <div className="flex items-baseline justify-between mb-3">
           <h2 className="text-sm font-bold uppercase tracking-wide text-gray-500">Apps</h2>
-          <p className="text-[11px] text-gray-400">A count on a tile is work waiting on you there</p>
+          {anyBadge && <p className="text-[11px] text-gray-400">A count on a tile is work waiting on you there</p>}
         </div>
         <TileLauncher
           permissions={permissions}
           disabledSlugs={Array.from(disabledSlugs)}
           moduleLabels={moduleLabels}
-          badges={tileBadges(inbox)}
+          badges={badges}
         />
       </section>
     </div>
