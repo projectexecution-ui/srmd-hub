@@ -7,7 +7,7 @@ import {
   Truck, Building2, Upload, Users, Settings, ShieldCheck,
   ExternalLink, Wrench, Calculator, FileSpreadsheet,
   Boxes, Inbox, GitCompareArrows, Tags, FlaskConical, ListTree, Mail, Activity, ListChecks,
-  ClipboardCheck, CalendarClock, ReceiptText, Warehouse,
+  ClipboardCheck, CalendarClock, ReceiptText, Warehouse, UsersRound,
 } from 'lucide-react'
 import type { PermissionMap } from './types'
 
@@ -41,6 +41,9 @@ export const MODULES: ModuleTile[] = [
   { slug: 'bills-booking',    label: 'Bills Approval',         description: 'Contractor (WO) & vendor (PO) bills — entry → Site Head → CT → Atm → Trust → paid, all in one platform', href: '/bills-booking', icon: ReceiptText, tone: 'indigo' },
   { slug: 'bills-pipeline',   label: 'Bills Pipeline',         description: 'Weekly SRA contractor bills command card — stalls, push list, pipeline bars', href: '/bills-pipeline', icon: Activity, tone: 'rose' },
   { slug: 'stuck-bills',      label: 'Bills Checklist',        description: 'Contractor bills pending with CT — verify documents before approval', href: '/stuck-bills', icon: ListChecks, tone: 'amber' },
+  // Labour Report — the daily manpower count per agency on a site (Aksha,
+  // 23 Sep 2026), in place of the Excel sheet and the small manpower web form.
+  { slug: 'labour-report',    label: 'Labour Report',          description: 'Daily manpower per agency — today’s entry, the month sheet, graph and WhatsApp card', href: '/labour-report', icon: UsersRound, tone: 'green' },
   // Smart-Blueprint sandbox — proves the SLA + aging-dashboard UX in
   // isolation before any production module gets touched. Purple tone
   // (+ FlaskConical icon) marks it as an experiment.

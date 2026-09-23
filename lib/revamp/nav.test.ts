@@ -81,9 +81,9 @@ describe('revamped left pane', () => {
   // 14 Sep 2026, out of REVAMP_PARKED: it stopped being a two-record module and
   // became the section over IN4's live certificate ledger. Both are admin-only,
   // so most people still see five.
-  it('is eight lanes — Dashboard, Projects, Bills, Accounts, Stores, OLD INDENT TO PO, Bills Approval, Admin', () => {
-    // Masters left for Admin › Data on 23 Sep 2026.
-    expect(REVAMP_PRIMARY.map(i => i.label)).toEqual(['Dashboard', 'Projects', 'Bills', 'Accounts', 'Stores', 'OLD INDENT TO PO', 'Bills Approval', 'Admin'])
+  it('is nine lanes — Dashboard, Projects, Bills, Accounts, Stores, OLD INDENT TO PO, Bills Approval, Labour, Admin', () => {
+    // Masters left for Admin › Data on 23 Sep 2026. Labour joined the same day.
+    expect(REVAMP_PRIMARY.map(i => i.label)).toEqual(['Dashboard', 'Projects', 'Bills', 'Accounts', 'Stores', 'OLD INDENT TO PO', 'Bills Approval', 'Labour', 'Admin'])
     expect(REVAMP_OLD_SCREENS.length).toBeGreaterThan(0)
   })
 

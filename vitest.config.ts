@@ -12,6 +12,9 @@ export default defineConfig({
     environment: 'node',
     include: ['**/*.test.ts'],
     // .tmp-* holds ad-hoc scripts (some reach real databases) — never part of the suite.
-    exclude: ['node_modules', '.next', 'dist', '.tmp-*/**'],
+    // out/ is gitignored scratch — the build worktrees each session makes
+    // (with a node_modules junction inside) live there, and their vendored
+    // tests must never count as ours.
+    exclude: ['node_modules', '**/node_modules/**', '.next', 'dist', '.tmp-*/**', 'out/**'],
   },
 })

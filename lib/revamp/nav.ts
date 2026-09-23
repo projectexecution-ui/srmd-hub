@@ -20,7 +20,7 @@
 
 import {
   LayoutDashboard, Building2, Receipt, Shield, Archive, CreditCard, Warehouse, ReceiptText,
-  ClipboardList,
+  ClipboardList, UsersRound,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -80,6 +80,10 @@ export const REVAMP_PRIMARY: RevampNavItem[] = [
   // the pane (13 Sep 2026: "make the Whole Section in Left Pane for Admin
   // only"). Admin-only, matching requireBillsAccess() on every page inside it.
   { href: '/bills-booking',  label: 'Bills Approval', icon: ReceiptText, slug: 'bills-booking',  built: true, adminOnly: true },
+  // Labour Report — the daily manpower count per agency (Aksha, 23 Sep 2026).
+  // A lane because the site engineer opens it every evening and nothing else;
+  // gated on plain view, and the admin's module switch hides it like any other.
+  { href: '/labour-report',  label: 'Labour',    icon: UsersRound,      slug: 'labour-report',  built: true },
   // Masters left the pane on 23 Sep 2026 (Aksha, E1): it lives under
   // Admin › Data › Masters, and /masters itself still answers.
   { href: '/admin',          label: 'Admin',     icon: Shield,          slug: null,             built: true },
