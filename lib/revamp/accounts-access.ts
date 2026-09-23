@@ -3,7 +3,7 @@
 // Aksha, 10 Sep 2026: "make the Accounts Section visible only to Atm Akshay and
 // Chirag and Admin — and no one else should be able to see it." Roles cannot
 // draw that line (four people hold `head`), so the list is by person:
-// app_settings.cc_accounts_users, edited on Cost Control → Settings → "Who can
+// app_settings.cc_accounts_users, edited on Admin → People → Powers → "Accounts tab" (since 23 Sep 2026; before that on Cost Control → Settings → "Who can
 // open Accounts". Admins and the Portal Owner always may. An empty list means
 // admins only — the safe default until the two names are ticked.
 //

@@ -29,7 +29,7 @@ export interface PeopleData {
 
 type TabId = 'powers' | 'signs' | 'works' | 'indents' | 'bills' | 'alerts'
 const TABS: Array<{ id: TabId; label: string; hint: string }> = [
-  { id: 'powers',  label: 'Powers',          hint: 'The "who may" lists: Accounts tab, archive sheets, rename names, manual upload' },
+  { id: 'powers',  label: 'Powers',          hint: 'The "who may" lists: Accounts tab, archive sheets, rename names, manual upload, bring in from IN4' },
   { id: 'signs',   label: 'Who signs',       hint: 'Each project’s Project Head, Atm Head and Trustee' },
   { id: 'works',   label: 'Who works where', hint: 'People assigned to projects' },
   { id: 'indents', label: 'Sees indents',    hint: 'Which IN4 projects each person sees on the tracker — an unticked box hides it' },
@@ -196,6 +196,7 @@ const POWERS: Array<{ key: GrantKey; label: string; title: string }> = [
   { key: 'archive',       label: 'Archive sheets', title: 'May archive and restore working sheets (admins always)' },
   { key: 'rename',        label: 'Rename names',   title: 'May rename categories, tabs and pills (admins always)' },
   { key: 'manual_upload', label: 'Manual upload',  title: 'May open Manual upload (IN4 fallback) and switch it on (admins always)' },
+  { key: 'intake',        label: 'Bring in from IN4', title: 'May bring IN4 projects into the hub from Data › From IN4 (admins always)' },
 ]
 function PowersGrid({ people, grants, busy, run }: { people: Person[]; grants: Record<GrantKey, string[]>; busy: string | null; run: (k: string, fn: () => Promise<Result>) => void }) {
   return (

@@ -66,6 +66,7 @@ export async function loadPeopleData(): Promise<PeopleData> {
       archive: idsIn(GRANT_KEYS.archive),
       rename: idsIn(GRANT_KEYS.rename),
       manual_upload: idsIn(GRANT_KEYS.manual_upload),
+      intake: idsIn(GRANT_KEYS.intake),
     },
     approvers: (approversRes.data ?? []) as Array<{ project_id: string; user_id: string; role: string }>,
     assignments: (assignRes.data ?? []) as Array<{ user_id: string; project_id: string }>,
