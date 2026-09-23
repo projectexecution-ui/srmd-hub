@@ -99,9 +99,14 @@ export interface VerifyPortfolio {
    *  the home page says so rather than letting it fall down the gap. */
   unassigned: VerifyCounts
   total: VerifyCounts
+  /** When IN4 was actually asked (ISO). The home card prints it, because a
+   *  reader who believes these numbers come from the twice-a-day mirror
+   *  distrusts them; they come from IN4 itself, at most a minute old. Null
+   *  when IN4 could not be reached. */
+  fetchedAt: string | null
 }
 
-const EMPTY_PORTFOLIO: VerifyPortfolio = { byProject: {}, unassigned: NONE, total: NONE }
+const EMPTY_PORTFOLIO: VerifyPortfolio = { byProject: {}, unassigned: NONE, total: NONE, fetchedAt: null }
 
 function addTo(c: VerifyCounts, kind: string, n: number): VerifyCounts {
   if (kind === 'indent') return { ...c, indents: c.indents + n }
@@ -160,7 +165,7 @@ async function fetchVerifyPortfolio(): Promise<VerifyPortfolio> {
       if (!cc) { unassigned = addTo(unassigned, r.kind, n); continue }
       byProject[cc] = addTo(byProject[cc] ?? NONE, r.kind, n)
     }
-    return { byProject, unassigned, total }
+    return { byProject, unassigned, total, fetchedAt: new Date().toISOString() }
   } catch {
     // A badge must never be the reason a page fails.
     return EMPTY_PORTFOLIO

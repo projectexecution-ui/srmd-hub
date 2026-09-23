@@ -8,6 +8,8 @@ import Link from 'next/link'
 import { formatINR } from '@/lib/utils'
 import { labelFor } from '@/lib/module-labels'
 import { inboxActionLabel } from '@/lib/approvals/inbox-action'
+import { MODULES } from '@/lib/modules'
+import { groupByModule } from '@/lib/dashboard/scope'
 import { CheckCircle2, ArrowRight, Clock, Bell } from 'lucide-react'
 import type { HomeBudgetProject } from '@/lib/cost-control/my-budget-approvals'
 
@@ -37,7 +39,16 @@ const MOD_EMOJI: Record<string, string> = {
   'inventory': '🏬', 'daily-site-report': '🧱',
 }
 
-const MAX_OTHER = 6
+/** Rows shown per module group before "+ N more" hands over to the module's
+ *  own page. Named groups, not one flat wall (Aksha, 20 Aug 2026). */
+const MAX_PER_GROUP = 5
+
+/** Where "+ N more" goes: the module's own screen, never a screen the Portal
+ *  Owner has switched off. My Approvals was off on 23 Sep 2026 while every
+ *  "View all" on the home still pointed at it. */
+function moduleHref(slug: string): string {
+  return MODULES.find(m => m.slug === slug)?.href ?? '/'
+}
 
 // Soft, distinct colour per project (stable by project code) — same palette as
 // My Approvals so the two screens feel like one system.
@@ -69,13 +80,16 @@ function isLate(urgency: string | null, iso: string, now: number): boolean {
 }
 
 export function NeedsYouNow({
-  budgetProjects, otherItems, totalCount, moduleLabels, error,
+  budgetProjects, otherItems, totalCount, moduleLabels, error, approvalsOn = true,
 }: {
   budgetProjects: HomeBudgetProject[]
   otherItems: InboxItem[]
   totalCount: number
   moduleLabels: ModuleLabels
   error?: boolean
+  /** Whether the My Approvals module is switched on — the only time a
+   *  "View all" link to it is honest. */
+  approvalsOn?: boolean
 }) {
   // Server component — renders once per request, so this is a stable "as-of-now"
   // snapshot for age/urgency, not an impure render.
@@ -109,7 +123,7 @@ export function NeedsYouNow({
   const budgetUrgent = budgetProjects.reduce((s, p) => s + p.disciplines.reduce((ds, d) => ds + d.items.filter(i => isLate(i.urgency, i.createdAt, now)).length, 0), 0)
   const otherUrgent = otherItems.filter(r => isLate(r.urgency, r.created_at, now)).length
   const urgent = budgetUrgent + otherUrgent
-  const shownOther = otherItems.slice(0, MAX_OTHER)
+  const groups = groupByModule(otherItems)
 
   return (
     <section className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
@@ -125,9 +139,11 @@ export function NeedsYouNow({
             <span className="text-xs font-medium text-gray-500 hidden sm:inline truncate tabular-nums">· {formatINR(totalAmount)} waiting</span>
           )}
         </div>
-        <Link href="/approvals" className="text-xs font-semibold text-blue-700 hover:underline flex-shrink-0 inline-flex items-center gap-1">
-          View all <ArrowRight className="h-3 w-3" />
-        </Link>
+        {approvalsOn && (
+          <Link href="/approvals" className="text-xs font-semibold text-blue-700 hover:underline flex-shrink-0 inline-flex items-center gap-1">
+            View all <ArrowRight className="h-3 w-3" />
+          </Link>
+        )}
       </div>
 
       {/* ── Budget approvals — project → sub-discipline → every budget ──
@@ -195,52 +211,69 @@ export function NeedsYouNow({
       </div>
       )}
 
-      {/* ── Anything else waiting (non-budget) — kept as a simple list ── */}
-      {shownOther.length > 0 && (
-        <ul className="divide-y divide-gray-100">
-          {shownOther.map((r, i) => {
-            const late = isLate(r.urgency, r.created_at, now)
-            const age = ageDays(r.created_at, now)
-            const emoji = MOD_EMOJI[r.module_slug] ?? '•'
-            const modLabel = labelFor(moduleLabels, r.module_slug)
-            const proj = r.project_code && r.project_name && r.project_code !== r.project_name
-              ? `${r.project_code} · ${r.project_name}`
-              : (r.project_code || r.project_name || '')
-            const headline = r.work_label || r.doc_no || modLabel
-            const meta = [modLabel, proj || null, r.raised_by ? `by ${r.raised_by}` : null].filter(Boolean).join(' · ')
-            return (
-              <li key={`${r.doc_id ?? r.doc_url}-${i}`}>
-                <Link href={r.doc_url} className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50/80 transition-colors">
-                  <span className={`h-9 w-9 rounded-xl flex items-center justify-center text-base flex-shrink-0 ${late ? 'bg-rose-50' : 'bg-blue-50'}`}>{emoji}</span>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold text-gray-900 truncate">{headline}</p>
-                    <p className="text-xs text-gray-500 truncate">{meta}</p>
-                  </div>
-                  {r.next_stage && (
-                    <span className={`hidden md:inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold flex-shrink-0 ${late ? 'bg-rose-50 text-rose-700' : 'bg-amber-50 text-amber-800'}`}>
-                      {inboxActionLabel(r.next_stage)}
-                    </span>
-                  )}
-                  <div className="flex flex-col items-end gap-1 flex-shrink-0 w-[84px] text-right">
-                    {r.amount != null && r.amount > 0 && (
-                      <span className="text-sm font-bold text-gray-900 tabular-nums">{formatINR(r.amount)}</span>
-                    )}
-                    <span className={`inline-flex items-center gap-1 text-[11px] font-semibold ${late ? 'text-rose-700' : 'text-gray-400'}`}>
-                      <Clock className="h-3 w-3" />{age === 0 ? 'today' : `${age}d`}
-                    </span>
-                  </div>
-                </Link>
-              </li>
-            )
-          })}
-        </ul>
-      )}
-
-      {otherItems.length > MAX_OTHER && (
-        <Link href="/approvals" className="block text-center text-xs font-semibold text-blue-700 hover:bg-blue-50/60 py-2.5 border-t border-gray-100">
-          + {otherItems.length - MAX_OTHER} more waiting on you →
-        </Link>
-      )}
+      {/* ── Anything else waiting (non-budget) — one named group per module ──
+          The module is the box, each document a row inside it: the reader
+          sees "3 bills, 1 indent" at a glance instead of decoding a flat wall
+          of mixed rows. "+ N more" opens that module's own screen. */}
+      {groups.map(g => {
+        const emoji = MOD_EMOJI[g.slug] ?? '•'
+        const modLabel = labelFor(moduleLabels, g.slug)
+        const shown = g.items.slice(0, MAX_PER_GROUP)
+        const hidden = g.items.length - shown.length
+        const groupAmount = g.items.reduce((s, r) => s + (r.amount ?? 0), 0)
+        return (
+          <div key={g.slug} className="border-t border-gray-100">
+            <div className="flex items-center gap-2 px-4 py-2 bg-gray-50/80">
+              <span className="text-sm leading-none">{emoji}</span>
+              <span className="text-[11px] font-bold uppercase tracking-wide text-gray-700">{modLabel}</span>
+              <span className="text-[11px] font-semibold text-gray-500 tabular-nums">· {g.items.length}</span>
+              {groupAmount > 0 && <span className="hidden sm:inline text-[11px] text-gray-400 tabular-nums">· {formatINR(groupAmount)}</span>}
+              <Link href={moduleHref(g.slug)} className="ml-auto text-[11px] font-semibold text-blue-700 hover:underline inline-flex items-center gap-1">
+                Open <ArrowRight className="h-3 w-3" />
+              </Link>
+            </div>
+            <ul className="divide-y divide-gray-100">
+              {shown.map((r, i) => {
+                const late = isLate(r.urgency, r.created_at, now)
+                const age = ageDays(r.created_at, now)
+                const proj = r.project_code && r.project_name && r.project_code !== r.project_name
+                  ? `${r.project_code} · ${r.project_name}`
+                  : (r.project_code || r.project_name || '')
+                const headline = r.work_label || r.doc_no || modLabel
+                const meta = [proj || null, r.doc_no && r.doc_no !== headline ? r.doc_no : null, r.raised_by ? `by ${r.raised_by}` : null].filter(Boolean).join(' · ')
+                return (
+                  <li key={`${r.doc_id ?? r.doc_url}-${i}`}>
+                    <Link href={r.doc_url} className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50/80 transition-colors min-h-[44px]">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold text-gray-900 truncate">{headline}</p>
+                        {meta && <p className="text-xs text-gray-500 truncate">{meta}</p>}
+                      </div>
+                      {r.next_stage && (
+                        <span className={`hidden md:inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold flex-shrink-0 ${late ? 'bg-rose-50 text-rose-700' : 'bg-amber-50 text-amber-800'}`}>
+                          {inboxActionLabel(r.next_stage)}
+                        </span>
+                      )}
+                      <div className="flex flex-col items-end gap-1 flex-shrink-0 w-[84px] text-right">
+                        {r.amount != null && r.amount > 0 && (
+                          <span className="text-sm font-bold text-gray-900 tabular-nums">{formatINR(r.amount)}</span>
+                        )}
+                        <span className={`inline-flex items-center gap-1 text-[11px] font-semibold ${late ? 'text-rose-700' : 'text-gray-400'}`}>
+                          <Clock className="h-3 w-3" />{age === 0 ? 'today' : `${age}d`}
+                        </span>
+                      </div>
+                    </Link>
+                  </li>
+                )
+              })}
+            </ul>
+            {hidden > 0 && (
+              <Link href={moduleHref(g.slug)} className="block text-center text-xs font-semibold text-blue-700 hover:bg-blue-50/60 py-2.5 border-t border-gray-100">
+                + {hidden} more in {modLabel} →
+              </Link>
+            )}
+          </div>
+        )
+      })}
     </section>
   )
 }

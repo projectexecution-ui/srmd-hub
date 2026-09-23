@@ -11,9 +11,14 @@ interface TileLauncherProps {
   disabledSlugs?: string[]
   /** Optional per-slug label / description overrides. Falls back to MODULES default. */
   moduleLabels?: Record<string, { label: string; description: string }>
+  /** Live "waiting on you" count per module slug — from the same approval
+   *  inbox that feeds "Needs you now", so a tile and the list never disagree.
+   *  A tile that says what needs doing saves attention; one that only
+   *  describes a destination costs it (Aksha, 20 Aug 2026). */
+  badges?: Record<string, number>
 }
 
-export function TileLauncher({ permissions, disabledSlugs = [], moduleLabels = {} }: TileLauncherProps) {
+export function TileLauncher({ permissions, disabledSlugs = [], moduleLabels = {}, badges = {} }: TileLauncherProps) {
   const disabled = new Set(disabledSlugs)
   const tiles = MODULES
     .filter(m => permissions[m.slug]?.view)
@@ -29,13 +34,13 @@ export function TileLauncher({ permissions, disabledSlugs = [], moduleLabels = {
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 md:gap-4">
       {tiles.map(tile => {
         const override = moduleLabels[tile.slug]
-        return <Tile key={tile.slug} tile={tile} labelOverride={override?.label} descriptionOverride={override?.description} />
+        return <Tile key={tile.slug} tile={tile} labelOverride={override?.label} descriptionOverride={override?.description} waiting={badges[tile.slug] ?? 0} />
       })}
     </div>
   )
 }
 
-function Tile({ tile, labelOverride, descriptionOverride }: { tile: ModuleTile; labelOverride?: string; descriptionOverride?: string }) {
+function Tile({ tile, labelOverride, descriptionOverride, waiting = 0 }: { tile: ModuleTile; labelOverride?: string; descriptionOverride?: string; waiting?: number }) {
   const tones = TILE_TONES[tile.tone]
   const Icon = tile.icon
 
@@ -52,7 +57,15 @@ function Tile({ tile, labelOverride, descriptionOverride }: { tile: ModuleTile; 
         <div className={cn('inline-flex h-11 w-11 items-center justify-center rounded-xl', tones.bg, tones.ic)}>
           <Icon className="h-5 w-5" />
         </div>
-        {tile.external && (
+        {waiting > 0 && (
+          <span
+            className="inline-flex items-center rounded-full bg-rose-100 text-rose-700 text-[11px] font-bold px-2 py-0.5 tabular-nums"
+            title={`${waiting} waiting on you`}
+          >
+            {waiting} waiting
+          </span>
+        )}
+        {tile.external && waiting === 0 && (
           <ArrowUpRight className="h-4 w-4 text-gray-300 group-hover:text-gray-500 transition-colors" />
         )}
       </div>

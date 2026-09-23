@@ -1,13 +1,16 @@
+// The home page. Three questions, in order: what needs ME now (CT Hub work on
+// my desk), what is waiting for me in IN4 (Atm Heads only), and where do I go
+// (the module tiles, each carrying its live "waiting" count). Engineers also
+// get their own budget work; approvers get the budgets they returned.
+//
+// Who sees what is decided in lib/dashboard/scope.ts (pure, tested), not in
+// here. 23 Sep 2026: the IN4 card was on everyone's home and "all are getting
+// confused"; the legacy Indents / POs / GRN / Invoices strip read tables that
+// were dropped on 10 Sep; the greeting used the server's UTC clock.
+
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
-import Link from 'next/link'
 import { TileLauncher } from '@/components/TileLauncher'
-import { StatPill } from '@/components/ui/stat-pill'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { IndentStagePill } from '@/components/IndentStagePill'
-import { Badge } from '@/components/ui/badge'
-import { formatDate, formatINR } from '@/lib/utils'
-import { ClipboardList, FileText, PackageCheck, Receipt } from 'lucide-react'
 import { getMyProfile, getMyPermissions, getDisabledModuleSlugs } from '@/lib/auth'
 import { getModuleLabels } from '@/lib/module-labels'
 import { NeedsYouNow, type InboxItem } from '@/components/dashboard/NeedsYouNow'
@@ -17,9 +20,10 @@ import { ReturnedToEngineer } from '@/components/dashboard/ReturnedToEngineer'
 import { getReturnedToEngineer } from '@/lib/cost-control/returned-to-engineer'
 import { getRevampOn } from '@/lib/revamp/shell-switch'
 import { WorkStrip } from './WorkStrip'
-import { VerifyInIn4, type VerifyRow } from '@/components/dashboard/VerifyInIn4'
+import { VerifyInIn4 } from '@/components/dashboard/VerifyInIn4'
 import { loadVerifyPortfolio } from '@/lib/revamp/verify-counts'
 import { getShell } from '@/lib/shell'
+import { verifyRowsFor, tileBadges, istGreeting } from '@/lib/dashboard/scope'
 
 export const dynamic = 'force-dynamic'
 
@@ -33,43 +37,39 @@ export default async function DashboardPage() {
   ])
   if (!profile) redirect('/login')
   const canShow = (slug: string) => !!permissions[slug]?.view && !disabledSlugs.has(slug)
-  const showCC       = canShow('cost-control')
-  const showIndents  = canShow('indents')
-  const showPos      = canShow('pos')
-  const showGrns     = canShow('grns')
-  const showInvoices = canShow('invoices')
+  const showCC = canShow('cost-control')
+  const approvalsOn = canShow('approvals')
   const supabase = await createClient()
 
   // "Needs you now" — every item across all modules waiting on THIS person's
-  // action. One RPC, already permission-scoped; drives the top of the home.
+  // action. One RPC, already permission-scoped; drives the top of the home
+  // and the count on each tile.
   const { data: inboxData, error: inboxError } = await supabase.rpc('my_approval_inbox')
   const inbox = (inboxData ?? []) as InboxItem[]
 
   // Cost Control budget approvals are grouped by project → sub-discipline (with
-  // approved-so-far → after, like My Approvals); everything else stays a simple
-  // list. The RPC already scoped to "waiting on me", so we just enrich + group.
+  // approved-so-far → after, like My Approvals); everything else is grouped by
+  // module. The RPC already scoped to "waiting on me", so we just enrich + group.
   const ccRefs = inbox
     .filter(i => i.module_slug === 'cost-control' && i.doc_id)
     .map(i => ({ docId: i.doc_id as string, docUrl: i.doc_url, urgency: i.urgency, createdAt: i.created_at }))
   const budgetProjects = ccRefs.length ? await getHomeBudgetGroups(supabase, ccRefs) : []
   const groupedIds = new Set(budgetProjects.flatMap(p => p.disciplines.flatMap(d => d.items.map(it => it.id))))
   // Anything not folded into a project group (non-CC, or a CC item whose sheet
-  // couldn't be read) stays in the simple list so nothing silently disappears.
+  // couldn't be read) stays in the module list so nothing silently disappears.
   const otherInbox = inbox.filter(i => !(i.doc_id && groupedIds.has(i.doc_id)))
 
-  // What is sitting at Verify in IN4. The same cached portfolio read the
-  // sidebar uses, so the two can never disagree; scoped here to the projects
-  // this person's own tree carries, because the home page must not name a
-  // project they cannot open.
-  const [verifyPortfolio, shellForVerify] = await Promise.all([loadVerifyPortfolio(), getShell()])
-  const visibleProjects = new Map((shellForVerify?.projects ?? []).map(p => [p.id, p]))
-  const verifyRows: VerifyRow[] = Object.entries(verifyPortfolio.byProject)
-    .filter(([projectId]) => visibleProjects.has(projectId))
-    .map(([projectId, c]) => {
-      const p = visibleProjects.get(projectId)!
-      return { projectId, label: p.code ?? p.name, indents: c.indents, wos: c.wos, pos: c.pos }
-    })
-    .sort((a, b) => (b.indents + b.wos + b.pos) - (a.indents + a.wos + a.pos) || a.label.localeCompare(b.label))
+  // What is sitting at Verify in IN4 — for the Atm Head of those projects
+  // ONLY. The `head` chair on cc_project_approvers is the Atm Head (the same
+  // rule the IN4 reminder and Bills Approval use), and the portfolio is the
+  // same cached IN4 read the sidebar uses, so the two can never disagree.
+  const [verifyPortfolio, shell, { data: headRows }] = await Promise.all([
+    loadVerifyPortfolio(),
+    getShell(),
+    supabase.from('cc_project_approvers').select('project_id').eq('user_id', profile.id).eq('role', 'head'),
+  ])
+  const headProjectIds = new Set(((headRows ?? []) as Array<{ project_id: string }>).map(r => r.project_id))
+  const verify = verifyRowsFor(verifyPortfolio, headProjectIds, shell?.projects ?? [])
 
   // Budgets this person returned that are still with the engineer. Kept out of
   // the inbox above on purpose — they are not his to approve — but he is the
@@ -94,172 +94,68 @@ export default async function DashboardPage() {
     }
   }
 
-  // Counts (lightweight, head:true) — only fetch what we'll render
-  const [indents, pos, grns, invoices, recentIndents, recentPos] = await Promise.all([
-    showIndents  ? supabase.from('indents').select('id', { count: 'exact', head: true })         : Promise.resolve({ count: 0 }),
-    showPos      ? supabase.from('purchase_orders').select('id', { count: 'exact', head: true }) : Promise.resolve({ count: 0 }),
-    showGrns     ? supabase.from('grns').select('id', { count: 'exact', head: true })            : Promise.resolve({ count: 0 }),
-    showInvoices ? supabase.from('invoices').select('id', { count: 'exact', head: true })        : Promise.resolve({ count: 0 }),
-    showIndents
-      ? supabase
-          .from('indents')
-          .select('id, indent_no, indent_date, stage, sub_project, projects(code, name)')
-          .order('indent_date', { ascending: false })
-          .limit(5)
-      : Promise.resolve({ data: null }),
-    showPos
-      ? supabase
-          .from('purchase_orders')
-          .select('id, po_no, po_date, po_amount, vendors(name), projects(code)')
-          .order('po_date', { ascending: false })
-          .limit(5)
-      : Promise.resolve({ data: null }),
-  ])
-  const showKpiStrip = showIndents || showPos || showGrns || showInvoices
-  const showRecent   = showIndents || showPos
-
-  const hour = new Date().getHours()
-  const greeting = hour < 12 ? 'Morning' : hour < 17 ? 'Afternoon' : 'Evening'
+  const firstName = profile.name || profile.full_name?.split(' ')[0] || 'there'
+  const today = new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata' })
+  const waitingTotal = inbox.length
 
   return (
     <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Good {greeting}, {profile.name || profile.full_name?.split(' ')[0] || 'there'}</h1>
-        <p className="text-gray-500 text-sm">
-          {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata' })}
+      <header className="flex flex-wrap items-end justify-between gap-x-4 gap-y-1">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Good {istGreeting()}, {firstName}</h1>
+          <p className="text-gray-500 text-sm">{today}</p>
+        </div>
+        <p className="text-sm text-gray-500 tabular-nums">
+          {waitingTotal === 0
+            ? 'Nothing waiting on you'
+            : `${waitingTotal} ${waitingTotal === 1 ? 'thing' : 'things'} waiting on you`}
+          {verify.rows.length > 0 && ` · ${verify.rows.reduce((t, r) => t + r.indents + r.wos + r.pos, 0)} to verify in IN4`}
         </p>
-      </div>
+      </header>
 
       {/* Needs you now — the actionable heart of the home, above everything else */}
-      <NeedsYouNow budgetProjects={budgetProjects} otherItems={otherInbox} totalCount={inbox.length} moduleLabels={moduleLabels} error={!!inboxError} />
+      <NeedsYouNow
+        budgetProjects={budgetProjects}
+        otherItems={otherInbox}
+        totalCount={inbox.length}
+        moduleLabels={moduleLabels}
+        error={!!inboxError}
+        approvalsOn={approvalsOn}
+      />
 
-      {/* Parked in IN4 rather than on a desk here — below the CT Hub queue,
-          in the same teal it wears on the ribbon and the projects lane.
-          Renders nothing when IN4 has nothing at Verify. */}
-      <VerifyInIn4 rows={verifyRows} unassigned={verifyPortfolio.unassigned} />
+      {/* Parked in IN4 rather than on a desk here — Atm Heads only, below the
+          CT Hub queue, in the same teal it wears on the ribbon and the
+          projects lane. Renders nothing for everyone else, and for a head
+          when IN4 has nothing at Verify. */}
+      {verify.isHead && (
+        <VerifyInIn4 rows={verify.rows} unassigned={verify.unassigned} fetchedAt={verifyPortfolio.fetchedAt} />
+      )}
 
       {/* Returned budgets — NOT the approver's to act on, so deliberately below
           "Needs you now" and quieter. A chasing list, so the loop gets closed. */}
       {showCC && <ReturnedToEngineer items={returned.items} mine={returned.mine} />}
 
-      {/* REVAMP: the rest of the hub's WORK — material requests,
-          deletions, conversation and whether the weekly uploads are current.
-          "Needs you now" above is untouched, per Aksha. Live is unaffected. */}
-      {revampOn && <WorkStrip />}
-
       {/* Your budget work — an engineer's own drafts/returns/awaiting (things
           that don't appear in the approval inbox). Self-hides when there's none. */}
       {showCC && <CostControlSnapshot counts={ccWork} />}
 
-      {/* Stat strip — each pill is independently gated by perms + module visibility */}
-      {showKpiStrip && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {showIndents  && <StatPill label="Indents"         value={indents.count ?? 0}  icon={<ClipboardList className="h-5 w-5" />} href="/indents" />}
-          {showPos      && <StatPill label="Purchase Orders" value={pos.count ?? 0}      icon={<FileText className="h-5 w-5" />}      href="/pos" />}
-          {showGrns     && <StatPill label="GRN"             value={grns.count ?? 0}     icon={<PackageCheck className="h-5 w-5" />}  href="/grns" />}
-          {showInvoices && <StatPill label="Invoices"        value={invoices.count ?? 0} icon={<Receipt className="h-5 w-5" />}       href="/invoices" />}
-        </div>
-      )}
+      {/* REVAMP: the rest of the hub's WORK — deletions, conversation and
+          whether the weekly uploads are current. Live is unaffected. */}
+      {revampOn && <WorkStrip />}
 
-      {/* Module tiles — Odoo style */}
+      {/* Module tiles — role-filtered, each with its live "waiting" count */}
       <section>
-        <h2 className="text-sm font-bold uppercase tracking-wide text-gray-500 mb-3">Apps</h2>
+        <div className="flex items-baseline justify-between mb-3">
+          <h2 className="text-sm font-bold uppercase tracking-wide text-gray-500">Apps</h2>
+          <p className="text-[11px] text-gray-400">A count on a tile is work waiting on you there</p>
+        </div>
         <TileLauncher
           permissions={permissions}
           disabledSlugs={Array.from(disabledSlugs)}
           moduleLabels={moduleLabels}
+          badges={tileBadges(inbox)}
         />
       </section>
-
-      {/* Recent activity — each card gated by its module's visibility */}
-      {showRecent && (
-      <section className={`grid grid-cols-1 ${showIndents && showPos ? 'lg:grid-cols-2' : ''} gap-4`}>
-        {showIndents && (
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-base">Recent Indents</CardTitle>
-              <Link href="/indents" className="text-xs text-blue-600 font-semibold">View all</Link>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {recentIndents.data && recentIndents.data.length > 0 ? (
-              <div className="space-y-2">
-                {recentIndents.data.map((i: { id: string; indent_no: string; indent_date: string; stage: string; sub_project: string | null; projects: { code: string; name: string } | { code: string; name: string }[] | null }) => {
-                  const proj = Array.isArray(i.projects) ? i.projects[0] : i.projects
-                  return (
-                    <Link
-                      key={i.id}
-                      href={`/indents/${i.id}`}
-                      className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0 hover:bg-gray-50 -mx-2 px-2 rounded-lg"
-                    >
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold text-gray-900 truncate">{i.indent_no}</p>
-                        <p className="text-xs text-gray-500 truncate">
-                          {proj?.code} {i.sub_project ? `· ${i.sub_project}` : ''}
-                        </p>
-                      </div>
-                      <div className="flex flex-col items-end gap-1 flex-shrink-0">
-                        <IndentStagePill stage={i.stage} />
-                        <span className="text-xs text-gray-400">{formatDate(i.indent_date)}</span>
-                      </div>
-                    </Link>
-                  )
-                })}
-              </div>
-            ) : (
-              <p className="text-sm text-gray-500 py-4 text-center">No indents yet</p>
-            )}
-          </CardContent>
-        </Card>
-        )}
-
-        {showPos && (
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-base">Recent POs</CardTitle>
-              <Link href="/pos" className="text-xs text-blue-600 font-semibold">View all</Link>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {recentPos.data && recentPos.data.length > 0 ? (
-              <div className="space-y-2">
-                {recentPos.data.map((p: { id: string; po_no: string; po_date: string; po_amount: number; vendors: { name: string } | { name: string }[] | null; projects: { code: string } | { code: string }[] | null }) => {
-                  const v = Array.isArray(p.vendors) ? p.vendors[0] : p.vendors
-                  const proj = Array.isArray(p.projects) ? p.projects[0] : p.projects
-                  const isDraft = p.po_no?.startsWith('DRAFT-')
-                  return (
-                    <Link
-                      key={p.id}
-                      href={`/pos/${p.id}`}
-                      className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0 hover:bg-gray-50 -mx-2 px-2 rounded-lg"
-                    >
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold text-gray-900 truncate flex items-center gap-1.5">
-                          {isDraft && <Badge variant="warning" className="text-[10px]">Draft</Badge>}
-                          {p.po_no}
-                        </p>
-                        <p className="text-xs text-gray-500 truncate">
-                          {v?.name} {proj?.code ? `· ${proj.code}` : ''}
-                        </p>
-                      </div>
-                      <div className="flex flex-col items-end gap-1 flex-shrink-0">
-                        <span className="text-sm font-semibold text-gray-900">{formatINR(p.po_amount)}</span>
-                        <span className="text-xs text-gray-400">{formatDate(p.po_date)}</span>
-                      </div>
-                    </Link>
-                  )
-                })}
-              </div>
-            ) : (
-              <p className="text-sm text-gray-500 py-4 text-center">No POs yet</p>
-            )}
-          </CardContent>
-        </Card>
-        )}
-      </section>
-      )}
     </div>
   )
 }

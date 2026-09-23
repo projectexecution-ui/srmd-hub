@@ -1,11 +1,17 @@
-// "Waiting to be verified in IN4" — the home-page counterpart of the teal
-// counts on the ribbon and the projects lane.
+// "For you to verify in IN4" — the Atm Head's card on the home page.
 //
 // Separate from "Needs you now" on purpose. That list is CT Hub work on this
-// person's desk; this is work parked in another system, which they may have to
-// go and clear there. Mixing the two is what made the old dashboard
+// person's desk; this is work parked in another system, which they have to go
+// and clear there. Mixing the two is what made the old dashboard
 // untrustworthy — a count you cannot act on from here does not belong in a
 // list of things you can.
+//
+// Shown ONLY to the Atm Head of the projects it names (lib/dashboard/scope.ts
+// decides; the page passes nothing for anyone else). Aksha, 23 Sep 2026: the
+// card was on every engineer's and viewer's home, and "all are getting
+// confused". The numbers are read from IN4 itself, at most a minute old — not
+// from the twice-a-day mirror — and the card now SAYS when it read them, so
+// nobody has to guess whether they are live.
 //
 // Self-hides when there is nothing at Verify.
 
@@ -35,13 +41,20 @@ function words(r: { indents: number; wos: number; pos: number }): string {
     : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`
 }
 
+/** "09:41 am" in IST — the time only; the date is today's or the card is stale anyway. */
+function istTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' })
+}
+
 export function VerifyInIn4({
-  rows, unassigned,
+  rows, unassigned, fetchedAt,
 }: {
   rows: VerifyRow[]
   /** At Verify, but on no sub-project CT Hub knows — so no project row can
    *  carry it. Shown rather than dropped: it is real work either way. */
   unassigned: { indents: number; wos: number; pos: number }
+  /** When IN4 was read (ISO); null when it could not be reached. */
+  fetchedAt: string | null
 }) {
   const loose = unassigned.indents + unassigned.wos + unassigned.pos
   if (rows.length === 0 && loose === 0) return null
@@ -53,10 +66,10 @@ export function VerifyInIn4({
       <div className="px-4 py-2.5 border-b border-slate-100 bg-teal-50/50 flex items-center gap-2 flex-wrap">
         <h3 className="font-bold text-slate-800 text-sm inline-flex items-center gap-1.5">
           <ClipboardCheck className="h-4 w-4 text-teal-600" />
-          Waiting to be verified in IN4 · {total}
+          For you to verify in IN4 · {total}
         </h3>
-        <span className="ml-auto text-[11px] text-slate-500">
-          Cleared in IN4, not here
+        <span className="ml-auto text-[11px] text-slate-500 tabular-nums">
+          {fetchedAt ? `Read from IN4 at ${istTime(fetchedAt)} IST · refreshes every minute` : 'IN4 could not be reached'}
         </span>
       </div>
 
@@ -65,7 +78,7 @@ export function VerifyInIn4({
           <Link
             key={r.projectId}
             href={`/project/${r.projectId}`}
-            className="flex items-center gap-2 px-4 py-2.5 hover:bg-slate-50/70 transition"
+            className="flex items-center gap-2 px-4 py-2.5 hover:bg-slate-50/70 transition min-h-[44px]"
           >
             <span className="font-semibold text-slate-800 text-[13px] truncate">{r.label}</span>
             <span className="text-[11.5px] text-slate-500 truncate">{words(r)}</span>
@@ -93,6 +106,10 @@ export function VerifyInIn4({
           </div>
         )}
       </div>
+
+      <p className="px-4 py-2 text-[11px] text-slate-500 border-t border-slate-100 bg-slate-50/60">
+        These are cleared in IN4, not here. Once you verify there, this card updates within a minute.
+      </p>
     </Card>
   )
 }
