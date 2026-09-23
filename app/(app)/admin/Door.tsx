@@ -4,10 +4,11 @@ import { PageHeader } from '@/components/PageHeader'
 import { tabHref, type Door, type DoorTab } from '@/lib/admin/doors'
 
 /**
- * One door of the Admin: the door's name, its tabs as a row of 44 px pills,
- * and the current tab's screen under them. Tabs are links (`?tab=`), so the
- * server renders only the screen asked for and every tab has an address that
- * can be bookmarked or sent.
+ * One door of the Admin, inside the console pane: the door's name, its tabs
+ * as a row of 44 px pills, and the current tab's screen under them. Tabs are
+ * links (`?tab=`), so the server renders only the screen asked for and every
+ * tab has an address that can be bookmarked or sent. The rail on the left is
+ * the way between doors, so there is no Back link here.
  */
 export function AdminDoor({ door, tabs, current, actions, children }: {
   door: Door
@@ -18,8 +19,8 @@ export function AdminDoor({ door, tabs, current, actions, children }: {
   children: ReactNode
 }) {
   return (
-    <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-4">
-      <PageHeader title={door.label} back="/admin" subtitle={door.hint} className="mb-0">
+    <div className="space-y-4">
+      <PageHeader title={door.label} subtitle={door.hint} className="mb-0">
         {actions}
       </PageHeader>
       {tabs.length > 1 && (
@@ -52,9 +53,9 @@ export function AdminDoor({ door, tabs, current, actions, children }: {
  *  door exists; it simply holds nothing they may change. */
 export function NothingHere({ door }: { door: Door }) {
   return (
-    <div className="p-4 md:p-6 max-w-3xl mx-auto">
-      <PageHeader title={door.label} back="/admin" subtitle={door.hint} />
-      <p className="mt-4 text-sm text-gray-500">Nothing here is yours to change. If it should be, ask an admin to widen your role on <Link href="/admin" className="text-indigo-700 hover:underline">Admin</Link>.</p>
+    <div className="space-y-4">
+      <PageHeader title={door.label} subtitle={door.hint} className="mb-0" />
+      <p className="text-sm text-gray-500">Nothing here is yours to change. If it should be, ask an admin to widen your role on <Link href="/admin" className="text-indigo-700 hover:underline">Admin</Link>.</p>
     </div>
   )
 }
