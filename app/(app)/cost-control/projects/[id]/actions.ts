@@ -10,6 +10,7 @@ import { requirePermission, getMyProfile, getMyPermissions, can } from '@/lib/au
 import { checkIsCcReviewer } from '@/components/cost-control/ws-actions'
 import { canMarkComplete } from '@/lib/cost-control/completion'
 import { formatINR } from '@/lib/utils'
+import { kindOf, parentError, kindChangeError, parentKindFor, type ProjectKind } from '@/lib/projects/kind'
 
 const uuid = z.string().uuid()
 const isoDateOrNull = z
@@ -285,10 +286,10 @@ async function auditProjectEdit(
 }
 
 // ============================================================
-// Set / clear the PARENT project (grouping) — ADMIN only. Keeps the
-// hierarchy exactly one level deep: the chosen parent must itself be
-// top-level, and a project that already has sub-projects can't be demoted
-// into a child. Clearing (null) makes the project top-level again.
+// Set / clear the PARENT — ADMIN only. Three fixed levels since 23 Sep 2026
+// (Aksha, H1): a project may sit under a group or stand alone; a sub-project
+// must sit under a project; a group is always top-level. The words and the
+// checks are lib/projects/kind.ts; the database trigger holds the same rules.
 // ============================================================
 export async function setProjectParent(
   projectId: string,
@@ -303,22 +304,18 @@ export async function setProjectParent(
   if (parentId === projectId) return { ok: false, error: 'A project can’t be its own parent' }
 
   const supabase = await createClient()
+  const { data: me } = await supabase.from('projects').select('project_type').eq('id', projectId).maybeSingle()
+  if (!me) return { ok: false, error: 'Project not found' }
+  const kind = kindOf(me.project_type as string | null)
 
+  let parent: { kind: ProjectKind } | null = null
   if (parentId != null) {
-    // Chosen parent must be top-level — we keep grouping one level deep.
-    const { data: par } = await supabase
-      .from('projects').select('id, parent_project_id').eq('id', parentId).maybeSingle()
+    const { data: par } = await supabase.from('projects').select('id, project_type').eq('id', parentId).maybeSingle()
     if (!par) return { ok: false, error: 'Parent project not found' }
-    if (par.parent_project_id) {
-      return { ok: false, error: 'Pick a top-level project as the parent — that one is itself a sub-project' }
-    }
-    // This project must not already have its own sub-projects.
-    const { data: kids } = await supabase
-      .from('projects').select('id').eq('parent_project_id', projectId).limit(1)
-    if (kids && kids.length > 0) {
-      return { ok: false, error: 'This project has sub-projects — move them out first before making it a sub-project' }
-    }
+    parent = { kind: kindOf(par.project_type as string | null) }
   }
+  const why = parentError(kind, parent)
+  if (why) return { ok: false, error: why }
 
   const { data, error } = await supabase
     .from('projects')
@@ -332,6 +329,56 @@ export async function setProjectParent(
   revalidatePath(`/cost-control/projects/${projectId}`)
   revalidatePath(`/cost-control/projects/${projectId}/setup`)
   return { ok: true }
+}
+
+// ============================================================
+// Change the KIND — Group / Project / Sub-project — ADMIN only. What already
+// sits under the row decides what it may become; the parent follows the new
+// kind (a group drops its parent; a project keeps a group parent and drops
+// any other; a sub-project needs a project picked, so it keeps a project
+// parent and otherwise asks).
+// ============================================================
+export async function setProjectKind(
+  projectId: string,
+  next: ProjectKind,
+): Promise<{ ok: boolean; error?: string; parentId?: string | null }> {
+  const profile = await getMyProfile()
+  if (profile?.role !== 'admin') return { ok: false, error: 'Only an Admin can change what kind of project this is' }
+  if (!uuid.safeParse(projectId).success) return { ok: false, error: 'Bad project id' }
+
+  const supabase = await createClient()
+  const [{ data: me }, { data: kids }] = await Promise.all([
+    supabase.from('projects').select('project_type, parent_project_id').eq('id', projectId).maybeSingle(),
+    supabase.from('projects').select('project_type').eq('parent_project_id', projectId).is('archived_at', null),
+  ])
+  if (!me) return { ok: false, error: 'Project not found' }
+  const blocked = kindChangeError(next, (kids ?? []).map(k => kindOf(k.project_type as string | null)))
+  if (blocked) return { ok: false, error: blocked }
+
+  // Does the current parent still fit? Keep it when it does, drop it when a
+  // kind allows none, and refuse when the kind needs one that is not there.
+  let parentId: string | null = (me.parent_project_id as string | null) ?? null
+  if (parentId) {
+    const { data: par } = await supabase.from('projects').select('project_type').eq('id', parentId).maybeSingle()
+    const parKind = par ? kindOf(par.project_type as string | null) : null
+    if (parKind !== parentKindFor(next)) parentId = null
+  }
+  if (next === 'subproject' && !parentId) {
+    return { ok: false, error: 'A sub-project must sit under a project — pick the project first, then change the kind.' }
+  }
+
+  const { data, error } = await supabase
+    .from('projects')
+    .update({ project_type: next, parent_project_id: parentId })
+    .eq('id', projectId)
+    .select('id')
+  if (error) return { ok: false, error: error.message }
+  if (!data || data.length === 0) return { ok: false, error: 'Change was blocked — check your permissions' }
+
+  revalidatePath('/cost-control')
+  revalidatePath(`/cost-control/projects/${projectId}`)
+  revalidatePath(`/cost-control/projects/${projectId}/setup`)
+  return { ok: true, parentId }
 }
 
 // ============================================================

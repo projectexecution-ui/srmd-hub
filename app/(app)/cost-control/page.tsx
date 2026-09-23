@@ -339,7 +339,10 @@ export default async function CostControlLandingPage() {
   for (const p of ccProjects) {
     // Children render inside their parent's group, not at top level.
     if (p.parent_project_id && projById.has(p.parent_project_id)) continue
+    // Three levels (H1): a project under a group may hold sub-projects, which
+    // follow their project in the band rather than vanishing.
     const kids = (childrenOf.get(p.id) ?? []).slice().sort((a, b) => a.code.localeCompare(b.code))
+      .flatMap(k => [k, ...(childrenOf.get(k.id) ?? []).slice().sort((a, b) => a.code.localeCompare(b.code))])
     // Group heading = the admin's custom group name, else the parent's short
     // code (e.g. "NGH", "P2", "VV") — never the parent's full name, which can
     // carry extra words ("NGH Infra").

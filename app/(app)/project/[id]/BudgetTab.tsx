@@ -59,7 +59,9 @@ export async function BudgetTab({ projectId, view, focus }: {
   // any project with children got the roll-up, and Admin Block's own ₹1.43 Cr
   // was unreachable behind its children's ₹33.7 L.
   const shape = await projectShape(projectId)
-  if (shape.children > 0 && !shape.ownData) return <GroupBudgetView projectId={projectId} />
+  // A group (H1) is the roll-up; so is a parent that has children and no data
+  // of its own, the rule the sidebar and shell_for still share.
+  if (shape.kind === 'group' || (shape.children > 0 && !shape.ownData)) return <GroupBudgetView projectId={projectId} />
 
   const estimate = (
     <ProjectInternalEstimatePage
@@ -86,12 +88,13 @@ export async function BudgetTab({ projectId, view, focus }: {
  *  milliseconds before its estimate loads. `ownData` mirrors shell_for's
  *  hasOwnData (a budget line or a working sheet) so the tab and the sidebar
  *  can never disagree about what is a group. */
-async function projectShape(projectId: string): Promise<{ children: number; ownData: boolean }> {
+async function projectShape(projectId: string): Promise<{ children: number; ownData: boolean; kind: string }> {
   const supabase = await createClient()
-  const [kids, lines, sheets] = await Promise.all([
+  const [me, kids, lines, sheets] = await Promise.all([
+    supabase.from('projects').select('project_type').eq('id', projectId).maybeSingle(),
     supabase.from('projects').select('id', { count: 'exact', head: true }).eq('parent_project_id', projectId).is('archived_at', null),
     supabase.from('cc_budget_lines').select('id', { count: 'exact', head: true }).eq('project_id', projectId),
     supabase.from('cc_working_sheets').select('id', { count: 'exact', head: true }).eq('project_id', projectId),
   ])
-  return { children: kids.count ?? 0, ownData: (lines.count ?? 0) > 0 || (sheets.count ?? 0) > 0 }
+  return { children: kids.count ?? 0, ownData: (lines.count ?? 0) > 0 || (sheets.count ?? 0) > 0, kind: (me.data?.project_type as string | null) ?? 'project' }
 }

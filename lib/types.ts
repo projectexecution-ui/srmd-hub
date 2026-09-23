@@ -82,7 +82,7 @@ export interface Project {
   status: string | null
   /** Physical location / address. Optional. */
   location: string | null
-  /** 'individual' | 'group' — group projects parent sub-projects via parent_project_id. */
+  /** 'group' | 'project' | 'subproject' — three fixed levels via parent_project_id (lib/projects/kind.ts). */
   project_type: string | null
   parent_project_id: string | null
   // Area Statement (matches budget-hub.html template)

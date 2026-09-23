@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { CheckCircle2, Circle } from 'lucide-react'
+import { KIND_LABEL, KIND_HINT, allowedParents, type ProjectKind } from '@/lib/projects/kind'
 import {
   createProjectBasics,
   setProjectDisciplines,
@@ -18,6 +19,11 @@ export interface ParentProjectOption {
   id: string
   code: string
   name: string
+  /** Group / Project / Sub-project (H1) — the picker offers groups to a new
+   *  project and projects to a new sub-project. */
+  kind: ProjectKind
+  /** The group a project sits in, for "NGH A · NGH" in the list. */
+  parentLabel?: string | null
 }
 
 export interface UserOption {
@@ -128,6 +134,8 @@ export function ProjectSetupWizard({
       return
     }
     setProjectId(res.projectId)
+    // A group holds no categories of its own — it is finished at step 1.
+    if (res.kind === 'group') { router.push(`/cost-control/projects/${res.projectId}`); return }
     setStep(2)
   }
 
@@ -301,9 +309,11 @@ function Step1Basics({
   fieldErrors: Record<string, string[]>
   onSubmit: (fd: FormData) => Promise<void>
 }) {
-  // Main vs sub — the one choice people kept getting lost on. Make it an
-  // explicit, up-front pick instead of a quiet "optional parent" dropdown.
-  const [isSub, setIsSub] = React.useState(false)
+  // Group / Project / Sub-project — three fixed levels (Aksha, 23 Sep 2026,
+  // H1), picked up front. The parent list follows the kind, so a building
+  // like NGH A is offered to a new sub-project — the old two-way choice
+  // never could.
+  const [kind, setKind] = React.useState<ProjectKind>('project')
   const [name, setName] = React.useState('')
   const [codeText, setCodeText] = React.useState('')
   const [codeEdited, setCodeEdited] = React.useState(false)
@@ -322,6 +332,7 @@ function Step1Basics({
   // Auto-fill the code from the name until the user overrides it.
   const codeValue = codeEdited ? codeText : deriveCode(name)
   const parent = parentProjects.find(p => p.id === parentId) ?? null
+  const parentChoices = allowedParents(kind, parentProjects)
 
   function err(field: string) {
     const e = fieldErrors[field]
@@ -333,62 +344,63 @@ function Step1Basics({
       <h2 className="text-lg font-semibold text-gray-900 mb-1">Project basics</h2>
       <p className="text-sm text-gray-500 mb-4">Takes ~30 seconds. You can finish the rest later.</p>
 
-      {/* The main/sub choice, up front and obvious. */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-5">
-        <TypeChoice
-          active={!isSub}
-          title="Main project"
-          hint="A top-level project — e.g. Admin Block"
-          onClick={() => { setIsSub(false); setParentId('') }}
-          disabled={busy}
-        />
-        <TypeChoice
-          active={isSub}
-          title="Sub-project"
-          hint="A part of an existing project — e.g. its Ground Floor"
-          onClick={() => setIsSub(true)}
-          disabled={busy}
-        />
+      {/* The kind, up front and obvious. */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-5">
+        {(['group', 'project', 'subproject'] as ProjectKind[]).map(k => (
+          <TypeChoice
+            key={k}
+            active={kind === k}
+            title={KIND_LABEL[k]}
+            hint={KIND_HINT[k]}
+            onClick={() => { setKind(k); setParentId('') }}
+            disabled={busy}
+          />
+        ))}
       </div>
 
       <form
         action={onSubmit}
         className="grid grid-cols-1 md:grid-cols-2 gap-4"
       >
-        {isSub && (
+        <input type="hidden" name="project_type" value={kind} />
+        {kind !== 'group' && (
           <div className="md:col-span-2">
-            <Label htmlFor="parent_project_id">Part of which project? *</Label>
+            <Label htmlFor="parent_project_id">{kind === 'project' ? 'In which group? (optional)' : 'Part of which project? *'}</Label>
             <select
               id="parent_project_id"
               name="parent_project_id"
-              required
+              required={kind === 'subproject'}
               value={parentId}
               onChange={e => setParentId(e.target.value)}
               className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
               disabled={busy}
             >
-              <option value="">— choose the parent project —</option>
-              {parentProjects.map(p => (
-                <option key={p.id} value={p.id}>{p.code} · {p.name}</option>
+              {kind === 'project'
+                ? <option value="">None — stands on its own</option>
+                : <option value="">— choose the project —</option>}
+              {parentChoices.map(p => (
+                <option key={p.id} value={p.id}>{p.code} · {p.name}{p.parentLabel ? ` · ${p.parentLabel}` : ''}</option>
               ))}
             </select>
             <p className="mt-1 text-xs text-gray-500">
-              It shows grouped under {parent ? <b>{parent.name}</b> : 'this project'} on the Internal Estimate.
+              {parent
+                ? <>It shows under <b>{parent.name}</b>, and its money rolls up into it.</>
+                : kind === 'project' ? 'Pick a group if this building belongs to one — NGH, P2, VV, RU.' : 'Every project is offered, including the buildings inside a group.'}
             </p>
           </div>
         )}
 
         <div className="md:col-span-2">
-          <Label htmlFor="name">{isSub ? 'Sub-project name *' : 'Project name *'}</Label>
+          <Label htmlFor="name">{KIND_LABEL[kind]} name *</Label>
           <Input
             id="name" name="name" required disabled={busy}
             value={name} onChange={e => setName(e.target.value)}
-            placeholder={isSub ? 'e.g. Admin Block Ground Floor' : 'e.g. Admin Block'}
+            placeholder={kind === 'subproject' ? 'e.g. Admin Block Ground Floor' : kind === 'group' ? 'e.g. NGH' : 'e.g. Admin Block'}
           />
           <p className="mt-1 text-xs text-gray-500">
-            {isSub
-              ? 'Keep the parent name in front so lists stay clear — e.g. “Admin Block Ground Floor”, “Admin Block 1st Floor”.'
-              : 'The building or scope this project covers.'}
+            {kind === 'subproject'
+              ? 'Keep the project name in front so lists stay clear — e.g. “Admin Block Ground Floor”, “Admin Block 1st Floor”.'
+              : kind === 'group' ? 'The programme name people say — the buildings go under it.' : 'The building or scope this project covers.'}
           </p>
           {err('name')}
         </div>
@@ -410,6 +422,7 @@ function Step1Basics({
           <Input id="built_up_sft" name="built_up_sft" type="number" placeholder="e.g. 12000" disabled={busy} />
         </div>
 
+        {kind !== 'group' && (
         <div className="md:col-span-2">
           <Label>Atm Head <span className="text-red-600">*</span> <span className="font-normal text-gray-400">(sign-off)</span></Label>
           {atmHeads.length === 0 ? (
@@ -442,6 +455,7 @@ function Step1Basics({
             <input key={id} type="hidden" name="atm_head_ids" value={id} />
           ))}
         </div>
+        )}
 
         <div>
           <Label htmlFor="start_date">Start date</Label>
@@ -454,11 +468,11 @@ function Step1Basics({
         </div>
 
         <div className="md:col-span-2 flex items-center justify-end gap-3">
-          {pickedHeads.size === 0 && (
+          {kind !== 'group' && pickedHeads.size === 0 && (
             <span className="text-xs text-gray-400">Pick an Atm Head to continue</span>
           )}
-          <Button type="submit" disabled={busy || pickedHeads.size === 0}>
-            {busy ? 'Creating…' : (isSub ? 'Create sub-project' : 'Create project')}
+          <Button type="submit" disabled={busy || (kind !== 'group' && pickedHeads.size === 0)}>
+            {busy ? 'Creating…' : `Create ${KIND_LABEL[kind].toLowerCase()}`}
           </Button>
         </div>
       </form>

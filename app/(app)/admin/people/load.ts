@@ -18,7 +18,7 @@ export async function loadPeopleData(): Promise<PeopleData> {
   const [usersRes, overridesRes, projectsRes, approversRes, assignRes, hiddenRes, knownRes, in4Res, settingsRes, prefsRes, roleLabels, billsLabels] = await Promise.all([
     supabase.from('profiles').select('id, full_name, email, role').eq('is_active', true).order('role').order('full_name'),
     supabase.from('user_module_roles').select('user_id, role').eq('module_slug', 'cost-control'),
-    supabase.from('projects').select('id, code, name, short_name, parent_project_id').is('archived_at', null).order('code'),
+    supabase.from('projects').select('id, code, name, short_name, parent_project_id, project_type').is('archived_at', null).order('code'),
     supabase.from('cc_project_approvers').select('project_id, user_id, role'),
     supabase.from('project_assignments').select('user_id, project_id'),
     supabase.from('procurement_user_project_visibility').select('user_id, project_name'),
@@ -41,10 +41,10 @@ export async function loadPeopleData(): Promise<PeopleData> {
     ccRole: overrides.get(u.id) ?? u.role,
   }))
 
-  const rawProjects = (projectsRes.data ?? []) as Array<{ id: string; code: string | null; name: string; short_name: string | null; parent_project_id: string | null }>
-  const parentIds = new Set(rawProjects.map(p => p.parent_project_id).filter(Boolean) as string[])
+  const rawProjects = (projectsRes.data ?? []) as Array<{ id: string; code: string | null; name: string; short_name: string | null; parent_project_id: string | null; project_type: string | null }>
   const projects: ProjectRow[] = rawProjects.map(p => ({
-    id: p.id, label: p.short_name?.trim() || p.code || p.name, name: p.name, code: p.code ?? '', shortName: p.short_name?.trim() ?? '', isGroup: parentIds.has(p.id),
+    // A GROUP (H1) has no people of its own; a project that holds sub-projects still does.
+    id: p.id, label: p.short_name?.trim() || p.code || p.name, name: p.name, code: p.code ?? '', shortName: p.short_name?.trim() ?? '', isGroup: p.project_type === 'group',
   }))
 
   const settings = new Map(((settingsRes.data ?? []) as Array<{ key: string; value: string }>).map(r => [r.key, r.value]))

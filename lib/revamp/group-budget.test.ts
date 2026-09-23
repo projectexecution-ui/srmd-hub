@@ -53,3 +53,19 @@ describe('rollupGroupTotal', () => {
     expect(t.builtUpSft).toBeNull()
   })
 })
+
+// Three levels since 23 Sep 2026 (H1): a project's figure in a group is its
+// own money plus everything under it.
+describe('addMoney', () => {
+  it('sums every figure and re-derives the percent from the sums', async () => {
+    const { addMoney } = await import('./group-budget')
+    const a = { internalEstimate: 100, awaitingApproval: 10, budgetErp: 200, wo: 150, paid: 50, usedPct: 25, awaitingCount: 1 }
+    const b = { internalEstimate: 300, awaitingApproval: 0, budgetErp: 200, wo: 100, paid: 150, usedPct: 75, awaitingCount: 2 }
+    expect(addMoney(a, b)).toEqual({ internalEstimate: 400, awaitingApproval: 10, budgetErp: 400, wo: 250, paid: 200, usedPct: 50, awaitingCount: 3 })
+  })
+  it('no ERP budget on either side means no percent, not 0', async () => {
+    const { addMoney } = await import('./group-budget')
+    const z = { internalEstimate: 0, awaitingApproval: 0, budgetErp: 0, wo: 0, paid: 0, usedPct: null, awaitingCount: 0 }
+    expect(addMoney(z, z).usedPct).toBeNull()
+  })
+})

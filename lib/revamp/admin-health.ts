@@ -98,7 +98,8 @@ export async function loadHealth(): Promise<HealthFinding[]> {
   const supabase = await createClient()
 
   const [projRes, apprRes, permRes, profRes, settingsRes, rulesRes] = await Promise.all([
-    supabase.from('projects').select('id, built_up_sft').is('archived_at', null),
+    // Groups (H1) hold no area or approvers of their own and are not counted.
+    supabase.from('projects').select('id, built_up_sft').is('archived_at', null).neq('project_type', 'group'),
     supabase.from('cc_project_approvers').select('project_id'),
     supabase.from('role_permissions').select('role'),
     supabase.from('profiles').select('id, role, full_name').eq('is_active', true),

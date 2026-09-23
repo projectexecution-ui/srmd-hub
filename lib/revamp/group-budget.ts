@@ -68,9 +68,23 @@ export function rollupGroupTotal(children: GroupChild[]): GroupTotal {
   }
 }
 
-/** Direct children of a parent project, each with its own money roll-up, plus
- *  the group total. Cached per request. Direct children only — NGH's children
- *  are leaves; deeper nesting would need recursion, and there is none today. */
+/** a + b, with the % re-derived — never averaged. */
+export function addMoney(a: CockpitMoney, b: CockpitMoney): CockpitMoney {
+  const budgetErp = a.budgetErp + b.budgetErp
+  const paid = a.paid + b.paid
+  return {
+    internalEstimate: a.internalEstimate + b.internalEstimate,
+    awaitingApproval: a.awaitingApproval + b.awaitingApproval,
+    budgetErp, wo: a.wo + b.wo, paid,
+    usedPct: budgetErp > 0 ? Math.round((paid / budgetErp) * 100) : null,
+    awaitingCount: a.awaitingCount + b.awaitingCount,
+  }
+}
+
+/** Direct children of a parent, each with its money roll-up, plus the group
+ *  total. Since 23 Sep 2026 (Aksha, H1) the tree is three levels deep — a
+ *  project under a group may hold sub-projects — so a child's figure is its
+ *  own money PLUS everything under it, by recursion. Cached per request. */
 export const loadGroupBudget = cache(async (parentId: string): Promise<GroupBudget> => {
   const supabase = await createClient()
   const { data } = await supabase
@@ -87,16 +101,17 @@ export const loadGroupBudget = cache(async (parentId: string): Promise<GroupBudg
   }>
 
   const children: GroupChild[] = await Promise.all(kids.map(async k => {
-    const c = await loadCockpit(k.id)
+    const [c, below] = await Promise.all([loadCockpit(k.id), loadGroupBudget(k.id)])
+    const own = c?.money ?? EMPTY_MONEY
     return {
       id: k.id,
       code: k.code ?? null,
       chip: projectChip(k.short_name, k.code) || null,
       name: k.name,
       ccStatus: k.cc_status ?? null,
-      builtUpSft: k.built_up_sft != null ? Number(k.built_up_sft) : null,
+      builtUpSft: k.built_up_sft != null ? Number(k.built_up_sft) : below.total.builtUpSft,
       setupPct: Number(k.setup_progress_pct ?? 0),
-      money: c?.money ?? EMPTY_MONEY,
+      money: below.children.length > 0 ? addMoney(own, below.total) : own,
     }
   }))
 

@@ -49,9 +49,17 @@ describe('buildProjectTree', () => {
     expect(t).toHaveLength(1)
     expect(t[0].id).toBe('a')
   })
-  it('flattens anything deeper than two levels up to the top', () => {
-    const t = buildProjectTree([P('g', 'G', 'Group'), P('m', 'M', 'Mid', 'g'), P('leaf', 'L', 'Leaf', 'm')])
-    expect(t.map(x => x.id).sort()).toEqual(['g', 'leaf'])
+  // Three fixed levels since 23 Sep 2026 (H1): Group → Project → Sub-project.
+  it('nests a third level under its project instead of flattening it up', () => {
+    const t = buildProjectTree([P('g', 'G', 'Group', null, 'G', false), P('m', 'M', 'Mid', 'g', null, true), P('leaf', 'L', 'Leaf', 'm', null, true)])
+    expect(t.map(x => x.id)).toEqual(['g'])
+    expect(t[0].anchor).toBe(true)
+    expect(t[0].children.map(c => c.id)).toEqual(['m'])
+    expect(t[0].children[0].children.map(c => c.id)).toEqual(['leaf'])
+    // A project holding a sub-project is not an anchor — it has data of its own.
+    expect(t[0].children[0].anchor).toBe(false)
+    // The count badge reaches the third level and skips the anchor.
+    expect(countTree(t)).toBe(2)
   })
   it('sorts numerically so A02 comes before A10', () => {
     const t = buildProjectTree([P('p', 'P2', 'P2', null, 'P2'), P('x', 'P2 A10', 'A10', 'p'), P('y', 'P2 A02', 'A02', 'p')])

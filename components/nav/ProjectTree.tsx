@@ -9,7 +9,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import { Building2, ChevronDown, ChevronRight, FolderKanban, Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { buildProjectTree, countTree, projectIdFromPath, type FlatProject } from '@/lib/project-tree'
+import { buildProjectTree, countTree, projectIdFromPath, type FlatProject, type TreeProject } from '@/lib/project-tree'
 import { projectHref } from '@/lib/revamp/tabs'
 import { isRevampNow } from '@/lib/revamp/live'
 import { readOpenMap, writeOpenMap, readFlag, writeFlag } from '@/lib/nav-prefs'
@@ -98,6 +98,45 @@ export function ProjectTree({ projects, approvals = {}, verify = {}, mobile = fa
     active ? 'text-blue-700 bg-blue-50 font-medium' : 'text-gray-700 hover:bg-gray-50',
   )
 
+  // A child row. Since 23 Sep 2026 (H1) a child may itself hold sub-projects;
+  // those fold behind a "+N" the same way a project's do at the top level.
+  const renderChild = (c: TreeProject): React.ReactNode => {
+    const link = (
+      <Link href={projectHref(c.id, revamp)} onClick={onNavigate} className={cn(linkCls(c.id === activeId), c.children.length > 0 ? 'flex-1 min-w-0' : '')} title={c.name}>
+        <span className="truncate">{c.label}</span>
+        {(approvals[c.id] ?? 0) > 0 && <WaitPill n={approvals[c.id]} className="ml-auto" />}
+        {(verify[c.id] ?? 0) > 0 && <VerifyPill n={verify[c.id]} className={(approvals[c.id] ?? 0) > 0 ? 'ml-1' : 'ml-auto'} />}
+      </Link>
+    )
+    if (c.children.length === 0) return <div key={c.id}>{link}</div>
+    const kidsActive = c.children.some(s => s.id === activeId)
+    const o = needle ? true : isOpen(c.id, kidsActive)
+    return (
+      <div key={c.id}>
+        <div className="flex items-center">
+          {link}
+          <button
+            type="button"
+            onClick={() => toggle(c.id, kidsActive)}
+            aria-expanded={o}
+            aria-label={`${o ? 'Hide' : 'Show'} ${c.children.length} sub-project${c.children.length === 1 ? '' : 's'}`}
+            className={cn(
+              'ml-0.5 inline-flex items-center justify-center rounded-full border border-dashed border-gray-300 text-[10px] font-semibold tabular-nums text-gray-500 hover:bg-gray-100 hover:text-gray-800 flex-shrink-0',
+              mobile ? 'min-h-[44px] min-w-[44px] px-2' : 'h-[18px] px-1.5',
+            )}
+          >
+            {o ? '−' : '+'}{c.children.length}
+          </button>
+        </div>
+        {o && (
+          <div className={cn('space-y-0.5 border-l border-gray-100', mobile ? 'ml-5 pl-2' : 'ml-4 pl-2')}>
+            {c.children.map(s => renderChild(s))}
+          </div>
+        )}
+      </div>
+    )
+  }
+
   if (collapsed && !mobile) {
     return (
       <Link href="/cost-control" title={`Projects (${countTree(tree)})`} className={cn('flex items-center justify-center px-2 py-2.5 my-0.5 rounded-xl text-sm font-medium', (pathname.startsWith('/cost-control') || pathname.startsWith('/project/')) ? 'text-blue-700 bg-blue-50' : 'text-gray-700 hover:bg-gray-50')}>
@@ -164,7 +203,7 @@ export function ProjectTree({ projects, approvals = {}, verify = {}, mobile = fa
             <p className="px-2 py-1.5 text-[12px] text-gray-500">No project matches “{q.trim()}”.</p>
           )}
           {shown.map(g => {
-            const hasActive = g.id === activeId || g.children.some(c => c.id === activeId)
+            const hasActive = g.id === activeId || g.children.some(c => c.id === activeId || c.children.some(s => s.id === activeId))
             if (g.children.length === 0) {
               return (
                 <Link key={g.id} href={projectHref(g.id, revamp)} onClick={onNavigate} className={linkCls(g.id === activeId)} title={g.name}>
@@ -208,13 +247,7 @@ export function ProjectTree({ projects, approvals = {}, verify = {}, mobile = fa
                   </div>
                   {o && (
                     <div className={cn('space-y-0.5 border-l border-gray-100', mobile ? 'ml-5 pl-2' : 'ml-4 pl-2')}>
-                      {g.children.map(c => (
-                        <Link key={c.id} href={projectHref(c.id, revamp)} onClick={onNavigate} className={linkCls(c.id === activeId)} title={c.name}>
-                          <span className="truncate">{c.label}</span>
-                          {(approvals[c.id] ?? 0) > 0 && <WaitPill n={approvals[c.id]} className="ml-auto" />}
-                          {(verify[c.id] ?? 0) > 0 && <VerifyPill n={verify[c.id]} className={(approvals[c.id] ?? 0) > 0 ? 'ml-1' : 'ml-auto'} />}
-                        </Link>
-                      ))}
+                      {g.children.map(c => renderChild(c))}
                     </div>
                   )}
                 </div>
@@ -238,14 +271,8 @@ export function ProjectTree({ projects, approvals = {}, verify = {}, mobile = fa
                 </div>
                 {o && (
                   <div className={cn('space-y-0.5 border-l border-gray-100', mobile ? 'ml-5 pl-2' : 'ml-4 pl-2')}>
-                    {g.children.map(c => (
-                      <Link key={c.id} href={projectHref(c.id, revamp)} onClick={onNavigate} className={linkCls(c.id === activeId)} title={c.name}>
-                        {/* label, not code: NGH Infra's code is "NGH", which inside the NGH group read as its own parent. */}
-                        <span className="truncate">{c.label}</span>
-                        {(approvals[c.id] ?? 0) > 0 && <WaitPill n={approvals[c.id]} className="ml-auto" />}
-                        {(verify[c.id] ?? 0) > 0 && <VerifyPill n={verify[c.id]} className={(approvals[c.id] ?? 0) > 0 ? 'ml-1' : 'ml-auto'} />}
-                      </Link>
-                    ))}
+                    {/* label, not code: NGH Infra's code is "NGH", which inside the NGH group read as its own parent. */}
+                    {g.children.map(c => renderChild(c))}
                   </div>
                 )}
               </div>

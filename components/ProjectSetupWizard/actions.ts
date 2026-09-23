@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { getMyUser } from '@/lib/auth'
+import { kindOf, parentError, type ProjectKind } from '@/lib/projects/kind'
 
 // ============================================================
 // Step 1 — Project basics (FULLY WIRED)
@@ -13,6 +14,8 @@ import { getMyUser } from '@/lib/auth'
 const basicsSchema = z.object({
   name: z.string().min(2, 'Project name required'),
   code: z.string().min(1, 'Short code required'),
+  /** Group / Project / Sub-project (H1). */
+  project_type: z.enum(['group', 'project', 'subproject']).default('project'),
   parent_project_id: z.string().uuid().nullable().optional(),
   built_up_sft: z.coerce.number().nonnegative().nullable().optional(),
   pm_user_id: z.string().uuid().nullable().optional(),
@@ -21,7 +24,7 @@ const basicsSchema = z.object({
 })
 
 export type CreateProjectResult =
-  | { ok: true; projectId: string }
+  | { ok: true; projectId: string; kind: ProjectKind }
   | { ok: false; error: string; fieldErrors?: Record<string, string[]> }
 
 /**
@@ -43,6 +46,7 @@ export async function createProjectBasics(formData: FormData): Promise<CreatePro
   const parsed = basicsSchema.safeParse({
     name: formData.get('name'),
     code: formData.get('code'),
+    project_type: (formData.get('project_type') as string) || 'project',
     parent_project_id: (formData.get('parent_project_id') as string) || null,
     built_up_sft: formData.get('built_up_sft') || null,
     // Keep pm_user_id pointing at the first Atm Head so any "PM" display stays
@@ -63,7 +67,9 @@ export async function createProjectBasics(formData: FormData): Promise<CreatePro
   // Every project must open WITH its Atm Head. Without one, approval mails fall
   // back to blasting EVERY Atm Head (the reason "Admin Block Ground Floor" pinged
   // the wrong people). Required at creation so a project is never born unassigned.
-  if (atmHeadIds.length === 0) {
+  const kind = parsed.data.project_type
+  // A group holds no approvers of its own — its projects do.
+  if (atmHeadIds.length === 0 && kind !== 'group') {
     return {
       ok: false,
       error: 'Pick the Atm Head who signs off this project — it’s required so the project opens with its approver set.',
@@ -73,13 +79,25 @@ export async function createProjectBasics(formData: FormData): Promise<CreatePro
 
   const supabase = await createClient()
 
-  // setup_progress_pct = 20 after step 1 (basics done, 4 steps total).
+  // Three fixed levels (H1): the parent must be the kind above this one. The
+  // database trigger says the same; this gives the words before the insert.
+  let parent: { kind: ProjectKind } | null = null
+  if (parsed.data.parent_project_id) {
+    const { data: par } = await supabase.from('projects').select('project_type').eq('id', parsed.data.parent_project_id).maybeSingle()
+    if (!par) return { ok: false, error: 'That parent project no longer exists.', fieldErrors: { parent_project_id: ['Not found'] } }
+    parent = { kind: kindOf(par.project_type as string | null) }
+  }
+  const why = parentError(kind, parent)
+  if (why) return { ok: false, error: why, fieldErrors: { parent_project_id: [why] } }
+
+  // setup_progress_pct = 20 after step 1 (basics done, 4 steps total). A group
+  // has no steps 2–3, so it is finished at once.
   const { data, error } = await supabase
     .from('projects')
     .insert({
       ...parsed.data,
-      cc_status: 'setup_incomplete',
-      setup_progress_pct: 20,
+      cc_status: kind === 'group' ? 'active' : 'setup_incomplete',
+      setup_progress_pct: kind === 'group' ? 100 : 20,
     })
     .select('id')
     .single()
@@ -108,7 +126,7 @@ export async function createProjectBasics(formData: FormData): Promise<CreatePro
   }
 
   revalidatePath('/cost-control')
-  return { ok: true, projectId: data.id }
+  return { ok: true, projectId: data.id, kind }
 }
 
 // ============================================================
