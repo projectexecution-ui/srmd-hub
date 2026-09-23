@@ -26,7 +26,9 @@ function hoursSince(iso: string | null, nowMs: number): number | null {
   return (nowMs - t) / 3_600_000
 }
 
-export function CronHealthStrip({ amAt, pmAt, nowMs }: { amAt: string | null; pmAt: string | null; nowMs: number }) {
+export interface CronLastError { at: string; slot: string; message: string }
+
+export function CronHealthStrip({ amAt, pmAt, lastError = null, nowMs }: { amAt: string | null; pmAt: string | null; lastError?: CronLastError | null; nowMs: number }) {
   const amH = hoursSince(amAt, nowMs)
   const pmH = hoursSince(pmAt, nowMs)
   const amStale = amH === null || amH > STALE_HOURS      // the morning batch didn't run → real problem
@@ -34,6 +36,13 @@ export function CronHealthStrip({ amAt, pmAt, nowMs }: { amAt: string | null; pm
 
   const critical = amStale                                // health hinges on the morning batch only
   const agoText = (h: number | null) => h === null ? '' : h < 1 ? ' (under an hour ago)' : ` (${Math.round(h)}h ago)`
+
+  // The dispatcher records an error (app_settings.cron_last_error) when it ran
+  // but could not write its ledger or heartbeat. It matters while it is newer
+  // than the latest heartbeat: once a later run persists cleanly, it is history.
+  const lastBeat = Math.max(amAt ? Date.parse(amAt) || 0 : 0, pmAt ? Date.parse(pmAt) || 0 : 0)
+  const errorAt = lastError ? Date.parse(lastError.at) : NaN
+  const showError = lastError !== null && !Number.isNaN(errorAt) && errorAt > lastBeat
 
   return (
     <div className="max-w-4xl mx-auto px-4 md:px-6">
@@ -69,6 +78,11 @@ export function CronHealthStrip({ amAt, pmAt, nowMs }: { amAt: string | null; pm
             </div>
           </div>
         </div>
+        {showError && lastError ? (
+          <p className="mt-2.5 text-[12px] text-rose-700 leading-relaxed">
+            The {lastError.slot === 'pm' ? 'afternoon' : 'morning'} batch ran at {fmtIST(lastError.at)} but could not save its record: <span className="font-mono break-all">{lastError.message}</span>
+          </p>
+        ) : null}
         {critical ? (
           <p className="mt-2.5 text-[12px] text-rose-700 leading-relaxed">
             The morning batch hasn&rsquo;t run in over a day. Confirm <b>CRON_SECRET</b> is set on Vercel (Production) and the Vercel <b>Crons</b> tab shows recent runs.

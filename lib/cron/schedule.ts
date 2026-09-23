@@ -134,15 +134,21 @@ export function plannedJobs(
   return out
 }
 
-/** Fold successful daily-job results into a new ledger stamped for today. */
+/** Fold successful daily-job results into a new ledger stamped for today.
+ *
+ *  A daily job the dispatcher stopped WAITING for (`stillRunning`) is stamped
+ *  too: its own invocation is still going and will almost always finish, and
+ *  not stamping it would make the other slot send the same digest again — the
+ *  one thing the ledger exists to prevent. A job that answered with an error
+ *  is different: that is a known failure, so it is left for the next slot. */
 export function stampLedger(
   ledger: Record<string, string>,
-  results: Array<{ key: string; policy: 'daily' | 'each'; ok: boolean }>,
+  results: Array<{ key: string; policy: 'daily' | 'each'; ok: boolean; stillRunning?: boolean }>,
   istDate: string,
 ): Record<string, string> {
   const next = { ...ledger }
   for (const r of results) {
-    if (r.policy === 'daily' && r.ok) next[r.key] = istDate
+    if (r.policy === 'daily' && (r.ok || r.stillRunning)) next[r.key] = istDate
   }
   return next
 }

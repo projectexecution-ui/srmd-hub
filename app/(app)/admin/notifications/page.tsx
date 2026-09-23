@@ -36,11 +36,18 @@ export default async function AdminNotificationsPage() {
     supabase.from('profiles').select('id, full_name, name, email, role').eq('is_active', true),
     supabase.from('notification_self_manage').select('user_id'),
     supabase.rpc('email_delivery_health'),
-    supabase.from('app_settings').select('key, value').in('key', ['cron_heartbeat_am', 'cron_heartbeat_pm']),
+    supabase.from('app_settings').select('key, value').in('key', ['cron_heartbeat_am', 'cron_heartbeat_pm', 'cron_last_error']),
   ])
   const cronBy = new Map(((cronRows ?? []) as { key: string; value: string }[]).map(r => [r.key, r.value]))
   const cronAmAt = cronBy.get('cron_heartbeat_am') ?? null
   const cronPmAt = cronBy.get('cron_heartbeat_pm') ?? null
+  // The dispatcher's last recorded error — a JSON string {at, slot, message}.
+  let cronLastError: { at: string; slot: string; message: string } | null = null
+  try {
+    const raw = cronBy.get('cron_last_error')
+    const p = raw ? JSON.parse(raw) : null
+    if (p && typeof p.at === 'string' && typeof p.message === 'string') cronLastError = { at: p.at, slot: String(p.slot ?? ''), message: p.message }
+  } catch { /* unreadable → treated as none */ }
   // Build defensively: tolerate the pre-migration flat shape (no email/push
   // keys) so the strip never crashes in the deploy→migration window.
   const emptyChannel = { counts: {}, stuck: 0, recent: [] }
@@ -58,7 +65,7 @@ export default async function AdminNotificationsPage() {
   return (
     <div className="space-y-4">
       <div className="pt-2"><EmailHealthStrip health={health} /></div>
-      <CronHealthStrip amAt={cronAmAt} pmAt={cronPmAt} nowMs={Date.now()} />
+      <CronHealthStrip amAt={cronAmAt} pmAt={cronPmAt} lastError={cronLastError} nowMs={Date.now()} />
       <div className="max-w-4xl mx-auto px-4 md:px-6">
         <Link href="/admin/notifications/recipients" className="flex items-center justify-between gap-3 rounded-xl border border-indigo-200 bg-indigo-50/60 px-4 py-3 hover:bg-indigo-50 min-h-[44px]">
           <span>

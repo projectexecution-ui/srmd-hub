@@ -100,6 +100,21 @@ describe('stampLedger', () => {
     expect(next['engineer-digest']).toBeUndefined()
     expect(next['bph-sync']).toBeUndefined()
   })
+
+  // 15–22 Sep 2026: the dispatcher was killed at its 60 s limit while waiting
+  // on the IN4 feeds, so nothing was ever stamped and both slots re-sent every
+  // daily job. The dispatcher now stops waiting at a budget; a daily job it
+  // stopped waiting for is still running and counts as done for the day.
+  it('stamps a daily job the dispatcher stopped waiting for, but not one that failed', () => {
+    const next = stampLedger({}, [
+      { key: 'bills-digest', policy: 'daily', ok: false, stillRunning: true },
+      { key: 'engineer-digest', policy: 'daily', ok: false },
+      { key: 'in4-sync', policy: 'each', ok: false, stillRunning: true },
+    ], DAY)
+    expect(next['bills-digest']).toBe(DAY)
+    expect(next['engineer-digest']).toBeUndefined()
+    expect(next['in4-sync']).toBeUndefined()
+  })
 })
 
 describe('registry sanity', () => {
