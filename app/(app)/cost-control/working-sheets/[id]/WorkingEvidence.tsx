@@ -25,9 +25,11 @@ interface Props {
   /** Show the "required before submitting" nudge (owner + editable). */
   showRequirement: boolean
   initial: EvidenceFile[]
+  /** Inside the sheet's single Files card: no own border, a quieter heading. */
+  embedded?: boolean
 }
 
-export function WorkingEvidence({ wsId, projectId, canUpload, showRequirement, initial }: Props) {
+export function WorkingEvidence({ wsId, projectId, canUpload, showRequirement, initial, embedded = false }: Props) {
   const router = useRouter()
   const [files] = React.useState<EvidenceFile[]>(initial)
   const [busy, setBusy] = React.useState(false)
@@ -80,15 +82,17 @@ export function WorkingEvidence({ wsId, projectId, canUpload, showRequirement, i
   const needsOne = showRequirement && files.length === 0
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-      <div className="flex items-center justify-between gap-3 px-4 py-2 bg-gray-50 border-b border-gray-100">
+    <div className={embedded ? '' : 'rounded-xl border border-gray-200 bg-white overflow-hidden'}>
+      <div className={embedded
+        ? 'flex items-center justify-between gap-3 px-4 pt-3 pb-1'
+        : 'flex items-center justify-between gap-3 px-4 py-2 bg-gray-50 border-b border-gray-100'}>
         <p className="text-xs font-bold uppercase tracking-wide text-gray-600 inline-flex items-center gap-1.5">
           <Paperclip className="h-3.5 w-3.5" /> Working &amp; evidence
         </p>
         <span className="text-[11px] text-gray-500">{files.length} file{files.length === 1 ? '' : 's'}</span>
       </div>
 
-      <div className="p-3 space-y-2">
+      <div className={embedded ? 'px-4 pb-3 space-y-2' : 'p-3 space-y-2'}>
         {error && <p className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded px-2 py-1">{error}</p>}
 
         {needsOne && (

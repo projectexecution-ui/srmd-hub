@@ -1,12 +1,20 @@
 'use client'
+// The Excel Budget Request, read back: the Verified BOQ (the parser's
+// row-by-row reading of the uploaded template) with the decision under it.
+//
+// Redesigned 23 Sep 2026 with Aksha ("lot of things … clutter"). Gone from
+// here: the file card (the header row has Download Excel; the Files card has
+// the file), the three tiles, the "this is the approved figure" sentence, the
+// AI composition fold, the Flag column when nothing is flagged, the
+// explanatory paragraph under the title, the take-off lines under every row.
+// What stays is the table, quieter and correct, and the approval block moved
+// BELOW it — an approver reads the working, then decides.
+
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import {
-  FileSpreadsheet, Download, RefreshCcw, Loader2, AlertTriangle, TrendingDown, TrendingUp, Sigma, Sparkles,
-} from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { RefreshCcw, Loader2, AlertTriangle, TrendingDown, TrendingUp, Sigma, Sparkles } from 'lucide-react'
 import { WSApprovalActions, type SignOffCfg } from '@/components/cost-control/WSApprovalActions'
 import type { WSApprovalContext } from '@/components/cost-control/ws-actions'
 import type { WSStatus } from '@/components/cost-control/WSStatusPill'
@@ -26,16 +34,12 @@ interface Row {
   formula_in_amount: string | null
   rate_breakdown: Breakdown[] | null
   amount_breakdown: Breakdown[] | null
-  /** Per-row AI metadata (set by /ai-parse). When present, we trust the
-   *  AI's `category` over the regex fallback for bucket classification. */
   ai_meta: {
     category?: 'material' | 'labour' | 'material_and_labour' | 'equipment' | 'tax' | 'addon' | 'discount' | null
   } | null
   flag: string | null
   flag_reason: string | null
   flag_severity: string | null
-  /** Take-off provenance (standard-template uploads): the Qty cell's formula
-   *  and whether it was measured (formula/link) or a plain estimate. */
   qty_formula?: string | null
   qty_basis?: string | null
   source_sheet?: string | null
@@ -52,60 +56,72 @@ interface FlagSummary {
   ai_error: string | null
 }
 
+/** The parser labels the template's two rate columns "M+L" and "Rate" —
+ *  under a Rate of ₹2,060 that read "M+L ₹1,030 + Rate ₹1,030", which is
+ *  nonsense. When the breakdown is exactly those two labels and they add up to
+ *  the rate, they ARE the Material and Labour halves of the template's
+ *  Rate = M + L; write them as such. Any other breakdown is shown as stored. */
+function rateParts(b: Breakdown[] | null, rate: number | null): string | null {
+  if (!b || b.length === 0) return null
+  if (b.length === 2 && rate != null) {
+    const labels = b.map(x => x.label.trim().toLowerCase())
+    const sum = b[0].value + b[1].value
+    if (labels.includes('m+l') && labels.includes('rate') && Math.abs(sum - rate) < 1) {
+      return `M ${formatINR(b[0].value)} + L ${formatINR(b[1].value)}`
+    }
+  }
+  return b.map(x => `${x.label} ${formatINR(x.value)}`).join(' + ')
+}
+
+/** A percentage row (Contingency, GST) stores its % in `rate`; "₹18" for GST
+ *  was defect 5 on Aksha's list. */
+function isPercentRow(r: Row): boolean {
+  const d = (r.description ?? '').toLowerCase()
+  return (r.qty == null || r.qty === 0) && (/\b(gst|cgst|sgst|igst|cess|vat|contingenc|tax)\b/.test(d))
+}
+
 export function ExcelSummaryPanel({
-  wsId, status, ctx, reviewer, aiEnabled = true, signOffCfg, totalAmount, approvedSoFar, chainReleasedSoFar, fileName, downloadUrl, summaryTotal, summaryNotes, flagSummary, lastCheckedAt, rows, grandTotal, ladder,
+  wsId, status, ctx, reviewer, aiEnabled = true, signOffCfg, totalAmount, approvedSoFar, chainReleasedSoFar,
+  summaryTotal, summaryNotes, flagSummary, rows, grandTotal, ladder,
 }: {
   wsId: string
   status: WSStatus
   ctx: WSApprovalContext
-  /** Chain-wide released-so-far — forwarded to the Trustee release balance. */
   chainReleasedSoFar?: number
-  /** AI cross-check chrome (re-check, flags, AI narrative) is for
-   *  reviewers (Project Head / Atm Head / Trustee / admin) only —
-   *  engineers just upload and submit. */
   reviewer: boolean
-  /** Cost Control settings switch: hides the AI/flag chrome for everyone
-   *  when management turns AI tools off (reviewer extras stay). */
   aiEnabled?: boolean
   signOffCfg?: SignOffCfg
   totalAmount: number
   approvedSoFar: number
-  fileName: string | null
-  downloadUrl: string | null
+  /** Kept in the props for the callers; the header row carries the download now. */
+  fileName?: string | null
+  downloadUrl?: string | null
+  lastCheckedAt?: string | null
   summaryTotal: number | null
   summaryNotes: string | null
   flagSummary: FlagSummary | null
-  lastCheckedAt: string | null
   rows: Row[]
-  /** The sheet's grand total (GST-inclusive) — shown in the BOQ footer. */
   grandTotal?: number
-  /** Contingency / GST as confirmed on the review grid at upload. Null on
-   *  sheets raised before we started saving it — the footer then works the
-   *  split out of the two totals instead. */
   ladder?: StoredLadder | null
 }) {
   const router = useRouter()
   const [rechecking, setRechecking] = useState(false)
+  const [takeoff, setTakeoff] = useState(false)
   const [err, setErr] = useState<string | null>(null)
-  // AI/flag chrome renders only for reviewers AND when the toggle is on.
   const showFlags = reviewer && aiEnabled
 
-  // Clean the verified BOQ down to real lines:
-  //  1) empty numbered placeholder rows the template ships (Sr 7,8,9… — blank or
-  //     a bare serial number, ₹0) add nothing; and
-  //  2) the pure aggregate rows — the SUM subtotal and the grand-total line —
-  //     carry a formula but no description; the footer already shows both, so
-  //     they'd only read as odd "= SUM(...)" lines and double-count "Rows total".
-  // Items, Contingency and GST (all have real descriptions) stay.
+  // Real lines only: drop the template's empty numbered placeholders and the
+  // pure aggregate rows (SUM / grand total) — the footer already shows those.
   const visibleRows = rows.filter(r => {
     const descTrim = (r.description ?? '').trim()
-    const noMoney = (r.amount == null || r.amount === 0)
-      && (r.qty == null || r.qty === 0)
-      && (r.rate == null || r.rate === 0)
+    const noMoney = (r.amount == null || r.amount === 0) && (r.qty == null || r.qty === 0) && (r.rate == null || r.rate === 0)
     if (noMoney && (descTrim === '' || /^\d+$/.test(descTrim))) return false
     if (descTrim === '' && r.formula_in_amount) return false
     return true
   })
+  const anyFlag = showFlags && visibleRows.some(r => r.flag)
+  const lineRows = visibleRows.filter(r => !isPercentRow(r))
+  const pctRows = visibleRows.filter(r => isPercentRow(r))
 
   async function recheck() {
     setRechecking(true); setErr(null)
@@ -120,372 +136,165 @@ export function ExcelSummaryPanel({
     }
   }
 
-  const flaggedRowIds = new Set(rows.filter(r => r.flag).map(r => r.id))
+  const rowsSum = lineRows.reduce((s, r) => s + (r.amount ?? 0), 0)
+  const gt = grandTotal ?? summaryTotal ?? visibleRows.reduce((s, r) => s + (r.amount ?? 0), 0)
+  const add = explainAdditions(rowsSum, gt, ladder)
 
-  // Classify each row so the totals reconcile against the typed grand
-  // total. Indian BOQ sheets often have GST / freight / discount rows
-  // sitting BELOW the line items, with no qty/rate but a flat amount.
-  // Previously we summed every row's `amount` as if it were a line item
-  // → the sum was lower than the sheet total → confusing mismatch
-  // warning. Now we bucket by description so the math reconciles:
-  //
-  //   line items + add-ons + tax − discounts ≈ sheet total
-  //
-  // Matching the AI's `ai_meta.category` if present, else inferring
-  // from the description text. Case-insensitive, whitespace-tolerant.
-  // 'skip' = don't count this row in the reconciliation total (a heading /
-  // sub-total row the AI deliberately kept but left uncategorised).
-  function classifyRow(r: Row): 'line' | 'tax' | 'addon' | 'discount' | 'skip' {
-    // 1. AI's tag wins when present. /ai-parse already classified each
-    //    row with category=tax/addon/discount/etc., so we don't need to
-    //    re-guess from description text.
-    const hasAi = r.ai_meta != null
-    const aiCat = r.ai_meta?.category
-    if (aiCat === 'tax') return 'tax'
-    if (aiCat === 'addon') return 'addon'
-    if (aiCat === 'discount') return 'discount'
-    // material / labour / material_and_labour / equipment all roll up as
-    // line items for the reconciliation total.
-    if (aiCat === 'material' || aiCat === 'labour' || aiCat === 'material_and_labour' || aiCat === 'equipment') return 'line'
-    // AI saw this row but couldn't categorise it (category null) — it's
-    // almost certainly a heading / sub-total the AI kept for context.
-    // Don't sum it, or we inflate the reconciliation total.
-    if (hasAi) return 'skip'
+  const takeoffLine = (r: Row) => r.source_cell
+    ? <p className="text-[11px] text-emerald-700 font-mono truncate">🔗 {r.source_sheet ? `${r.source_sheet}!` : ''}{r.source_cell}</p>
+    : r.qty_formula
+      ? <p className="text-[11px] text-emerald-700 font-mono truncate" title={r.qty_formula}>Qty = {r.qty_formula}</p>
+      : r.qty_basis === 'estimated'
+        ? <p className="text-[11px] font-semibold text-amber-700">Estimate — no drawing</p>
+        : null
 
-    // 2. Regex fallback for rows that were NEVER AI-parsed (older WSes /
-    //    AI not run). Indian-construction-aware patterns.
-    const d = (r.description ?? '').toLowerCase().trim()
-    if (!d) return 'line'
-    // Discounts first
-    if (/(^|\s)(discount|less|trade\s+discount|rebate)(\s|$|:)/.test(d)) return 'discount'
-    // Tax: GST, CGST, SGST, IGST, UTGST, TDS, TCS, cess, vat, service tax
-    if (/(^|\s)(gst|cgst|sgst|igst|utgst|tds|tcs|cess|vat|service\s*tax|input\s*tax)(\s|$|:|%|\d|@)/.test(d)) return 'tax'
-    if (/tax\s*(amount|amt|@|on)/.test(d)) return 'tax'
-    // Add-ons: freight, transport, packing, insurance, loading, handling,
-    // P&F, contingency, provisional sum, retainage, escalation
-    if (/(^|\s)(freight|transport(ation)?|carriage|packing|insurance|handling|loading|unloading|p\s*&\s*f|pnf|carting|cartage|loading\/unloading|installation\s*charges|service\s*charge|contingency|contingencies|provisional\s*sum|prov\s*sum|provision|escalation|retainage|round[-\s]*off|rounding)(\s|$|:|%|\d|@)/.test(d)) return 'addon'
-    if (/\b(misc(ellaneous)?|other\s*charges|sundry)\b/.test(d) && (r.qty == null || r.rate == null)) return 'addon'
-    return 'line'
+  const rateCell = (r: Row) => {
+    if (isPercentRow(r)) return r.rate != null ? `${r.rate.toLocaleString('en-IN')} %` : ''
+    return r.rate != null ? formatINR(r.rate) : ''
   }
-
-  type Bucket = 'line' | 'tax' | 'addon' | 'discount'
-  const buckets: Record<Bucket, { count: number; total: number }> = {
-    line:     { count: 0, total: 0 },
-    tax:      { count: 0, total: 0 },
-    addon:    { count: 0, total: 0 },
-    discount: { count: 0, total: 0 },
-  }
-  let skippedRows = 0
-  for (const r of rows) {
-    const b = classifyRow(r)
-    if (b === 'skip') { skippedRows += 1; continue }
-    buckets[b].count += 1
-    buckets[b].total += r.amount ?? 0
-  }
-  void skippedRows // available if we later want to surface "N rows excluded"
-  // Net reconciliation total
-  const totalFromRows = buckets.line.total + buckets.addon.total + buckets.tax.total - Math.abs(buckets.discount.total)
 
   return (
     <div className="space-y-4">
-      {/* Header card with file + summary */}
-      <Card>
-        <CardContent className="pt-5">
-          <div className="flex items-start gap-3 flex-wrap">
-            <div className="h-10 w-10 rounded-lg bg-green-50 text-green-700 flex items-center justify-center flex-shrink-0">
-              <FileSpreadsheet className="h-5 w-5" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-gray-900 truncate">{fileName ?? 'Excel attachment'}</p>
-              <p className="text-xs text-gray-500">{rows.length} line item{rows.length === 1 ? '' : 's'}{lastCheckedAt ? ` · checked ${new Date(lastCheckedAt).toLocaleString('en-IN')}` : ''}</p>
-            </div>
-            <div className="flex items-center gap-2">
-              {downloadUrl && (
-                // Go through our own same-origin route (it sets
-                // Content-Disposition: attachment), NOT the raw cross-origin
-                // storage URL — phones ignore the `download` attribute on a
-                // cross-origin link and just preview the file instead of saving.
-                <Button asChild size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm">
-                  <a href={`/api/cost-control/working-sheets/${wsId}/download`}>
-                    <Download className="h-4 w-4" /> Download Excel
-                  </a>
-                </Button>
-              )}
-              {showFlags && (
-                <Button size="sm" onClick={recheck} disabled={rechecking}>
-                  {rechecking ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
-                  Re-check
-                </Button>
-              )}
-            </div>
-          </div>
-
-          {/* ONE number that matters: the sheet's own grand total — the
-              figure that gets approved. Everything else (the AI's row-by-row
-              reading, the material/labour split) is secondary insight and is
-              NOT expected to equal this, because Excel sheets compute GST /
-              contingency on a sub-total and often carry Supply / Installation
-              in separate columns the AI flattens into one. We used to show a
-              competing "reconciled total" + a mismatch % warning here — that
-              was the source of the "three different numbers" confusion. Gone. */}
-          {(() => {
-            const hasExtras = buckets.tax.count + buckets.addon.count + buckets.discount.count > 0
-            return (
-              <>
-                <div className={`grid grid-cols-2 ${showFlags ? 'md:grid-cols-3' : 'md:grid-cols-2'} gap-3 mt-4 text-sm`}>
-                  <Cell
-                    accent
-                    label="Sheet total"
-                    value={summaryTotal != null ? formatINR(summaryTotal) : '—'}
-                    hint="Your Excel's own grand total — this is the figure that gets approved"
-                  />
-                  <Cell
-                    label="Line items"
-                    value={rows.length}
-                    hint="Rows read from your sheet"
-                  />
-                  {/* One review-signal card (reviewers only): rows the checker
-                      is unsure about. The old "AI check: Off/Done" card was
-                      noise — the Analysis card below already says if AI ran. */}
-                  {showFlags && (
-                    <Cell
-                      label="Items to check"
-                      value={flagSummary?.flagged_rows ?? rows.filter(r => r.flag).length}
-                      hint="Rows our checker is unsure about"
-                    />
-                  )}
-                </div>
-
-                {/* Restate the one authoritative number in plain words. */}
-                {summaryTotal != null && (
-                  <p className="mt-3 text-xs text-gray-600">
-                    <b className="text-emerald-800">{formatINR(summaryTotal)}</b> is the approved figure for this sheet — taken straight from your Excel&apos;s grand total. The breakdown below is only the AI helping you sanity-check it.
-                  </p>
-                )}
-
-                {/* AI's reading of the composition — collapsed by default,
-                    clearly labelled as a cross-check that won't always tie to
-                    the grand total. Reviewers only. */}
-                {showFlags && hasExtras && (
-                  <details className="mt-3 rounded-lg border border-gray-200 bg-gray-50/60 px-3 py-2 text-xs">
-                    <summary className="cursor-pointer select-none text-[11px] font-semibold text-gray-600">
-                      What the AI sees inside this sheet (for review — won&apos;t always equal the sheet total)
-                    </summary>
-                    <div className="mt-2 space-y-0.5 font-mono text-gray-700">
-                      <Line label={`Line items (${buckets.line.count})`} amt={buckets.line.total} />
-                      {buckets.addon.count > 0 && <Line label={`Add-ons (${buckets.addon.count}) — freight, P&F, contingency`} amt={buckets.addon.total} prefix="+" />}
-                      {buckets.tax.count > 0 && <Line label={`Tax (${buckets.tax.count}) — GST / cess`} amt={buckets.tax.total} prefix="+" />}
-                      {buckets.discount.count > 0 && <Line label={`Discounts (${buckets.discount.count})`} amt={Math.abs(buckets.discount.total)} prefix="−" />}
-                      <div className="mt-1 flex justify-between border-t border-gray-300 pt-1 text-gray-500">
-                        <span>AI adds the rows to</span>
-                        <span className="tabular-nums">{formatINR(totalFromRows)}</span>
-                      </div>
-                    </div>
-                    <p className="mt-2 text-[10px] leading-relaxed text-gray-500">
-                      A small gap from the sheet total above is normal — it happens when a sheet has Supply / Installation
-                      split columns or computes GST &amp; contingency on a sub-total. The <b>sheet total</b> is always the
-                      number that counts.
-                    </p>
-                  </details>
-                )}
-              </>
-            )
-          })()}
-
-          {summaryNotes && (
-            <div className="mt-4 text-sm text-gray-700">
-              <p className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">Notes</p>
-              <p className="whitespace-pre-line">{summaryNotes}</p>
-            </div>
-          )}
-
-          {err && <p className="mt-3 text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">{err}</p>}
-
-          {/* Shared 3-stage approval block (stepper + actions) */}
-          <div className="mt-4 pt-4 border-t border-gray-100">
-            <WSApprovalActions
-            signOffCfg={signOffCfg}
-              wsId={wsId}
-              status={status}
-              ctx={ctx}
-              totalAmount={totalAmount}
-              approvedSoFar={approvedSoFar}
-              chainReleasedSoFar={chainReleasedSoFar}
-              submitDisabled={!summaryTotal || summaryTotal <= 0}
-            />
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Flag summary card — AI cross-check, reviewers only */}
+      {/* Analysis — the checker's flags, reviewers only, folded. */}
       {showFlags && flagSummary && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base inline-flex items-center gap-2">
-              <Sparkles className="h-4 w-4 text-indigo-600" /> Analysis
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
+        <details className="rounded-xl border border-gray-200 bg-white">
+          <summary className="cursor-pointer select-none px-4 py-2.5 text-sm font-semibold text-gray-900 inline-flex items-center gap-2 w-full">
+            <Sparkles className="h-4 w-4 text-indigo-600" /> Analysis
+            <span className="ml-auto text-[11px] font-medium text-gray-500">
+              {flagSummary.flagged_rows === 0 ? 'nothing flagged' : `${flagSummary.flagged_rows} row${flagSummary.flagged_rows === 1 ? '' : 's'} flagged`}
+            </span>
+          </summary>
+          <div className="px-4 pb-4 space-y-3">
             <div className="flex flex-wrap gap-2">
               {Object.entries(flagSummary.by_flag).map(([flag, n]) => (
-                <Badge key={flag} className={flagClass(flag)}>
-                  {flagIcon(flag)}{flagLabel(flag)} · {n}
-                </Badge>
+                <Badge key={flag} className={flagClass(flag)}>{flagIcon(flag)}{flagLabel(flag)} · {n}</Badge>
               ))}
-              {flagSummary.flagged_rows === 0 && (
-                <Badge className="bg-emerald-100 text-emerald-800">No flags — looks clean</Badge>
-              )}
+              {flagSummary.flagged_rows === 0 && <Badge className="bg-emerald-100 text-emerald-800">No flags — looks clean</Badge>}
             </div>
             {flagSummary.narrative && (
-              <div className="rounded-lg border border-indigo-100 bg-indigo-50/40 p-3 text-sm text-gray-800 whitespace-pre-line">
-                {flagSummary.narrative}
-              </div>
+              <div className="rounded-lg border border-indigo-100 bg-indigo-50/40 p-3 text-sm text-gray-800 whitespace-pre-line">{flagSummary.narrative}</div>
             )}
             {!flagSummary.ai_used && (
-              <p className="text-xs text-gray-500 italic">
-                AI narrative skipped {flagSummary.ai_error ? `(error: ${flagSummary.ai_error})` : '— set GEMINI_API_KEY (free) on Vercel to enable.'}
-              </p>
+              <p className="text-xs text-gray-500 italic">AI narrative skipped {flagSummary.ai_error ? `(error: ${flagSummary.ai_error})` : '— set GEMINI_API_KEY on Vercel to enable.'}</p>
             )}
-          </CardContent>
-        </Card>
+            <div className="flex items-center gap-2">
+              <Button size="sm" variant="outline" onClick={recheck} disabled={rechecking}>
+                {rechecking ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />} Re-check
+              </Button>
+              {err && <span className="text-xs text-rose-700">{err}</span>}
+            </div>
+          </div>
+        </details>
       )}
 
-      {/* Rows table — the parser's line-by-line reading of the Excel. A
-          management review aid; engineers just upload their file + screenshot,
-          so it's hidden from them. */}
+      {/* Verified BOQ — reviewers only (engineers upload and submit; the
+          table is the approver's reading aid). */}
       {reviewer && (
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Verified BOQ — recomputed from your sheet</CardTitle>
-          <p className="text-xs text-gray-500 mt-0.5">
-            Every row re-read from the uploaded template and recomputed (Rate = M+L, Amount = Qty × Rate). The take-off under each row shows how the quantity was measured. This is the line-by-line the approver checks — it totals to the sheet&apos;s grand total below.
-          </p>
-        </CardHeader>
-        <CardContent>
+        <div className="rounded-xl border border-gray-200 bg-white">
+          <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-gray-100">
+            <h3 className="text-sm font-bold text-gray-900">Verified BOQ</h3>
+            <label className="inline-flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer select-none">
+              <input type="checkbox" checked={takeoff} onChange={e => setTakeoff(e.target.checked)} className="h-3.5 w-3.5 accent-indigo-600" />
+              take-off
+            </label>
+          </div>
+          {summaryNotes && (
+            <p className="px-4 py-2 text-xs text-gray-600 border-b border-gray-100 whitespace-pre-line"><span className="text-gray-400">Engineer&rsquo;s note · </span>{summaryNotes}</p>
+          )}
+
+          {/* Desktop table */}
           <div className="overflow-x-auto hidden md:block">
-            <table className="min-w-full text-sm">
-              <thead className="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
+            <table className="min-w-full text-[13px]">
+              <thead className="text-left text-[10.5px] uppercase tracking-wide text-gray-500">
                 <tr>
-                  <th className="px-2 py-2 w-10">#</th>
-                  <th className="px-2 py-2">Description &amp; take-off</th>
-                  <th className="px-2 py-2">Unit</th>
-                  <th className="px-2 py-2 text-right">Qty</th>
-                  <th className="px-2 py-2 text-right">Rate</th>
-                  <th className="px-2 py-2 text-right">Amount</th>
-                  {showFlags && <th className="px-2 py-2">Flag</th>}
+                  <th className="px-3 py-2 w-10 font-semibold"></th>
+                  <th className="px-3 py-2 font-semibold">Description</th>
+                  <th className="px-3 py-2 font-semibold">Unit</th>
+                  <th className="px-3 py-2 text-right font-semibold">Qty</th>
+                  <th className="px-3 py-2 text-right font-semibold">Rate</th>
+                  <th className="px-3 py-2 text-right font-semibold">Amount</th>
+                  {anyFlag && <th className="px-3 py-2 font-semibold">Flag</th>}
                 </tr>
               </thead>
               <tbody>
-                {visibleRows.map(r => (
-                  <tr key={r.id} className={`border-t border-gray-100 ${showFlags && flaggedRowIds.has(r.id) ? rowTintBySeverity(r.flag_severity) : ''}`}>
-                    <td className="px-2 py-2 text-gray-400 align-top">{r.row_no}</td>
-                    <td className="px-2 py-2 text-gray-800 max-w-md align-top">
+                {lineRows.map(r => (
+                  <tr key={r.id} className={`border-t border-gray-100 ${showFlags && r.flag ? rowTintBySeverity(r.flag_severity) : ''}`}>
+                    <td className="px-3 py-2 text-gray-400 align-top tabular-nums">{r.row_no}</td>
+                    <td className="px-3 py-2 text-gray-900 max-w-md align-top">
                       <p className="truncate" title={r.description ?? ''}>{r.description ?? '—'}</p>
-                      {/* Take-off: how the quantity was arrived at (standard template). */}
-                      {r.source_cell
-                        ? <p className="text-[11px] text-emerald-700 font-mono truncate">🔗 {r.source_sheet ? `${r.source_sheet}!` : ''}{r.source_cell}</p>
-                        : r.qty_formula
-                          ? <p className="text-[11px] text-emerald-700 font-mono truncate" title={r.qty_formula}>Qty = {r.qty_formula}</p>
-                          : r.qty_basis === 'estimated'
-                            ? <p className="text-[11px] font-semibold text-amber-700">Estimate — no drawing</p>
-                            : null}
-                      {r.formula_in_amount && (
-                        <p className="text-[11px] text-gray-400 truncate font-mono">= {r.formula_in_amount}</p>
-                      )}
+                      {takeoff && takeoffLine(r)}
+                      {takeoff && r.formula_in_amount && <p className="text-[11px] text-gray-400 truncate font-mono">= {r.formula_in_amount}</p>}
                     </td>
-                    <td className="px-2 py-2 text-gray-600 align-top">{r.unit ?? ''}</td>
-                    <td className="px-2 py-2 text-right tabular-nums align-top">{r.qty != null ? r.qty.toLocaleString('en-IN') : ''}</td>
-                    <td className="px-2 py-2 text-right tabular-nums align-top">
-                      {r.rate != null ? formatINR(r.rate) : ''}
-                      {r.rate_breakdown && r.rate_breakdown.length > 0 && (
-                        <div className="text-[10px] text-gray-400 font-normal">
-                          {r.rate_breakdown.map(b => `${b.label} ${formatINR(b.value)}`).join(' + ')}
-                        </div>
-                      )}
+                    <td className="px-3 py-2 text-gray-600 align-top">{r.unit ?? ''}</td>
+                    <td className="px-3 py-2 text-right tabular-nums align-top">{r.qty != null ? r.qty.toLocaleString('en-IN') : ''}</td>
+                    <td className="px-3 py-2 text-right tabular-nums align-top">
+                      {rateCell(r)}
+                      {(() => { const p = rateParts(r.rate_breakdown, r.rate); return p ? <div className="text-[10.5px] text-gray-400 font-normal">{p}</div> : null })()}
                     </td>
-                    <td className="px-2 py-2 text-right tabular-nums align-top">
+                    <td className="px-3 py-2 text-right tabular-nums align-top">
                       {r.amount != null ? formatINR(r.amount) : ''}
                       {r.amount_breakdown && r.amount_breakdown.length > 0 && (
-                        <div className="text-[10px] text-gray-400 font-normal">
-                          {r.amount_breakdown.map(b => `${b.label} ${formatINR(b.value)}`).join(' + ')}
-                        </div>
+                        <div className="text-[10.5px] text-gray-400 font-normal">{r.amount_breakdown.map(b => `${b.label} ${formatINR(b.value)}`).join(' + ')}</div>
                       )}
                     </td>
-                    {showFlags && (
-                      <td className="px-2 py-2 max-w-xs align-top">
-                        {r.flag ? (
+                    {anyFlag && (
+                      <td className="px-3 py-2 max-w-xs align-top">
+                        {r.flag && (
                           <div className="space-y-0.5">
                             <Badge className={flagClass(r.flag)}>{flagIcon(r.flag)}{flagLabel(r.flag)}</Badge>
                             {r.flag_reason && <p className="text-[11px] text-gray-600 truncate" title={r.flag_reason}>{r.flag_reason}</p>}
                           </div>
-                        ) : null}
+                        )}
                       </td>
                     )}
                   </tr>
                 ))}
               </tbody>
-              {/* Totals footer — rows sum, then everything added on top named
-                  one line at a time (contingency, GST), then the grand total
-                  that actually gets approved. */}
-              {(() => {
-                const rowsSum = visibleRows.reduce((s, r) => s + (r.amount ?? 0), 0)
-                const gt = grandTotal ?? summaryTotal ?? rowsSum
-                const add = explainAdditions(rowsSum, gt, ladder)
-                return (
-                  <tfoot>
-                    <tr className="border-t-2 border-gray-200 font-medium text-gray-700">
-                      <td className="px-2 py-2" colSpan={5}>Rows total</td>
-                      <td className="px-2 py-2 text-right tabular-nums">{formatINR(rowsSum)}</td>
-                      {showFlags && <td />}
-                    </tr>
-                    {add?.lines.map((l, i) => (
-                      <tr key={i} className={add.source === 'overrun' ? 'text-amber-800 text-xs' : 'text-gray-600 text-xs'}>
-                        <td className="px-2 py-1" colSpan={5}>{l.label}</td>
-                        <td className="px-2 py-1 text-right tabular-nums">
-                          {l.amount >= 0 ? '+' : '−'}{formatINR(Math.abs(l.amount))}
-                        </td>
-                        {showFlags && <td />}
-                      </tr>
-                    ))}
-                    {add?.note && (
-                      <tr className="text-[10px] text-gray-400">
-                        <td className="px-2 pb-1" colSpan={showFlags ? 7 : 6}>{add.note}</td>
-                      </tr>
-                    )}
-                    <tr className="border-t border-gray-200 font-bold text-emerald-900">
-                      <td className="px-2 py-2" colSpan={5}>Grand total (the approved figure)</td>
-                      <td className="px-2 py-2 text-right tabular-nums">{formatINR(gt)}</td>
-                      {showFlags && <td />}
-                    </tr>
-                  </tfoot>
-                )
-              })()}
+              <tfoot>
+                <tr className="border-t-2 border-gray-200 text-gray-600">
+                  <td className="px-3 py-2" colSpan={5}>Rows 1–{lineRows.length}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{formatINR(rowsSum)}</td>
+                  {anyFlag && <td />}
+                </tr>
+                {/* Percentage rows from the sheet itself (Contingency, GST) with
+                    the % where the rate column would otherwise say ₹18. */}
+                {pctRows.map(r => (
+                  <tr key={r.id} className="text-gray-600 text-xs">
+                    <td className="px-3 py-1 text-gray-400 tabular-nums">{r.row_no}</td>
+                    <td className="px-3 py-1" colSpan={3}>{r.description}{takeoff && r.formula_in_amount ? <span className="ml-2 font-mono text-[11px] text-gray-400">= {r.formula_in_amount}</span> : null}</td>
+                    <td className="px-3 py-1 text-right tabular-nums">{rateCell(r)}</td>
+                    <td className="px-3 py-1 text-right tabular-nums">{r.amount != null ? formatINR(r.amount) : ''}</td>
+                    {anyFlag && <td />}
+                  </tr>
+                ))}
+                {pctRows.length === 0 && add?.lines.map((l, i) => (
+                  <tr key={i} className={add.source === 'overrun' ? 'text-amber-800 text-xs' : 'text-gray-600 text-xs'}>
+                    <td className="px-3 py-1" colSpan={5}>{l.label}</td>
+                    <td className="px-3 py-1 text-right tabular-nums">{l.amount >= 0 ? '+' : '−'}{formatINR(Math.abs(l.amount))}</td>
+                    {anyFlag && <td />}
+                  </tr>
+                ))}
+                <tr className="border-t border-gray-200 font-bold text-gray-900 text-sm">
+                  <td className="px-3 py-2.5" colSpan={5}>Requested total</td>
+                  <td className="px-3 py-2.5 text-right tabular-nums">{formatINR(gt)}</td>
+                  {anyFlag && <td />}
+                </tr>
+              </tfoot>
             </table>
           </div>
 
-          {/* Mobile: the same verified BOQ as stacked cards — the table above is
-              far too wide for a phone (descriptions truncate, amounts scroll off). */}
-          <div className="md:hidden divide-y divide-gray-100">
-            {visibleRows.map(r => (
-              <div key={r.id} className={`py-3 ${showFlags && flaggedRowIds.has(r.id) ? rowTintBySeverity(r.flag_severity) : ''}`}>
+          {/* Phone: the same rows as cards. */}
+          <div className="md:hidden divide-y divide-gray-100 px-4">
+            {lineRows.map(r => (
+              <div key={r.id} className={`py-3 ${showFlags && r.flag ? rowTintBySeverity(r.flag_severity) : ''}`}>
                 <div className="flex items-start gap-2">
                   <span className="text-[11px] text-gray-400 tabular-nums mt-0.5 flex-shrink-0">{r.row_no}</span>
                   <div className="min-w-0 flex-1">
                     <p className="text-sm text-gray-900">{r.description ?? '—'}</p>
-                    {r.source_cell
-                      ? <p className="text-[11px] text-emerald-700 font-mono break-all">🔗 {r.source_sheet ? `${r.source_sheet}!` : ''}{r.source_cell}</p>
-                      : r.qty_formula
-                        ? <p className="text-[11px] text-emerald-700 font-mono break-all">Qty = {r.qty_formula}</p>
-                        : r.qty_basis === 'estimated'
-                          ? <p className="text-[11px] font-semibold text-amber-700">Estimate — no drawing</p>
-                          : null}
+                    <p className="text-[11.5px] text-gray-500 tabular-nums">{r.qty != null ? r.qty.toLocaleString('en-IN') : '—'} {r.unit ?? ''} × {rateCell(r) || '—'}</p>
+                    {takeoff && takeoffLine(r)}
                   </div>
-                </div>
-                <div className="mt-2 grid grid-cols-4 gap-1 text-center">
-                  <div><p className="text-[10px] uppercase tracking-wide text-gray-400">Qty</p><p className="text-xs tabular-nums text-gray-800">{r.qty != null ? r.qty.toLocaleString('en-IN') : '—'}</p></div>
-                  <div><p className="text-[10px] uppercase tracking-wide text-gray-400">Unit</p><p className="text-xs text-gray-800">{r.unit ?? '—'}</p></div>
-                  <div><p className="text-[10px] uppercase tracking-wide text-gray-400">Rate</p><p className="text-xs tabular-nums text-gray-800">{r.rate != null ? formatINR(r.rate) : '—'}</p></div>
-                  <div><p className="text-[10px] uppercase tracking-wide text-gray-400">Amount</p><p className="text-xs font-semibold tabular-nums text-gray-900">{r.amount != null ? formatINR(r.amount) : '—'}</p></div>
+                  <p className="text-sm font-semibold tabular-nums text-gray-900 flex-shrink-0">{r.amount != null ? formatINR(r.amount) : '—'}</p>
                 </div>
                 {showFlags && r.flag && (
                   <div className="mt-1.5">
@@ -495,49 +304,43 @@ export function ExcelSummaryPanel({
                 )}
               </div>
             ))}
-            {(() => {
-              const rowsSum = visibleRows.reduce((s, r) => s + (r.amount ?? 0), 0)
-              const gt = grandTotal ?? summaryTotal ?? rowsSum
-              const add = explainAdditions(rowsSum, gt, ladder)
-              return (
-                <div className="pt-3 space-y-1 text-sm">
-                  <div className="flex justify-between text-gray-700"><span>Rows total</span><span className="tabular-nums">{formatINR(rowsSum)}</span></div>
-                  {add?.lines.map((l, i) => (
-                    <div key={i} className={`flex justify-between gap-3 text-xs ${add.source === 'overrun' ? 'text-amber-800' : 'text-gray-600'}`}>
-                      <span>{l.label}</span>
-                      <span className="tabular-nums flex-shrink-0">{l.amount >= 0 ? '+' : '−'}{formatINR(Math.abs(l.amount))}</span>
-                    </div>
-                  ))}
-                  {add?.note && <p className="text-[10px] text-gray-400 leading-snug">{add.note}</p>}
-                  <div className="flex justify-between font-bold text-emerald-900 border-t border-gray-200 pt-1.5"><span>Grand total (approved figure)</span><span className="tabular-nums">{formatINR(gt)}</span></div>
-                </div>
-              )
-            })()}
+            <div className="py-3 space-y-1 text-sm">
+              <div className="flex justify-between text-gray-600"><span>Rows 1–{lineRows.length}</span><span className="tabular-nums">{formatINR(rowsSum)}</span></div>
+              {pctRows.map(r => (
+                <div key={r.id} className="flex justify-between gap-3 text-xs text-gray-600"><span>{r.description} · {rateCell(r)}</span><span className="tabular-nums flex-shrink-0">{r.amount != null ? formatINR(r.amount) : ''}</span></div>
+              ))}
+              {pctRows.length === 0 && add?.lines.map((l, i) => (
+                <div key={i} className={`flex justify-between gap-3 text-xs ${add.source === 'overrun' ? 'text-amber-800' : 'text-gray-600'}`}><span>{l.label}</span><span className="tabular-nums flex-shrink-0">{l.amount >= 0 ? '+' : '−'}{formatINR(Math.abs(l.amount))}</span></div>
+              ))}
+              <div className="flex justify-between font-bold text-gray-900 border-t border-gray-200 pt-1.5"><span>Requested total</span><span className="tabular-nums">{formatINR(gt)}</span></div>
+            </div>
           </div>
-        </CardContent>
-      </Card>
+        </div>
       )}
-    </div>
-  )
-}
 
-function Line({ label, amt, prefix = '' }: { label: string; amt: number; prefix?: '+' | '−' | '' }) {
-  return (
-    <div className="flex justify-between">
-      <span className="text-gray-600">{prefix && <span className="mr-1">{prefix}</span>}{label}</span>
-      <span className="tabular-nums">{formatINR(amt)}</span>
-    </div>
-  )
-}
-
-function Cell({ label, value, hint, accent }: { label: string; value: string | number | null | undefined; hint?: string; accent?: boolean }) {
-  return (
-    <div className={accent
-      ? 'rounded-xl border-2 border-emerald-300 bg-emerald-50/60 p-3 ring-1 ring-emerald-200'
-      : 'rounded-xl border border-gray-200 bg-white p-3'} title={hint}>
-      <p className={accent ? 'text-[11px] uppercase tracking-wide font-semibold text-emerald-700' : 'text-[11px] uppercase tracking-wide text-gray-500'}>{label}</p>
-      <p className={accent ? 'text-xl font-bold text-emerald-900 mt-0.5 tabular-nums' : 'text-base font-semibold text-gray-900 mt-0.5'}>{value ?? '—'}</p>
-      {hint && <p className={accent ? 'text-[10px] text-emerald-700/70 mt-0.5 leading-tight' : 'text-[10px] text-gray-400 mt-0.5 leading-tight'}>{hint}</p>}
+      {/* The decision — under the working, where it is read first. For the
+          engineer this is the Send-for-approval block; for an approver it is
+          the status line, Sign off and Return. */}
+      <div className={`rounded-xl border p-4 ${ctx.nextSignOff || ctx.canRelease ? 'border-emerald-200 bg-emerald-50/50' : 'border-gray-200 bg-white'}`}>
+        {(ctx.nextSignOff || ctx.canRelease) && (
+          <div className="flex items-baseline justify-between gap-3 flex-wrap mb-2">
+            <p className="text-[10.5px] font-bold uppercase tracking-[.07em] text-emerald-700">
+              {ctx.nextSignOff === 'ph_approved' ? 'Your decision as Project Head' : ctx.nextSignOff === 'atm_approved' ? 'Your decision as Atm Head' : 'Your decision as Trustee'}
+            </p>
+            <p className="text-base font-bold text-gray-900 tabular-nums">{formatINR(gt)}</p>
+          </div>
+        )}
+        <WSApprovalActions
+          signOffCfg={signOffCfg}
+          wsId={wsId}
+          status={status}
+          ctx={ctx}
+          totalAmount={totalAmount}
+          approvedSoFar={approvedSoFar}
+          chainReleasedSoFar={chainReleasedSoFar}
+          submitDisabled={!summaryTotal || summaryTotal <= 0}
+        />
+      </div>
     </div>
   )
 }

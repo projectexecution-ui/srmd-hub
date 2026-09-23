@@ -20,11 +20,13 @@ export interface RecordFile {
 }
 
 export function ApprovalRecords({
-  wsId, canManage, initial,
+  wsId, canManage, initial, embedded = false,
 }: {
   wsId: string
   canManage: boolean
   initial: RecordFile[]
+  /** Inside the sheet's single Files card: no own border, no guidance line. */
+  embedded?: boolean
 }) {
   const router = useRouter()
   const [busy, setBusy] = React.useState(false)
@@ -71,10 +73,12 @@ export function ApprovalRecords({
   if (!canManage && initial.length === 0) return null
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-4">
+    <div className={embedded ? 'px-4 pb-4 pt-2 border-t border-gray-100' : 'rounded-xl border border-gray-200 bg-white p-4'}>
       <div className="flex items-center justify-between gap-2 mb-2">
-        <h3 className="text-sm font-semibold text-gray-900 inline-flex items-center gap-2">
-          <FileCheck2 className="h-4 w-4 text-emerald-600" /> Approval records
+        <h3 className={embedded
+          ? 'text-xs font-bold uppercase tracking-wide text-gray-600 inline-flex items-center gap-1.5'
+          : 'text-sm font-semibold text-gray-900 inline-flex items-center gap-2'}>
+          <FileCheck2 className={embedded ? 'h-3.5 w-3.5' : 'h-4 w-4 text-emerald-600'} /> Approval records
         </h3>
         {canManage && (
           <label className="inline-flex">
@@ -85,11 +89,13 @@ export function ApprovalRecords({
           </label>
         )}
       </div>
-      <p className="text-[11px] text-gray-500 mb-2">
-        Attach any supporting file for record (approval note, sanction letter, email, sketch). Up to 25 MB each.
-      </p>
+      {!embedded && (
+        <p className="text-[11px] text-gray-500 mb-2">
+          Attach any supporting file for record (approval note, sanction letter, email, sketch). Up to 25 MB each.
+        </p>
+      )}
       {initial.length === 0 ? (
-        <p className="text-xs text-gray-400 italic">No records attached yet.</p>
+        <p className="text-xs text-gray-400">{embedded ? 'None yet — approval note, sanction letter, email or sketch, up to 25 MB each.' : 'No records attached yet.'}</p>
       ) : (
         <ul className="space-y-1.5">
           {initial.map(a => (

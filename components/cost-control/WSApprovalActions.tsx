@@ -13,7 +13,8 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import { Send, RotateCcw, Loader2, CheckCircle2, PenLine } from 'lucide-react'
+import { Send, RotateCcw, Loader2, PenLine } from 'lucide-react'
+import { RoundUpChips } from '@/components/cost-control/RoundUpChips'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import {
@@ -36,6 +37,11 @@ export interface SignOffCfg {
   approvedLabel: string
   phChecked: { amt: number } | null
   atmChecked: { amt: number } | null
+  /** True when the sheet was resubmitted AFTER these checks were made — the
+   *  Excel changed underneath them, so they are labelled "before the
+   *  revision" rather than shown as if they were checks on the current
+   *  figure (NRH-2701-Q01: ₹10,95,262 under a ₹4,72,10,311 sheet). */
+  stale?: boolean
 }
 
 const DEFAULT_SIGNOFF_CFG: SignOffCfg = {
@@ -171,58 +177,35 @@ export function WSApprovalActions({
 
   return (
     <div className="space-y-3">
-      {/* ── Chain stepper ── */}
+      {/* ── Where it stands ── one line. The four-dot stepper went on 23 Sep
+          2026: the Audit trail at the foot of the page now carries every step
+          with who and when, so up here the reader needs the status in words,
+          the amount released so far if any, and the earlier checks — labelled
+          honestly when the sheet changed after they were made. */}
       {!isCancelled && (
-        <div className="rounded-xl border border-indigo-100 bg-gradient-to-r from-indigo-50/70 to-white p-3">
-          <ol className="flex items-center gap-0">
-            {CHAIN_STEPS.map((step, i) => {
-              const stepDone = done > i
-              const current = done === i && !isReturned
-              return (
-                <li key={step} className="flex items-center flex-1 last:flex-none">
-                  <div className="flex flex-col items-center gap-1 min-w-0">
-                    <span className={cn(
-                      'flex h-7 w-7 items-center justify-center rounded-full border-2 text-[11px] font-bold transition-colors',
-                      stepDone ? 'bg-indigo-600 border-indigo-600 text-white'
-                        : current ? 'bg-white border-indigo-500 text-indigo-700 ring-4 ring-indigo-100'
-                        : 'bg-white border-gray-300 text-gray-400',
-                    )}>
-                      {stepDone ? <CheckCircle2 className="h-4 w-4" /> : i + 1}
-                    </span>
-                    <span className={cn(
-                      'text-[9px] sm:text-[10px] font-semibold whitespace-nowrap',
-                      stepDone ? 'text-indigo-800' : current ? 'text-indigo-700' : 'text-gray-400',
-                    )}>
-                      {step}
-                    </span>
-                  </div>
-                  {i < CHAIN_STEPS.length - 1 && (
-                    <div className={cn('h-0.5 flex-1 mx-1.5 mb-4 rounded', done > i + 1 ? 'bg-indigo-400' : 'bg-gray-200')} />
-                  )}
-                </li>
-              )
-            })}
-          </ol>
+        <div className="space-y-1">
           <p className={cn(
-            'mt-2 text-xs font-medium',
-            isReturned ? 'text-rose-700' : done >= CHAIN_STEPS.length ? 'text-emerald-700' : 'text-indigo-800',
+            'text-[13px] font-semibold',
+            isReturned ? 'text-rose-700' : done >= CHAIN_STEPS.length ? 'text-emerald-700' : 'text-gray-900',
           )}>
             {plainStatusLabel(status)}
             {status === 'partially_approved' && totalAmount > 0 && (
-              <span className="text-amber-700"> — ₹{approvedSoFar.toLocaleString('en-IN')} of ₹{totalAmount.toLocaleString('en-IN')} released so far</span>
+              <span className="text-amber-700 font-medium"> — ₹{approvedSoFar.toLocaleString('en-IN')} of ₹{totalAmount.toLocaleString('en-IN')} released so far</span>
             )}
           </p>
-          {/* What each stakeholder checked/approved — approval UI only. */}
           {(cfg.phChecked || cfg.atmChecked || approvedSoFar > 0) && (
-            <p className="mt-1 text-[11px] text-indigo-700/90 tabular-nums flex flex-wrap gap-x-4 gap-y-0.5">
+            <p className="text-[11.5px] text-gray-500 tabular-nums flex flex-wrap gap-x-4 gap-y-0.5">
+              {cfg.stale && (cfg.phChecked || cfg.atmChecked) && (
+                <span className="text-amber-700 font-semibold">Checked before the revision:</span>
+              )}
               {cfg.phChecked && (
-                <span><b>{cfg.phLabel}:</b> ₹{Math.round(cfg.phChecked.amt).toLocaleString('en-IN')}</span>
+                <span>{cfg.phLabel} <b className="text-gray-700">₹{Math.round(cfg.phChecked.amt).toLocaleString('en-IN')}</b></span>
               )}
               {cfg.atmChecked && (
-                <span><b>{cfg.atmLabel}:</b> ₹{Math.round(cfg.atmChecked.amt).toLocaleString('en-IN')}</span>
+                <span>{cfg.atmLabel} <b className="text-gray-700">₹{Math.round(cfg.atmChecked.amt).toLocaleString('en-IN')}</b></span>
               )}
               {approvedSoFar > 0 && (
-                <span className="text-emerald-700"><b>{cfg.approvedLabel}:</b> ₹{Math.round(approvedSoFar).toLocaleString('en-IN')}</span>
+                <span className="text-emerald-700">{cfg.approvedLabel} <b>₹{Math.round(approvedSoFar).toLocaleString('en-IN')}</b></span>
               )}
             </p>
           )}
@@ -300,6 +283,11 @@ export function WSApprovalActions({
             className="bg-white max-w-xs"
             autoFocus
           />
+          {/* Nominal round-up — Aksha, 23 Sep 2026: "add a little amount to
+              make the approval round figure". Next thousand / ten thousand /
+              lakh above the asked total; the buffer shows on each chip and in
+              the trail (the checked figure is recorded as typed). */}
+          <RoundUpChips base={Math.round(totalAmount)} current={Number(checkedRaw) || null} onPick={v => setCheckedRaw(String(v))} disabled={busy} />
           <p className="text-[11px] text-emerald-800/80">
             Pre-filled with the amount to approve (incl. GST). Change it only if you checked a different figure.
           </p>

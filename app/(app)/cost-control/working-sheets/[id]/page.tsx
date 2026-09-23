@@ -35,8 +35,10 @@ import { BudgetPositionPanel } from './BudgetPositionPanel'
 import { chainCumulative, chainReleasedSoFar, matchBoqRows, summarizeMatch, normalizeKey, basisCounts } from '@/lib/cost-control/version-ledger'
 import { EditDeadlineButton } from './EditDeadlineButton'
 import { QueryError } from '@/components/ui/query-error'
-import { formatINR } from '@/lib/utils'
+import { formatINR, formatDate, istCalendarDaysAgo } from '@/lib/utils'
 import { getCcSettings } from '@/lib/cost-control/settings'
+import { BackLink } from '@/components/BackLink'
+import { HeaderActions, type MenuLink } from './HeaderActions'
 
 export const dynamic = 'force-dynamic'
 
@@ -160,7 +162,7 @@ export default async function WorkingSheetEditorPage(
   // one supplementary select.
   const { data: extraCols } = await supabase
     .from('cc_working_sheets')
-    .select('ph_checked_amt, atm_checked_amt, in4_entered_at, in4_ref, archived_at, archived_by, summary_image_url, summary_image_name')
+    .select('ph_checked_amt, atm_checked_amt, ph_checked_at, atm_checked_at, submitted_at, in4_entered_at, in4_ref, archived_at, archived_by, summary_image_url, summary_image_name')
     .eq('id', id)
     .single()
 
@@ -208,7 +210,25 @@ export default async function WorkingSheetEditorPage(
     approvedLabel: ccSettings.label_approved,
     phChecked: extraCols?.ph_checked_amt != null ? { amt: Number(extraCols.ph_checked_amt) } : null,
     atmChecked: extraCols?.atm_checked_amt != null ? { amt: Number(extraCols.atm_checked_amt) } : null,
+    // A resubmission rewrites submitted_at; a check older than that was made on
+    // an Excel that has since been replaced — say so instead of showing it as
+    // a check on the current figure.
+    stale: !!extraCols?.submitted_at && (
+      (!!extraCols.ph_checked_at && extraCols.ph_checked_at < extraCols.submitted_at) ||
+      (!!extraCols.atm_checked_at && extraCols.atm_checked_at < extraCols.submitted_at)
+    ),
   }
+  // The earlier check to name beside the requested figure ("was ₹X when the
+  // Project Head checked it") — only when it is stale AND differs from today's total.
+  const priorCheck = (() => {
+    if (!signOffCfg.stale) return null
+    const total = Math.round(Number(ws.total_amount ?? 0))
+    const cands = [
+      extraCols?.ph_checked_amt != null ? { amt: Math.round(Number(extraCols.ph_checked_amt)), at: extraCols.ph_checked_at as string | null, who: ccSettings.label_ph_checked.replace(/\s*Checked Amt$/i, '') } : null,
+      extraCols?.atm_checked_amt != null ? { amt: Math.round(Number(extraCols.atm_checked_amt)), at: extraCols.atm_checked_at as string | null, who: ccSettings.label_atm_checked.replace(/\s*Checked Amt$/i, '') } : null,
+    ].filter((c): c is { amt: number; at: string | null; who: string } => !!c && c.amt !== total)
+    return cands[0] ?? null
+  })()
 
   // Partly released + viewer owns the sheet → offer to send it back through
   // the SAME approval chain to release the balance. Rendered in all three
@@ -298,6 +318,9 @@ export default async function WorkingSheetEditorPage(
   // anyone if records already exist. Signed URLs minted with the service role so
   // an Atm Head (approver, not a cc-edit member) can still open them.
   let approvalRecordsPanel: React.ReactNode = null
+  // The Excel layout renders the records INSIDE its single Files card, so the
+  // list is kept in scope for it as well as the standalone panel below.
+  let approvalRecordFiles: RecordFile[] = []
   {
     const svcKey = process.env.SUPABASE_SERVICE_ROLE_KEY
     const admin = svcKey
@@ -314,6 +337,7 @@ export default async function WorkingSheetEditorPage(
       const { data: signed } = await admin.storage.from('cc-sheets').createSignedUrl(a.path as string, 60 * 60)
       records.push({ id: a.id as string, name: a.name as string, signedUrl: signed?.signedUrl ?? null })
     }
+    approvalRecordFiles = records
     if (reviewer || records.length > 0) {
       approvalRecordsPanel = (
         <ApprovalRecords wsId={ws.id} canManage={reviewer} initial={records} />
@@ -613,7 +637,7 @@ export default async function WorkingSheetEditorPage(
     let revisionInitial: DeltaRow[] = []
     let matchedRows: ReturnType<typeof matchBoqRows> = []
     let matchSummary: ReturnType<typeof summarizeMatch> | null = null
-    let workingByKey: Record<string, { url: string | null; name: string } | undefined> = {}
+    const workingByKey: Record<string, { url: string | null; name: string } | undefined> = {}
 
     if (showCumulative && prevSibling) {
       const { data: priorRows } = await supabase
@@ -690,57 +714,126 @@ export default async function WorkingSheetEditorPage(
     const dis  = (Array.isArray(ws.cc_disciplines) ? ws.cc_disciplines[0] : ws.cc_disciplines) as DRow | null
     const sub  = (Array.isArray(ws.cc_sub_skills) ? ws.cc_sub_skills[0] : ws.cc_sub_skills) as SRow | null
 
+    // ── The redesigned Budget Request page (Aksha, 23 Sep 2026) ──────────
+    // Order: header (code · stage · path chips · this person's actions) →
+    // the ask (requested figure + budget position for approvers) → revision
+    // strips (v2+) → the working (Analysis · Verified BOQ · decision UNDER it)
+    // → the engineer's next steps → source viewer / AI tools → Comments →
+    // Files → Audit trail. Nothing repeats the total; nothing explains itself
+    // in a paragraph.
+    const daysWith = isPendingApproval ? istCalendarDaysAgo(extraCols?.submitted_at ?? null) : null
+    const isOwner = user?.id === ws.engineer_id
+    const menuLinks: MenuLink[] = []
+    if (cameFrom === 'approvals') menuLinks.push({ label: 'My Approvals', href: '/cost-control/approvals' })
+    if (reviewer && projFocusHref) menuLinks.push({ label: 'Open in Project Internal Estimate', href: projFocusHref })
+    if (ccSettings.cumulative_versions && reviewer && ws.sub_skill_id) {
+      menuLinks.push({ label: 'Sub-category passbook (ledger)', href: `/cost-control/ledger?project=${ws.project_id}&discipline=${ws.discipline_id}&sub_skill=${ws.sub_skill_id}` })
+    }
+    const canEditChain = canEdit && (isOwner || isAdmin) && !isArchived
+    const pathChip = (label: string, value: string) => (
+      <span className="inline-flex flex-col rounded-lg bg-gray-100 px-2.5 py-1 leading-tight max-w-full">
+        <span className="text-[9px] font-bold uppercase tracking-[.07em] text-gray-400">{label}</span>
+        <span className="text-[12.5px] font-semibold text-gray-900 break-words">{value}</span>
+      </span>
+    )
+    const sep = <span className="text-gray-300 text-sm" aria-hidden>›</span>
+
     return (
       <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-4">
-        <PageHeader
-          title={ws.ws_code}
-          subtitle="Budget Request (Excel)"
-          back={backHref}
-          backMode="history"
-        >
-          <WSStatusPill status={ws.status as WSStatus} estimateBaseline={isEstimateSheet} />
-          {ccSettings.billing_step && extraCols?.in4_entered_at && (
-            <span className="inline-flex items-center rounded-full bg-teal-100 text-teal-800 text-[10px] font-bold px-2 py-0.5 whitespace-nowrap">
-              Entered in IN4{extraCols.in4_ref ? ` · ${extraCols.in4_ref}` : ""}
-            </span>
-          )}
-        </PageHeader>
+        {/* ── Header ── */}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0 flex-1">
+            <BackLink fallbackHref={backHref} />
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-xl md:text-2xl font-bold text-gray-900 break-words">{ws.ws_code}</h1>
+              <WSStatusPill status={ws.status as WSStatus} estimateBaseline={isEstimateSheet} />
+              {daysWith != null && daysWith >= 1 && (
+                <span className="inline-flex items-center rounded-full bg-gray-100 text-gray-600 text-[11px] font-semibold px-2 py-0.5 whitespace-nowrap">{daysWith} day{daysWith === 1 ? '' : 's'}</span>
+              )}
+              {ccSettings.billing_step && extraCols?.in4_entered_at && (
+                <span className="inline-flex items-center rounded-full bg-teal-100 text-teal-800 text-[10px] font-bold px-2 py-0.5 whitespace-nowrap">
+                  Entered in IN4{extraCols.in4_ref ? ` · ${extraCols.in4_ref}` : ''}
+                </span>
+              )}
+            </div>
+            {/* Project → Category → Sub-category, as labelled chips in the hub's
+                nesting order; the Budget position rows below read the same way. */}
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              {pathChip('Project', wsParentName ?? proj?.name ?? proj?.code ?? '—')}
+              {wsParentName && <>{sep}{pathChip('Sub-project', proj?.name ?? proj?.code ?? '—')}</>}
+              {sep}{pathChip('Category', [dis?.code, dis?.name].filter(Boolean).join(' ') || '—')}
+              {sep}{pathChip('Sub-category', [sub?.code, sub?.name].filter(Boolean).join(' ') || '—')}
+            </div>
+          </div>
+          <HeaderActions
+            wsId={ws.id}
+            hasExcel={!!ws.source_excel_url}
+            links={menuLinks}
+            freshChain={canEditChain ? { breakChain: ws.break_chain } : null}
+          >
+            {!isArchived && (
+              <ArchiveControls
+                wsId={ws.id}
+                wsCode={ws.ws_code}
+                archivedAt={null}
+                archivedByName={null}
+                canArchive={canArchive}
+                isAdmin={isAdmin}
+              />
+            )}
+          </HeaderActions>
+        </div>
 
-        {identityBlock}
+        {/* Versions exist → the chain bar; a lone v1/1 says nothing and is not shown. */}
+        {ws.chain_size > 1 && (
+          <VersionChainBar
+            wsId={ws.id}
+            versionNo={ws.version_no}
+            chainSize={ws.chain_size}
+            breakChain={ws.break_chain}
+            prev={prevSibling ? { id: prevSibling.id, ws_code: prevSibling.ws_code, version_no: prevSibling.version_no } : null}
+            next={nextSibling ? { id: nextSibling.id, ws_code: nextSibling.ws_code, version_no: nextSibling.version_no } : null}
+            canEdit={false}
+            archivedNotes={chainArchivedNotes}
+          />
+        )}
+
+        {isArchived && (
+          <ArchiveControls
+            wsId={ws.id}
+            wsCode={ws.ws_code}
+            archivedAt={extraCols?.archived_at ?? null}
+            archivedByName={archiverName.get(extraCols?.archived_by ?? '') ?? null}
+            canArchive={canArchive}
+            isAdmin={isAdmin}
+          />
+        )}
         {deptBanner}
-        {reviewTop}
-
-        <VersionChainBar
-          wsId={ws.id}
-          versionNo={ws.version_no}
-          chainSize={ws.chain_size}
-          breakChain={ws.break_chain}
-          prev={prevSibling ? { id: prevSibling.id, ws_code: prevSibling.ws_code, version_no: prevSibling.version_no } : null}
-          next={nextSibling ? { id: nextSibling.id, ws_code: nextSibling.ws_code, version_no: nextSibling.version_no } : null}
-          canEdit={canEdit && (user?.id === ws.engineer_id || isAdmin) && !isArchived}
-          archivedNotes={chainArchivedNotes}
-        />
-
         {estimateLocked && !isArchived && (
           <div className="rounded-lg border border-gray-300 bg-gray-50 px-4 py-2.5 text-sm text-gray-700 flex items-center gap-2">
             <span className="font-semibold">Internal Estimate locked.</span>
             <span className="text-gray-500">This is a baseline estimate sheet — change it through the project&apos;s revision workflow (request reopen → Trustee approves → upload revised sheet).</span>
           </div>
         )}
-        <ArchiveControls
-          wsId={ws.id}
-          wsCode={ws.ws_code}
-          archivedAt={extraCols?.archived_at ?? null}
-          archivedByName={archiverName.get(extraCols?.archived_by ?? '') ?? null}
-          canArchive={canArchive}
-          isAdmin={isAdmin}
-        />
         {canDeleteDraft && (
           <DeleteDraftButton wsId={ws.id} wsCode={ws.ws_code} projectId={ws.project_id} />
         )}
-        {releaseRequestPanel}
-        {canRaiseRevision && <RaiseRevisionButton projectId={ws.project_id} disciplineId={ws.discipline_id} subSkillId={ws.sub_skill_id} />}
-        {summaryShotPanel}
+
+        {/* ── The ask ── the figure once, and for an approver the budget position beside it. */}
+        <div className={`rounded-xl border border-gray-200 bg-white grid ${reviewPanel ? 'md:grid-cols-[minmax(240px,0.8fr)_minmax(0,1.4fr)]' : ''}`}>
+          <div className="p-4 md:p-5">
+            <p className="text-[10.5px] font-bold uppercase tracking-[.07em] text-gray-500">Requested</p>
+            <p className="mt-1 text-3xl md:text-[34px] font-extrabold tracking-tight text-gray-900 tabular-nums leading-none">{formatINR(Number(ws.total_amount ?? 0))}</p>
+            {priorCheck && (
+              <p className="mt-2 text-[12.5px] text-gray-500 tabular-nums">
+                was {formatINR(priorCheck.amt)} when the {priorCheck.who} checked it{priorCheck.at ? `, ${formatDate(priorCheck.at)}` : ''}
+              </p>
+            )}
+          </div>
+          {reviewPanel && (
+            <div className="p-4 md:p-5 border-t md:border-t-0 md:border-l border-gray-100">{reviewPanel}</div>
+          )}
+        </div>
 
         {!isRevisionDraft && chainMoney && reviewer && <VersionLedgerStrip money={chainMoney} versionNo={ws.version_no} />}
         {showScorecard && !isRevisionDraft && (
@@ -752,17 +845,6 @@ export default async function WorkingSheetEditorPage(
             estimatesMissingReason={estMissingReason}
           />
         )}
-        {ccSettings.cumulative_versions && reviewer && ws.sub_skill_id && (
-          <Link
-            href={`/cost-control/ledger?project=${ws.project_id}&discipline=${ws.discipline_id}&sub_skill=${ws.sub_skill_id}`}
-            className="inline-flex items-center gap-1.5 text-xs font-semibold text-indigo-700 hover:underline"
-          >
-            View this sub-skill&apos;s full ledger (passbook) →
-          </Link>
-        )}
-        {/* Approved-vs-new-ask BOQ + cumulative totals — a management review
-            tool. Gated on reviewer to match its siblings above (strip +
-            scorecard); engineers see only their own sheet's BOQ. */}
         {matchSummary && reviewer && <CumulativeBoqPanel rows={matchedRows} summary={matchSummary} workingByKey={workingByKey} grandTotal={chainMoney?.cumulative} priorGrandTotal={chainMoney?.alreadyApproved} ladder={wsLadder} />}
 
         {ccSettings.show_deadlines && (ws.deadline_date || canEditDeadline) && (
@@ -775,11 +857,7 @@ export default async function WorkingSheetEditorPage(
               />
             )}
             {canEditDeadline && (
-              <EditDeadlineButton
-                wsId={ws.id}
-                initialDate={ws.deadline_date}
-                initialNotes={ws.deadline_notes}
-              />
+              <EditDeadlineButton wsId={ws.id} initialDate={ws.deadline_date} initialNotes={ws.deadline_notes} />
             )}
           </div>
         )}
@@ -793,94 +871,128 @@ export default async function WorkingSheetEditorPage(
             canEdit={ownerEditable}
           />
         ) : (
-        <>
-        {/* Upload the corrected Excel (returned Excel sheet, owner only) */}
-        {replaceExcelPanel}
-        <SourceExcelViewer url={downloadUrl} name={ws.source_excel_name} microsoft={ccSettings.excel_microsoft} reviewer={reviewer} />
+          <>
+            {/* Engineer on a returned sheet: the correction step comes first. */}
+            {replaceExcelPanel}
 
-        {/* AI review tools — for the approval chain (PH / Atm Head /
-            Trustee / admin), not engineers. Tucked behind a right-aligned
-            "AI tools" toggle so they don't sit expanded in the middle. */}
-        {showAi && (
-          <AiToolsDisclosure>
-            <WSAskAiPanel wsId={ws.id} />
-            <AiBifurcationPanel
+            {/* Analysis (folded) · Verified BOQ · the decision under it */}
+            <ExcelSummaryPanel
+              signOffCfg={signOffCfg}
               wsId={ws.id}
-              canEdit={canEdit && (user?.id === ws.engineer_id || isAdmin)}
-              aiParseMeta={ws.ai_parse_meta as {
-                text?: string | null
-                model?: string
-                rows_in?: number
-                rows_out?: number
-                suggestions_count?: number
-                rate_concerns_count?: number
-                totals_by_category?: Partial<Record<'material' | 'labour' | 'material_and_labour' | 'equipment', number>>
-                split_totals?: Partial<Record<'material' | 'labour' | 'equipment', number>>
-                run_at?: string
-              } | null}
+              status={ws.status as WSStatus}
+              ctx={ctx}
+              reviewer={reviewer}
+              aiEnabled={ccSettings.ai_tools}
+              totalAmount={Number(ws.total_amount ?? 0)}
+              approvedSoFar={Number(ws.approved_for_erp_amt ?? 0)}
+              chainReleasedSoFar={chainReleasedSoFarAmt}
+              summaryTotal={ws.summary_total != null ? Number(ws.summary_total) : null}
+              summaryNotes={ws.summary_notes}
+              flagSummary={ws.flag_summary as { generated_at: string; total_rows: number; flagged_rows: number; by_flag: Record<string, number>; narrative: string | null; ai_used: boolean; ai_error: string | null } | null}
               rows={(excelRows ?? []).map(r => ({
+                id: r.id,
                 row_no: r.row_no,
+                description: r.description,
+                unit: r.unit,
+                qty: r.qty != null ? Number(r.qty) : null,
+                rate: r.rate != null ? Number(r.rate) : null,
                 amount: r.amount != null ? Number(r.amount) : null,
-                ai_meta: r.ai_meta as {
-                  category?: 'material' | 'labour' | 'material_and_labour' | 'equipment' | null
-                  material_value?: number | null
-                  labour_value?: number | null
-                  suggested_sub_skill_id?: string | null
-                  rate_concern?: string | null
-                } | null,
+                formula_in_amount: r.formula_in_amount,
+                rate_breakdown:   r.rate_breakdown   as Array<{ label: string; value: number }> | null,
+                amount_breakdown: r.amount_breakdown as Array<{ label: string; value: number }> | null,
+                ai_meta: r.ai_meta as { category?: 'material' | 'labour' | 'material_and_labour' | 'equipment' | 'tax' | 'addon' | 'discount' | null } | null,
+                flag: r.flag,
+                flag_reason: r.flag_reason,
+                flag_severity: r.flag_severity,
+                qty_formula: (r as { qty_formula?: string | null }).qty_formula ?? null,
+                qty_basis: (r as { qty_basis?: string | null }).qty_basis ?? null,
+                source_sheet: (r as { source_sheet?: string | null }).source_sheet ?? null,
+                source_cell: (r as { source_cell?: string | null }).source_cell ?? null,
               }))}
+              grandTotal={ws.summary_total != null ? Number(ws.summary_total) : Number(ws.total_amount ?? 0)}
+              ladder={wsLadder}
             />
-          </AiToolsDisclosure>
-        )}
 
-        <ExcelSummaryPanel
-          signOffCfg={signOffCfg}
-          wsId={ws.id}
-          status={ws.status as WSStatus}
-          ctx={ctx}
-          reviewer={reviewer}
-          aiEnabled={ccSettings.ai_tools}
-          totalAmount={Number(ws.total_amount ?? 0)}
-          approvedSoFar={Number(ws.approved_for_erp_amt ?? 0)}
-          chainReleasedSoFar={chainReleasedSoFarAmt}
-          fileName={ws.source_excel_name}
-          downloadUrl={downloadUrl}
-          summaryTotal={ws.summary_total != null ? Number(ws.summary_total) : null}
-          summaryNotes={ws.summary_notes}
-          flagSummary={ws.flag_summary as { generated_at: string; total_rows: number; flagged_rows: number; by_flag: Record<string, number>; narrative: string | null; ai_used: boolean; ai_error: string | null } | null}
-          lastCheckedAt={ws.last_checked_at}
-          rows={(excelRows ?? []).map(r => ({
-            id: r.id,
-            row_no: r.row_no,
-            description: r.description,
-            unit: r.unit,
-            qty: r.qty != null ? Number(r.qty) : null,
-            rate: r.rate != null ? Number(r.rate) : null,
-            amount: r.amount != null ? Number(r.amount) : null,
-            formula_in_amount: r.formula_in_amount,
-            rate_breakdown:   r.rate_breakdown   as Array<{ label: string; value: number }> | null,
-            amount_breakdown: r.amount_breakdown as Array<{ label: string; value: number }> | null,
-            ai_meta: r.ai_meta as { category?: 'material' | 'labour' | 'material_and_labour' | 'equipment' | 'tax' | 'addon' | 'discount' | null } | null,
-            flag: r.flag,
-            flag_reason: r.flag_reason,
-            flag_severity: r.flag_severity,
-            qty_formula: (r as { qty_formula?: string | null }).qty_formula ?? null,
-            qty_basis: (r as { qty_basis?: string | null }).qty_basis ?? null,
-            source_sheet: (r as { source_sheet?: string | null }).source_sheet ?? null,
-            source_cell: (r as { source_cell?: string | null }).source_cell ?? null,
-          }))}
-          grandTotal={ws.summary_total != null ? Number(ws.summary_total) : Number(ws.total_amount ?? 0)}
-          ladder={wsLadder}
-        />
-        </>
-        )}
+            {/* The engineer's next steps on a released / approved sheet. */}
+            {releaseRequestPanel}
+            {canRaiseRevision && <RaiseRevisionButton projectId={ws.project_id} disciplineId={ws.discipline_id} subSkillId={ws.sub_skill_id} />}
 
-        {workingEvidencePanel}
-        {approvalRecordsPanel}
+            <SourceExcelViewer url={downloadUrl} name={ws.source_excel_name} microsoft={ccSettings.excel_microsoft} reviewer={reviewer} />
+
+            {showAi && (
+              <AiToolsDisclosure>
+                <WSAskAiPanel wsId={ws.id} />
+                <AiBifurcationPanel
+                  wsId={ws.id}
+                  canEdit={canEdit && (isOwner || isAdmin)}
+                  aiParseMeta={ws.ai_parse_meta as {
+                    text?: string | null
+                    model?: string
+                    rows_in?: number
+                    rows_out?: number
+                    suggestions_count?: number
+                    rate_concerns_count?: number
+                    totals_by_category?: Partial<Record<'material' | 'labour' | 'material_and_labour' | 'equipment', number>>
+                    split_totals?: Partial<Record<'material' | 'labour' | 'equipment', number>>
+                    run_at?: string
+                  } | null}
+                  rows={(excelRows ?? []).map(r => ({
+                    row_no: r.row_no,
+                    amount: r.amount != null ? Number(r.amount) : null,
+                    ai_meta: r.ai_meta as {
+                      category?: 'material' | 'labour' | 'material_and_labour' | 'equipment' | null
+                      material_value?: number | null
+                      labour_value?: number | null
+                      suggested_sub_skill_id?: string | null
+                      rate_concern?: string | null
+                    } | null,
+                  }))}
+                />
+              </AiToolsDisclosure>
+            )}
+          </>
+        )}
 
         {ccSettings.comments && <CommentsPanel wsId={ws.id} />}
 
-      <ApprovalTimeline wsId={ws.id} />
+        {/* ── Files ── one card: the sheet, the summary screenshot, working
+            files, approval records. The Excel used to be listed twice. */}
+        <div className="rounded-xl border border-gray-200 bg-white">
+          <div className="px-4 py-2.5 border-b border-gray-100">
+            <h3 className="text-sm font-bold text-gray-900">Files</h3>
+          </div>
+          <div className="px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-center gap-3 min-w-0">
+              <span className="h-9 w-9 rounded-lg bg-emerald-50 text-emerald-700 grid place-items-center text-[10px] font-extrabold flex-shrink-0">XLSX</span>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-gray-900 break-words">{ws.source_excel_name ?? 'Excel attachment'}</p>
+                <p className="text-[11.5px] text-gray-500">
+                  The sheet · {(excelRows ?? []).length} row{(excelRows ?? []).length === 1 ? '' : 's'}
+                  {extraCols?.submitted_at ? ` · submitted ${formatDate(extraCols.submitted_at)}` : ws.created_at ? ` · raised ${formatDate(ws.created_at)}` : ''}
+                </p>
+              </div>
+            </div>
+            {ws.source_excel_url && (
+              <a href={`/api/cost-control/working-sheets/${ws.id}/download`} className="text-[12px] font-semibold text-indigo-700 hover:underline whitespace-nowrap">Download</a>
+            )}
+          </div>
+          {summaryShotPanel && <div className="px-4 pb-3">{summaryShotPanel}</div>}
+          {ccSettings.cumulative_versions && (
+            <WorkingEvidence
+              wsId={ws.id}
+              projectId={ws.project_id}
+              canUpload={ownerEditable}
+              showRequirement={ownerEditable}
+              initial={evidenceForLink}
+              embedded
+            />
+          )}
+          {(reviewer || approvalRecordFiles.length > 0) && (
+            <ApprovalRecords wsId={ws.id} canManage={reviewer} initial={approvalRecordFiles} embedded />
+          )}
+        </div>
+
+        <ApprovalTimeline wsId={ws.id} />
       </div>
     )
   }

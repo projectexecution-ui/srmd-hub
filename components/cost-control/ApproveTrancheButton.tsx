@@ -16,6 +16,7 @@ import { approveWorkingSheet } from '@/components/cost-control/ws-actions'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { MoneyInput } from '@/components/ui/money-input'
+import { RoundUpChips } from '@/components/cost-control/RoundUpChips'
 import { Textarea } from '@/components/ui/textarea'
 import { confirm } from '@/components/ui/confirm-dialog'
 import { Check, Loader2, Wallet, Paperclip, MessageSquare, X } from 'lucide-react'
@@ -250,6 +251,12 @@ export function ApproveTrancheButton({
           placeholder={String(remaining)}
           className="mt-1 font-mono"
         />
+        {/* Nominal round-up (next ₹1,000 / ₹10,000 / ₹1,00,000 above the balance).
+            cc_approve_release already allows releasing above the ask and records
+            the extra; this only saves typing the round figure by hand. */}
+        <div className="mt-1.5">
+          <RoundUpChips base={remaining} current={Number(amount) || null} onPick={v => setAmount(String(v))} disabled={busy} />
+        </div>
         {Number(amount) > remaining + 0.5 && (
           <p className="text-[11px] font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1 mt-1">
             ⚠ {formatINR(Number(amount) - remaining)} above the asked {formatINR(remaining)} — allowed (e.g. rounding up); you&apos;ll confirm before it goes.

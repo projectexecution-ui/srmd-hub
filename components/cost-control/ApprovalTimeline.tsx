@@ -7,6 +7,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { formatINR, personName, formatDuration, formatDateTime } from '@/lib/utils'
 import { splitCheckedComment, remarkRepeatsAmount } from '@/lib/cost-control/approval-trail'
+import { awaitingLabel } from '@/lib/cost-control/chain'
 import {
   FilePlus2, Send, CheckCircle2, RotateCcw, Wallet, Paperclip, CircleDot, Clock,
 } from 'lucide-react'
@@ -117,13 +118,26 @@ export async function ApprovalTimeline({ wsId }: { wsId: string }) {
     // Engineer sent a partly released sheet back through the chain to ask
     // for the balance (cc_request_release).
     const isReleaseRequest = e.decision === 'release_requested' || e.to_stage === 'submitted'
+    // A "→ submitted" event is one of three things, and the trail used to call
+    // all of them "Requested release of the balance": the FIRST submission
+    // (from draft), a RESUBMISSION after a return, or the genuine balance
+    // request on a partly-released sheet. Name each for what it is.
+    const submitTitle = e.decision === 'release_requested' || e.from_stage === 'partially_approved'
+      ? 'Requested release of the balance'
+      : e.from_stage === 'returned' ? 'Resubmitted for approval'
+      : 'Submitted for approval'
+    // Who returned it — the stage says which desk it came back from.
+    const returnedBy = e.from_stage === 'submitted' ? 'Project Head'
+      : e.from_stage === 'ph_approved' ? 'Atm Head'
+      : e.from_stage === 'atm_approved' || e.from_stage === 'partially_approved' ? 'Trustee'
+      : null
     items.push({
       ts: e.created_at,
       kind: isReturn ? 'returned' : isReleaseRequest ? 'submitted' : isSignOff ? 'signoff' : isFull ? 'approved' : 'partial',
       who: e.actor_id ? nameById.get(e.actor_id) ?? null : null,
       title: isReturn
-        ? `Returned to engineer${e.from_stage === 'ph_approved' ? ' (by Atm Head stage)' : e.from_stage === 'atm_approved' || e.from_stage === 'partially_approved' ? ' (by Trustee stage)' : ''}`
-        : isReleaseRequest ? 'Requested release of the balance — back into the approval chain'
+        ? `Returned to engineer${returnedBy ? ` by the ${returnedBy}` : ''}`
+        : isReleaseRequest ? submitTitle
         : e.to_stage === 'ph_approved' ? 'Project Head signed off'
         : e.to_stage === 'atm_approved' ? 'Atm Head signed off'
         : isFull ? 'Fully approved into ERP' : 'Release approved (partial)',
@@ -159,12 +173,18 @@ export async function ApprovalTimeline({ wsId }: { wsId: string }) {
     })
   }
 
-  // Chronological first, so "+2h after previous" measures against the step that
-  // genuinely came before…
+  // Newest at the top, which is where the reader looks first. The old
+  // "+2h after previous" pills went (Aksha, 23 Sep 2026): in a newest-first
+  // list "previous" meant the entry BELOW, and everyone read it as above.
   items.sort((a, b) => a.ts.localeCompare(b.ts))
-  const gaps = items.map((it, i) => (i > 0 ? formatDuration(items[i - 1].ts, it.ts) : ''))
-  // …then newest at the top, which is where the reader looks first.
-  const feed = items.map((it, i) => ({ ...it, gap: gaps[i] })).reverse()
+  const feed = [...items].reverse()
+  // The open step, on top: who the sheet is with and for how long, measured
+  // from the last thing that happened to it.
+  const waitingOn = wsRow ? awaitingLabel(wsRow.status) : null
+  const lastTs = items.length ? items[items.length - 1].ts : null
+  const waiting = waitingOn && lastTs
+    ? { label: waitingOn, since: lastTs, sinceText: formatDuration(lastTs, new Date().toISOString()) }
+    : null
 
   const style: Record<TLItem['kind'], { Icon: typeof Send; dot: string; ring: string }> = {
     raised:    { Icon: FilePlus2,    dot: 'bg-gray-400',    ring: 'ring-gray-100' },
@@ -179,21 +199,36 @@ export async function ApprovalTimeline({ wsId }: { wsId: string }) {
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white">
-      <div className="px-4 py-2.5 border-b border-gray-100">
+      <div className="px-4 py-2.5 border-b border-gray-100 flex items-center justify-between gap-3 flex-wrap">
         <h3 className="text-sm font-bold text-gray-900 inline-flex items-center gap-2">
-          <Clock className="h-4 w-4 text-gray-500" /> Approval trail
+          <Clock className="h-4 w-4 text-gray-500" /> Audit trail
         </h3>
-        <p className="text-[11px] text-gray-500">Full cycle — every stakeholder action on this sheet, most recent first.</p>
+        <span className="text-[11px] text-gray-400">latest first</span>
       </div>
 
       {items.length === 0 ? (
         <p className="px-4 py-6 text-sm text-gray-500 text-center">No activity yet — this sheet hasn&apos;t moved through approval.</p>
       ) : (
         <ol className="p-4 space-y-0">
+          {/* The open step — where the sheet is right now, and for how long. */}
+          {waiting && (
+            <li className="relative flex gap-3 pb-4">
+              <span className="absolute left-[11px] top-6 bottom-0 w-px bg-gray-200" aria-hidden />
+              <span className="relative z-10 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-white ring-4 ring-indigo-100 border-2 border-indigo-500">
+                <span className="h-2 w-2 rounded-full bg-indigo-500 animate-pulse" />
+              </span>
+              <div className="min-w-0 flex-1 -mt-0.5">
+                <div className="flex items-baseline justify-between gap-2 flex-wrap">
+                  <p className="text-sm font-semibold text-indigo-900">With the {waiting.label}</p>
+                  <span className="text-[11px] text-indigo-700 whitespace-nowrap tabular-nums">{waiting.sinceText} so far</span>
+                </div>
+                <p className="text-xs text-gray-500">since {formatDateTime(waiting.since)}</p>
+              </div>
+            </li>
+          )}
           {feed.map((it, i) => {
             const s = style[it.kind]
             const last = i === feed.length - 1
-            const gap = it.gap
             // Don't print the checked figure twice. Approvers routinely type it
             // into their own remark ("Ok to go ahead, checked 51,27,656/-"),
             // and repeating it from our prefix is what made the trail read
@@ -219,14 +254,7 @@ export async function ApprovalTimeline({ wsId }: { wsId: string }) {
                     </p>
                     <time className="text-[11px] text-gray-400 whitespace-nowrap">{formatDateTime(it.ts)}</time>
                   </div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <p className="text-xs text-gray-500">{it.who ?? '—'}</p>
-                    {gap && i > 0 && (
-                      <span className="text-[10px] text-gray-400 bg-gray-100 rounded-full px-1.5 py-0.5" title="Time since the previous step">
-                        +{gap} after previous
-                      </span>
-                    )}
-                  </div>
+                  <p className="text-xs text-gray-500">{it.who ?? '—'}</p>
                   {it.comment && (
                     <p className="mt-1 text-xs text-gray-700 bg-gray-50 border border-gray-100 rounded px-2 py-1 whitespace-pre-line">“{it.comment}”</p>
                   )}
