@@ -194,6 +194,10 @@ export const POWERS: Power[] = [
   // matrix has to be able to show it. Admin is the real gate on every screen
   // inside it; view and edit are recorded for the day the desks open up.
   { slug: 'bills-booking',       lane: 'portal',    label: 'Bills Approval', hint: 'The whole approval flow over IN4 — admin only today, and the Bills tab inside a project.' },
+  // Labour Report, 23 Sep 2026 — the daily manpower count per agency on a
+  // site. Edit is what the site engineer needs to type the day; view reads
+  // the sheet and the graph.
+  { slug: 'labour-report',       lane: 'portal',    label: 'Labour Report',   hint: 'The Labour lane — today’s manpower entry per agency, the month sheet, graph and WhatsApp card. Edit types the day.' },
   { slug: 'approvals',           lane: 'portal',    label: 'My Approvals',    hint: 'The approvals inbox.' },
   { slug: 'admin-users',         lane: 'portal',    label: 'Admin — users & roles', hint: 'Users, roles, the allowlist.' },
   { slug: 'admin-permissions',   lane: 'portal',    label: 'Admin — permissions',   hint: 'This matrix.' },

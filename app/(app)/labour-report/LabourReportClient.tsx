@@ -77,6 +77,44 @@ export function LabourReportClient(props: Props) {
   useEffect(() => { setAgencies(props.agencies); const f = fold(props.entries); setEntries(f.values); setSavedAt(f.savedAt) }, [props.agencies, props.entries])
   useEffect(() => { if (window.innerWidth >= 1024) setMonthView('table') }, [])
 
+  // ── Kept on the phone (site internet drops mid-entry) ─────────────────────
+  // Two pockets in localStorage, both keyed project|date:
+  //   draft    every number as it is typed, so a reload or a dropped page
+  //            brings the half-done day back exactly as it was;
+  //   pending  a Save that could not reach CT Hub, retried on its own when the
+  //            browser says it is back online, on every reload, and every 30 s.
+  // Nothing Vatsal types is lost between the tap and the row landing.
+  const [pending, setPending] = useState<Record<string, DayValues>>(() => store.read<Record<string, DayValues>>('labour-pending') ?? {})
+  const pendingKey = (d: string) => `${projectId}|${d}`
+  const flushing = useRef(false)
+  const flushPending = async () => {
+    if (flushing.current || !projectId || !canEdit) return
+    const all = store.read<Record<string, DayValues>>('labour-pending') ?? {}
+    const mine = Object.keys(all).filter(k => k.startsWith(projectId + '|'))
+    if (!mine.length) return
+    flushing.current = true
+    const supabase = createClient()
+    for (const k of mine) {
+      const d = k.split('|')[1]; const values = all[k]
+      const payload = Object.entries(values).map(([key, count]) => { const [agency_id, sub_head] = key.split('|'); return { project_id: projectId, report_date: d, agency_id, sub_head, count, updated_by: userId, updated_at: new Date().toISOString() } })
+      const { data, error } = await supabase.from('labour_entries').upsert(payload, { onConflict: 'project_id,report_date,agency_id,sub_head' }).select('report_date')
+      if (error || !data || data.length !== payload.length) continue // still no luck — keep it, try again later
+      delete all[k]; store.write('labour-pending', all); store.remove(`labour-draft|${k}`)
+      const now = new Date().toISOString()
+      setEntries(p => ({ ...p, [d]: { ...values } })); setSavedAt(p => ({ ...p, [d]: now })); setPending({ ...all })
+      toast.success(`Back online — ${fmtShort(d)} saved to CT Hub`)
+    }
+    flushing.current = false
+  }
+  useEffect(() => {
+    flushPending()
+    const onUp = () => flushPending()
+    window.addEventListener('online', onUp)
+    const t = setInterval(() => { if (Object.keys(pending).some(k => k.startsWith(projectId + '|'))) flushPending() }, 30_000)
+    return () => { window.removeEventListener('online', onUp); clearInterval(t) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, Object.keys(pending).length])
+
   const rows = useMemo<Row[]>(() => {
     const out: Row[] = []
     agencies.filter(a => !a.hidden).forEach((a, i) => {
@@ -94,9 +132,13 @@ export function LabourReportClient(props: Props) {
     const saved = entries[d]
     const from = saved ? null : prevSaved(d)
     const base = saved ?? (from ? entries[from] : {})
+    // A day kept on this phone (typed but not saved, or saved but not yet
+    // through to CT Hub) wins over what the server has.
+    const kept = store.read<DayValues>(`labour-draft|${pendingKey(d)}`) ?? pending[pendingKey(d)] ?? null
     const next: DayValues = {}
-    rows.forEach(r => { next[r.key] = base[r.key] ?? 0 })
-    setCurDate(d); setDraft(next); setPrefilledFrom(from); setDirty(false)
+    rows.forEach(r => { next[r.key] = (kept ?? base)[r.key] ?? 0 })
+    setCurDate(d); setDraft(next); setPrefilledFrom(kept ? null : from)
+    setDirty(!!kept && rows.some(r => (saved?.[r.key] ?? 0) !== next[r.key]))
   }
   // Re-derive the open day whenever the row list or the saved data changes
   // (first paint, a save, an agency added). loadDay reads the latest of both.
@@ -114,21 +156,37 @@ export function LabourReportClient(props: Props) {
   const delta = prevForDelta ? total - dayTotal(prevForDelta) : null
 
   const guardDirty = () => { if (!dirty) return true; toast.message('Save or undo this day first — nothing is lost'); return false }
-  const setVal = (key: string, n: number) => { n = Math.max(0, Math.min(999, Math.round(n || 0))); setDraft(p => ({ ...p, [key]: n })); setDirty(true) }
+  const setVal = (key: string, n: number) => {
+    n = Math.max(0, Math.min(999, Math.round(n || 0)))
+    setDraft(p => { const next = { ...p, [key]: n }; store.write(`labour-draft|${pendingKey(curDate)}`, next); return next })
+    setDirty(true)
+  }
 
   const save = async () => {
     if (!projectId || !canEdit) return
     setSaving(true)
     const supabase = createClient()
     const payload = rows.map(r => ({ project_id: projectId, report_date: curDate, agency_id: r.agencyId, sub_head: r.head, count: draft[r.key] ?? 0, updated_by: userId, updated_at: new Date().toISOString() }))
-    const { data, error } = await supabase.from('labour_entries').upsert(payload, { onConflict: 'project_id,report_date,agency_id,sub_head' }).select('report_date')
+    let res: { data: unknown[] | null; error: { message: string } | null }
+    try {
+      res = await supabase.from('labour_entries').upsert(payload, { onConflict: 'project_id,report_date,agency_id,sub_head' }).select('report_date')
+    } catch (e) { res = { data: null, error: { message: e instanceof Error ? e.message : 'network' } } }
     setSaving(false)
+    const { data, error } = res
     if (error || !data || data.length !== payload.length) {
-      toast.error(error ? `Could not save: ${error.message}` : 'Could not save — you may not have edit rights on Labour Report')
+      // A refusal (no rights) is a refusal; anything else is the site's
+      // internet. Either way the numbers stay on this phone; a connection
+      // problem is queued and retried on its own.
+      const refused = !!error && /permission|policy|denied|row-level|rls/i.test(error.message)
+      if (refused) { toast.error(`Could not save: ${error!.message}`); return }
+      const all = store.read<Record<string, DayValues>>('labour-pending') ?? {}
+      all[pendingKey(curDate)] = { ...draft }; store.write('labour-pending', all); setPending({ ...all })
+      toast.message(`No internet just now — ${fmtShort(curDate)} is kept on this phone and will save itself when the connection is back`)
       return
     }
     const now = new Date().toISOString()
     setEntries(p => ({ ...p, [curDate]: { ...draft } })); setSavedAt(p => ({ ...p, [curDate]: now }))
+    store.remove(`labour-draft|${pendingKey(curDate)}`)
     setDirty(false); setPrefilledFrom(null)
     setMonth(curDate.slice(0, 7)); setShareDate(curDate); setTab('month')
     toast.success(`Saved ${fmtShort(curDate)} · ${total} heads · copy the card below`)
@@ -260,8 +318,10 @@ export function LabourReportClient(props: Props) {
                 <input id="labour-date" type="date" value={curDate} max={today} aria-label="Report date" onChange={e => { if (e.target.value && e.target.value <= today && guardDirty()) loadDay(e.target.value) }} className="h-11 rounded-xl border border-gray-200 bg-white px-2 text-sm font-semibold" />
                 <button aria-label="Next day" disabled={curDate >= today} onClick={() => guardDirty() && loadDay(shiftDay(curDate, 1))} className="h-11 w-11 rounded-xl border border-gray-200 bg-white grid place-items-center disabled:opacity-40"><ChevronRight className="h-5 w-5" /></button>
               </div>
-              {dirty
-                ? <Chip tone="amber">Not saved</Chip>
+              {pending[pendingKey(curDate)]
+                ? <Chip tone="amber">Kept on this phone · waiting for internet</Chip>
+                : dirty
+                ? <Chip tone="amber">Not saved · kept on this phone</Chip>
                 : entries[curDate]
                   ? <Chip tone="green">Saved {savedAt[curDate] ? fmtTime(savedAt[curDate]) : ''}</Chip>
                   : prefilledFrom
@@ -423,6 +483,13 @@ export function LabourReportClient(props: Props) {
 }
 
 // ── Small pieces ───────────────────────────────────────────────────────────
+/** localStorage that never throws — a private window or blocked storage just
+ *  means nothing is kept between reloads, not a broken screen. */
+const store = {
+  read<T>(k: string): T | null { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) as T : null } catch { return null } },
+  write(k: string, v: unknown) { try { localStorage.setItem(k, JSON.stringify(v)) } catch { /* not kept */ } },
+  remove(k: string) { try { localStorage.removeItem(k) } catch { /* nothing to remove */ } },
+}
 function fold(list: LabourEntry[]) {
   const values: Record<string, DayValues> = {}; const savedAt: Record<string, string> = {}
   for (const e of list) {

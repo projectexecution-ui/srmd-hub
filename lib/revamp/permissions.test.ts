@@ -186,7 +186,8 @@ describe('the matrix rows', () => {
     }
   })
   it('every power is a slug some revamp screen actually checks — the tabs’ modules and the lanes in nav.ts', () => {
-    const gated = new Set([...WORKSPACE_TABS.map(t => t.permissionSlug), 'cost-control', 'bills-pipeline', 'stuck-bills', 'supplier-report', 'approvals', 'admin-users', 'admin-permissions', 'admin-settings'])
+    // labour-report: the Labour lane in nav.ts and requirePermission() on /labour-report (23 Sep 2026).
+    const gated = new Set([...WORKSPACE_TABS.map(t => t.permissionSlug), 'cost-control', 'bills-pipeline', 'stuck-bills', 'supplier-report', 'approvals', 'admin-users', 'admin-permissions', 'admin-settings', 'labour-report'])
     for (const s of POWER_SLUGS) expect(gated.has(s), s).toBe(true)
     // …and every module a tab gates on is a power, so no tab inherits from something the matrix cannot show.
     for (const t of WORKSPACE_TABS) expect(POWER_SLUGS.has(t.built ? t.permissionSlug : 'cost-control'), t.slug).toBe(true)
