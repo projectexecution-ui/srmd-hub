@@ -11,6 +11,7 @@ import { checkIsCcReviewer } from '@/components/cost-control/ws-actions'
 import { canMarkComplete } from '@/lib/cost-control/completion'
 import { formatINR } from '@/lib/utils'
 import { kindOf, parentError, kindChangeError, parentKindFor, type ProjectKind } from '@/lib/projects/kind'
+import { recodeWs, wsCodeCandidates } from '@/lib/cost-control/ws-code'
 
 const uuid = z.string().uuid()
 const isoDateOrNull = z
@@ -740,4 +741,168 @@ export async function setErpReduced(
   revalidatePath(`/cost-control/projects/${projectId}`)
   revalidatePath('/cost-control/billing')
   return { ok: true }
+}
+
+// ============================================================
+// Move an imported Internal Estimate to another sub-category.
+// ============================================================
+// Aksha, 21 Sep 2026: the 90.9 L on NGH A's 801 High Side belonged under 804
+// SW & CP Fittings. There was no way to do it — the only routes were a full
+// revised-Internal-Budget upload (which archives every [IB] sheet on the
+// project to move one line) or a hand-written database change. This is the
+// third way, and it does exactly one thing.
+//
+// WHAT IT MOVES. The imported [IB…] baseline sheets that carry the estimate —
+// not budgets, not approvals, not the engineer's ask. Nothing about the money
+// changes: the sheet keeps its amount, its status and its history, and only
+// the sub-category it is filed under changes.
+//
+// THE RULES, each a refusal rather than a silent surprise:
+//   · same work category only, so a category total can never move;
+//   · the target must be switched on for the project;
+//   · the target must not already hold an imported estimate, or the two would
+//     add up and the project would quietly gain money;
+//   · not while a revised Internal Budget is waiting for the Trustee, because
+//     approving that re-imports everything and would undo this unnoticed;
+//   · a reason is required, and both old and new values are stamped into
+//     cc_working_sheet_edits — the sheet's own history, where anyone looking
+//     at it later will find them.
+
+type MoveResult =
+  | { ok: true; moved: number; amount: number; newCodes: string[] }
+  | { ok: false; error: string }
+
+/** The first code for the target sub-skill that the unique index will accept.
+ *  The naming rule itself lives in lib/cost-control/ws-code.ts, where it is
+ *  tested; this only walks the candidates against the table. */
+async function freeWsCode(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  current: string, fromCode: string, toCode: string,
+): Promise<string> {
+  const candidates = wsCodeCandidates(recodeWs(current, fromCode, toCode))
+  for (const candidate of candidates) {
+    const { data } = await supabase.from('cc_working_sheets').select('id').eq('ws_code', candidate).maybeSingle()
+    if (!data) return candidate
+  }
+  return candidates[candidates.length - 1]
+}
+
+export async function moveEstimateToSubSkill(
+  projectId: string,
+  fromSubSkillId: string,
+  toSubSkillId: string,
+  reason: string,
+): Promise<MoveResult> {
+  await requirePermission('cost-control', 'edit')
+  // The same standing the row menu itself needs — the Internal Estimate is
+  // management-confidential, and this re-files it.
+  if (!(await checkIsCcReviewer())) {
+    return { ok: false, error: 'Only a Cost Control reviewer can move an estimate.' }
+  }
+
+  const parsed = z.object({
+    project_id: uuid,
+    from_sub_skill_id: uuid,
+    to_sub_skill_id: uuid,
+    reason: z.string().trim().min(3, 'Say why it is moving — this goes on the record.').max(300),
+  }).safeParse({
+    project_id: projectId, from_sub_skill_id: fromSubSkillId,
+    to_sub_skill_id: toSubSkillId, reason,
+  })
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid input' }
+  if (fromSubSkillId === toSubSkillId) return { ok: false, error: 'That is the sub-category it is already on.' }
+
+  const supabase = await createClient()
+
+  // A revised Internal Budget awaiting the Trustee re-imports the whole
+  // estimate on approval, which would quietly undo this.
+  const { data: lock } = await supabase.rpc('cc_ie_lock_state', { p_project: projectId })
+  if (lock === 'revision_submitted') {
+    return { ok: false, error: 'A revised Internal Budget is waiting for the Trustee. Approving it re-imports the whole estimate, so settle that first — otherwise this move would be undone without anyone noticing.' }
+  }
+
+  const { data: subsRaw } = await supabase
+    .from('cc_sub_skills').select('id, code, name, discipline_id')
+    .in('id', [fromSubSkillId, toSubSkillId])
+  const subs = (subsRaw ?? []) as Array<{ id: string; code: string; name: string; discipline_id: string }>
+  const from = subs.find(s => s.id === fromSubSkillId)
+  const to = subs.find(s => s.id === toSubSkillId)
+  if (!from || !to) return { ok: false, error: 'That sub-category no longer exists.' }
+  if (from.discipline_id !== to.discipline_id) {
+    return { ok: false, error: 'An estimate can only move within the same work category, so that no category total changes. Across categories is a revised Internal Budget, not a re-filing.' }
+  }
+
+  const { data: onProject } = await supabase
+    .from('cc_project_sub_skills').select('is_enabled')
+    .eq('project_id', projectId).eq('sub_skill_id', toSubSkillId).maybeSingle()
+  if (!onProject?.is_enabled) {
+    return { ok: false, error: `${to.code} ${to.name} is not switched on for this project. Add it in setup first.` }
+  }
+
+  const { data: sheetsRaw } = await supabase
+    .from('cc_working_sheets').select('id, ws_code, total_amount')
+    .eq('project_id', projectId).eq('sub_skill_id', fromSubSkillId)
+    .is('archived_at', null).like('summary_notes', '[IB%')
+  const sheets = (sheetsRaw ?? []) as Array<{ id: string; ws_code: string; total_amount: number | null }>
+  if (sheets.length === 0) {
+    return { ok: false, error: `${from.code} ${from.name} has no imported estimate to move.` }
+  }
+
+  const { data: taken } = await supabase
+    .from('cc_working_sheets').select('ws_code')
+    .eq('project_id', projectId).eq('sub_skill_id', toSubSkillId)
+    .is('archived_at', null).like('summary_notes', '[IB%').limit(1)
+  if (taken && taken.length > 0) {
+    const held = (taken[0] as { ws_code: string }).ws_code
+    return { ok: false, error: `${to.code} ${to.name} already carries an imported estimate (${held}). Two would add together — move that one out first, or choose another sub-category.` }
+  }
+
+  // The trap this closes: where a sub-skill's estimate is MAINTAINED (it
+  // follows the ERP budget — cc_budget_lines.internal_estimate_set_at), the
+  // maintained figure wins over the imported baseline on the page. Moving a
+  // baseline onto such a row would save correctly and then show nothing: the
+  // amount would be masked and look lost. Refuse, and say which figure is in
+  // the way.
+  const { data: maintained } = await supabase
+    .from('cc_budget_lines').select('internal_estimate_amt, internal_estimate_set_at')
+    .eq('project_id', projectId).eq('sub_skill_id', toSubSkillId).maybeSingle()
+  if (maintained?.internal_estimate_set_at) {
+    const held = maintained.internal_estimate_amt != null ? formatINR(Number(maintained.internal_estimate_amt)) : 'a maintained figure'
+    return { ok: false, error: `${to.code} ${to.name} already has a maintained estimate (${held}), which takes precedence over an imported one. Moving it there would hide the amount rather than show it — clear that estimate first, or choose another sub-category.` }
+  }
+
+  const me = await getMyProfile()
+  const note = `Internal Estimate moved from ${from.code} ${from.name} to ${to.code} ${to.name} — ${parsed.data.reason}`
+  const newCodes: string[] = []
+  let amount = 0
+
+  for (const ws of sheets) {
+    const newCode = await freeWsCode(supabase, ws.ws_code, from.code, to.code)
+    const { error } = await supabase
+      .from('cc_working_sheets')
+      .update({ sub_skill_id: toSubSkillId, ws_code: newCode })
+      .eq('id', ws.id)
+      .eq('sub_skill_id', fromSubSkillId) // nobody moved it while we looked
+    if (error) {
+      return {
+        ok: false,
+        error: newCodes.length
+          ? `${newCodes.length} sheet(s) moved, then this one failed: ${error.message}`
+          : error.message,
+      }
+    }
+    newCodes.push(newCode)
+    amount += Number(ws.total_amount) || 0
+
+    // The trail. Best-effort: a sheet that moved but whose note failed to
+    // write is better than failing the move and leaving it half done.
+    await supabase.from('cc_working_sheet_edits').insert([
+      { working_sheet_id: ws.id, edited_by: me?.id ?? null, field_name: 'sub_skill_id', old_value: fromSubSkillId, new_value: toSubSkillId, reason: note },
+      { working_sheet_id: ws.id, edited_by: me?.id ?? null, field_name: 'ws_code', old_value: ws.ws_code, new_value: newCode, reason: note },
+    ])
+  }
+
+  revalidatePath(`/cost-control/projects/${projectId}`)
+  revalidatePath(`/project/${projectId}`)
+  return { ok: true, moved: sheets.length, amount, newCodes }
 }

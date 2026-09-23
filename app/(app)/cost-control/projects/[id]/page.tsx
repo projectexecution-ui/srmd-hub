@@ -38,7 +38,7 @@ import { FIGURE_NAMES, phoneLines, countFlags, anyFlags, type CardFlags, type Mo
 import { FocusScroll } from '@/components/cost-control/FocusScroll'
 import { wsStatusLabel } from '@/components/cost-control/WSStatusPill'
 import { SubSkillBoq, type BoqRow, type BoqSheet } from '@/components/cost-control/SubSkillBoq'
-import { DeadlineCell, SubSkillModeCell, DisableButton, InternalEstimateDecision, RowConfigMenu, RowConfigItem } from './RowControls'
+import { DeadlineCell, SubSkillModeCell, DisableButton, InternalEstimateDecision, RowConfigMenu, RowConfigItem, MoveEstimateControl } from './RowControls'
 import { BphSyncButton } from './BphSyncButton'
 import { getBphMappingForProject } from '@/app/(app)/cost-control/import/bph/actions'
 
@@ -1702,6 +1702,30 @@ export default async function CostControlProjectDetailPage(
                                         canWrite={canWrite}
                                       />
                                     </RowConfigItem>
+                                    {/* Only rendered where there is an imported
+                                        estimate to move — the control returns
+                                        null otherwise, so the label would sit
+                                        over nothing. */}
+                                    {estImported > 0 && (
+                                      <RowConfigItem label="Move estimate">
+                                        <MoveEstimateControl
+                                          projectId={project.id}
+                                          fromSubSkillId={s.id}
+                                          fromLabel={`${s.code} ${s.name}`}
+                                          amount={estImported}
+                                          siblings={subs.map(x => ({
+                                            id: x.id, code: x.code, name: x.name,
+                                            // Either kind of estimate blocks the move: a second
+                                            // IMPORTED one would add to this, and a MAINTAINED
+                                            // one would mask it — the maintained figure wins on
+                                            // this page, so the moved amount would vanish.
+                                            hasEstimate: (wsAgg.get(`${d.id}::${x.id}`)?.planTotal ?? 0) > 0
+                                              || ieMap.get(`${d.id}::${x.id}`)?.amt != null,
+                                          }))}
+                                          canWrite={canWrite}
+                                        />
+                                      </RowConfigItem>
+                                    )}
                                     <RowConfigItem label="Remove from project">
                                       <DisableButton
                                         projectId={project.id}

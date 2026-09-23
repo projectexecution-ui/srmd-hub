@@ -6,7 +6,7 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { CalendarClock, Pencil, Loader2, Check, X, Ruler, EyeOff, SlidersHorizontal } from 'lucide-react'
+import { CalendarClock, Pencil, Loader2, Check, X, Ruler, EyeOff, SlidersHorizontal, ArrowRightLeft } from 'lucide-react'
 import { confirm } from '@/components/ui/confirm-dialog'
 import {
   setDisciplineDeadline,
@@ -14,6 +14,7 @@ import {
   setSubSkillEstimationMode,
   setDisciplineEnabled,
   setSubSkillEnabled,
+  moveEstimateToSubSkill,
 } from './actions'
 import { setInternalEstimateDecision } from '@/components/cost-control/ws-actions'
 
@@ -434,8 +435,10 @@ export function RowConfigMenu({ children }: { children: React.ReactNode }) {
       >
         <SlidersHorizontal className="h-3.5 w-3.5" />
       </button>
+      {/* w-72, not w-56: the panel now also holds the move-estimate picker,
+          and a sub-skill name in a 224px select truncated to uselessness. */}
       {open && (
-        <div className="mt-1 w-56 rounded-lg border border-gray-200 bg-gray-50/90 p-2.5 shadow-sm space-y-2.5 text-left">
+        <div className="mt-1 w-72 rounded-lg border border-gray-200 bg-gray-50/90 p-2.5 shadow-sm space-y-2.5 text-left">
           {children}
         </div>
       )}
@@ -557,5 +560,114 @@ export function InternalEstimateDecision({
       )}
       {err && <span className="text-[10px] text-rose-600" title={err}>!</span>}
     </span>
+  )
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// MoveEstimateControl — re-file this sub-skill's imported Internal
+// Estimate under a sibling sub-skill.
+//
+// Only appears where there is something to move: a sub-skill carrying an
+// imported [IB…] baseline. The picker offers siblings in the SAME work
+// category, because moving across categories would change a category total
+// and that is a revised Internal Budget, not a re-filing — the action
+// refuses it too, so the rule is not just a shortened list.
+//
+// A sibling that already holds an estimate is listed but disabled with the
+// reason said out loud: two imported estimates on one sub-skill add up, and
+// the project would quietly gain money.
+// ──────────────────────────────────────────────────────────────────────
+export function MoveEstimateControl({
+  projectId, fromSubSkillId, fromLabel, amount, siblings, canWrite,
+}: {
+  projectId: string
+  fromSubSkillId: string
+  /** "801 High Side" — used in the confirm dialog, so it reads as a sentence. */
+  fromLabel: string
+  /** The imported baseline on this row. Zero means nothing to move. */
+  amount: number
+  siblings: Array<{ id: string; code: string; name: string; hasEstimate: boolean }>
+  canWrite: boolean
+}) {
+  const router = useRouter()
+  const [target, setTarget] = useState('')
+  const [reason, setReason] = useState('')
+  const [err, setErr] = useState<string | null>(null)
+  const [done, setDone] = useState<string | null>(null)
+  const [pending, startTransition] = useTransition()
+
+  if (!canWrite || amount <= 0) return null
+
+  const options = siblings.filter(s => s.id !== fromSubSkillId)
+  if (options.length === 0) {
+    return <p className="text-[10px] text-gray-400">No other sub-skill in this work category to move it to.</p>
+  }
+
+  const chosen = options.find(o => o.id === target) ?? null
+  const rupee = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`
+
+  async function onMove() {
+    if (!chosen) return
+    setErr(null)
+    const ok = await confirm({
+      title: 'Move this estimate?',
+      message: [
+        `${rupee(amount)} moves from ${fromLabel} to ${chosen.code} ${chosen.name}.`,
+        'The amount does not change and neither does the work-category total — only the sub-skill it is filed under. The sheet keeps its history, and the move is recorded on it with your name and reason.',
+      ].join('\n\n'),
+      confirmLabel: 'Move it',
+    })
+    if (!ok) return
+    startTransition(async () => {
+      const res = await moveEstimateToSubSkill(projectId, fromSubSkillId, chosen.id, reason)
+      if (!res.ok) { setErr(res.error); return }
+      setDone(`Moved to ${chosen.code} ${chosen.name}`)
+      router.refresh()
+    })
+  }
+
+  if (done) return <p className="text-[10px] font-semibold text-green-700">{done}</p>
+
+  return (
+    <div className="space-y-1.5">
+      <p className="text-[10px] text-gray-500">
+        Imported estimate <b className="text-gray-700 tabular-nums">{rupee(amount)}</b> — re-file it under another sub-skill in this work category.
+      </p>
+      <select
+        value={target}
+        onChange={e => { setTarget(e.target.value); setErr(null) }}
+        disabled={pending}
+        className="w-full text-[11px] border border-gray-300 rounded px-1.5 py-1 bg-white min-h-[32px]"
+      >
+        <option value="">Move to…</option>
+        {options.map(o => (
+          <option key={o.id} value={o.id} disabled={o.hasEstimate}>
+            {o.code} {o.name}{o.hasEstimate ? ' — already has an estimate' : ''}
+          </option>
+        ))}
+      </select>
+      {chosen && (
+        <>
+          <input
+            value={reason}
+            onChange={e => setReason(e.target.value)}
+            placeholder="Why it is moving"
+            maxLength={300}
+            disabled={pending}
+            className="w-full text-[11px] border border-gray-300 rounded px-1.5 py-1 min-h-[32px]"
+          />
+          <button
+            type="button"
+            onClick={onMove}
+            disabled={pending || reason.trim().length < 3}
+            className="inline-flex items-center gap-1 h-7 px-2 rounded bg-gray-900 text-white text-[11px] font-semibold disabled:opacity-40"
+          >
+            {pending ? <Loader2 className="h-3 w-3 animate-spin" /> : <ArrowRightLeft className="h-3 w-3" />}
+            Move
+          </button>
+        </>
+      )}
+      {err && <p className="text-[10px] leading-snug text-rose-700">{err}</p>}
+    </div>
   )
 }
