@@ -45,7 +45,9 @@ export const MODULES: ModuleTile[] = [
   // isolation before any production module gets touched. Purple tone
   // (+ FlaskConical icon) marks it as an experiment.
   { slug: 'admin-users',      label: 'Users & Roles',    description: 'Manage app users',                            href: '/admin/users',    icon: Users,         tone: 'slate' },
-  { slug: 'admin-settings',   label: 'Settings',         description: 'App settings (admin email, etc.)',            href: '/admin/settings', icon: Settings,      tone: 'slate' },
+  // The slug is the permission behind the Messages, Data and Hub doors of
+  // Admin (view = may read them). Its old page, /admin/settings, redirects.
+  { slug: 'admin-settings',   label: 'Hub settings',     description: 'Admin: Messages, Data and Hub doors',        href: '/admin/hub',      icon: Settings,      tone: 'slate' },
   { slug: 'admin-permissions',label: 'Permissions',      description: 'Who can do what in each module',              href: '/admin/permissions', icon: ShieldCheck, tone: 'slate' },
 ]
 

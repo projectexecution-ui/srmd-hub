@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
 import type { Profile, PermissionMap } from '@/lib/types'
 import {
-  LayoutDashboard, LogOut, Menu, X, LayoutGrid,
+  LayoutDashboard, LogOut, Menu, X,
   ChevronsLeft, ChevronsRight, Shield, Folder, ChevronDown, ClipboardList,
 } from 'lucide-react'
 import { MODULES } from '@/lib/modules'
@@ -58,7 +58,7 @@ const SHORT_LABELS: Record<string, string> = {
   'jmr':              'JMR',
   'admin-users':      'Users',
   'admin-permissions':'Permissions',
-  'admin-settings':   'Settings',
+  'admin-settings':   'Hub settings',
 }
 
 const COLLAPSE_KEY = 'srmd_nav_collapsed'
@@ -130,10 +130,9 @@ export default function NavBar({ profile, permissions, disabledSlugs = [], isPor
   const adminLink: NavItem | null = canSeeAdmin
     ? { href: '/admin', label: 'Admin', icon: Shield, slug: null }
     : null
-  const modulesAdminLink: NavItem | null = isPortalOwner
-    ? { href: '/admin/dashboard-modules', label: 'Modules', icon: LayoutGrid, slug: null }
-    : null
-  const bottomLinks: NavItem[] = [...(adminLink ? [adminLink] : []), ...(modulesAdminLink ? [modulesAdminLink] : [])]
+  // The separate "Modules" shortcut went on 23 Sep 2026 (Aksha, G3): it is
+  // Admin › Hub › Modules on / off, one tap inside the door.
+  const bottomLinks: NavItem[] = adminLink ? [adminLink] : []
 
   // ── The revamped pane ─────────────────────────────────────────────────
   // Projects becomes the main lane and the screens it replaces move into one

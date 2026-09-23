@@ -28,11 +28,15 @@ const CHANNEL_LABEL: Record<string, string> = { in_app: 'In-app', email: 'E-mail
 const ALL_CHANNELS = ['in_app', 'email', 'web_push', 'telegram']
 const MUTE_CHANNELS = ALL_CHANNELS
 
-export function ReportsClient({ reports, events, users, initialMutes }: { reports: ReportRow[]; events: EventCol[]; users: MatrixUser[]; initialMutes: MuteRow[] }) {
+export function ReportsClient({ reports, events, users, initialMutes, section = 'both' }: {
+  reports: ReportRow[]; events: EventCol[]; users: MatrixUser[]; initialMutes: MuteRow[]
+  /** The Messages door shows the two halves on two tabs (B1). */
+  section?: 'reports' | 'mute' | 'both'
+}) {
   return (
     <div className="space-y-6">
-      <ScheduledTable reports={reports} />
-      <MuteMatrix events={events} users={users} initialMutes={initialMutes} />
+      {section !== 'mute' && <ScheduledTable reports={reports} />}
+      {section !== 'reports' && <MuteMatrix events={events} users={users} initialMutes={initialMutes} />}
     </div>
   )
 }

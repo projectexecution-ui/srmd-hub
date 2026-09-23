@@ -197,7 +197,7 @@ export const POWERS: Power[] = [
   { slug: 'approvals',           lane: 'portal',    label: 'My Approvals',    hint: 'The approvals inbox.' },
   { slug: 'admin-users',         lane: 'portal',    label: 'Admin — users & roles', hint: 'Users, roles, the allowlist.' },
   { slug: 'admin-permissions',   lane: 'portal',    label: 'Admin — permissions',   hint: 'This matrix.' },
-  { slug: 'admin-settings',      lane: 'portal',    label: 'Admin — settings',      hint: 'Portal settings, notifications, IN4.' },
+  { slug: 'admin-settings',      lane: 'portal',    label: 'Admin — hub settings',  hint: 'The Messages, Data and Hub doors of Admin.' },
 ]
 export const POWER_SLUGS = new Set(POWERS.map(m => m.slug))
 export const powerLabel = (slug: string) => POWERS.find(p => p.slug === slug)?.label ?? slug

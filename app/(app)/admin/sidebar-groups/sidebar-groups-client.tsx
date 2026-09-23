@@ -23,7 +23,7 @@ function newId(): string {
   try { return crypto.randomUUID() } catch { return 'g_' + Math.random().toString(36).slice(2) + Date.now().toString(36) }
 }
 
-export default function SidebarGroupsClient({ initialGroups, modules }: { initialGroups: SidebarGroup[]; modules: Mod[] }) {
+export default function SidebarGroupsClient({ initialGroups, modules, embedded = false }: { initialGroups: SidebarGroup[]; modules: Mod[]; /** Inside the Hub door: no page header or padding of its own. */ embedded?: boolean }) {
   const router = useRouter()
   const [groups, setGroups] = useState<SidebarGroup[]>(initialGroups)
   const [saving, setSaving] = useState(false)
@@ -69,15 +69,23 @@ export default function SidebarGroupsClient({ initialGroups, modules }: { initia
     router.refresh()
   }
 
+  const saveButton = (
+    <Button onClick={save} disabled={saving || !dirty} size="sm" className="gap-1.5">
+      {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+      {dirty ? 'Save changes' : 'Saved'}
+    </Button>
+  )
+
   return (
-    <div className="p-4 md:p-6 max-w-4xl mx-auto space-y-4">
-      <PageHeader title="Sidebar Groups" back="/admin"
-        subtitle="Nest modules under a name of your choice — they show as a collapsible branch in the side pane.">
-        <Button onClick={save} disabled={saving || !dirty} size="sm" className="gap-1.5">
-          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-          {dirty ? 'Save changes' : 'Saved'}
-        </Button>
-      </PageHeader>
+    <div className={embedded ? 'space-y-4' : 'p-4 md:p-6 max-w-4xl mx-auto space-y-4'}>
+      {embedded ? (
+        <div className="flex justify-end">{saveButton}</div>
+      ) : (
+        <PageHeader title="Sidebar Groups" back="/admin"
+          subtitle="Nest modules under a name of your choice — they show as a collapsible branch in the side pane.">
+          {saveButton}
+        </PageHeader>
+      )}
 
       <Card className="p-4 bg-slate-50/60 border-slate-200">
         <div className="flex gap-3">

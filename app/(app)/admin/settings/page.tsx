@@ -1,9 +1,8 @@
 import { redirect } from 'next/navigation'
+import { legacyTarget } from '@/lib/admin/doors'
 
-// The old Settings page held only the admin-email field + a status "About" box.
-// The status moved into the Admin home header, and the admin-email field is now
-// inline on the Admin home (System · one setting). This route redirects there so
-// old links/bookmarks and the module href still resolve.
-export default function AdminSettingsPage() {
-  redirect('/admin')
+// This screen is now a tab of an Admin door (Aksha, 23 Sep 2026). The address
+// keeps working: it opens that tab. lib/admin/doors.ts says which.
+export default function Page() {
+  redirect(legacyTarget('/admin/settings')!)
 }

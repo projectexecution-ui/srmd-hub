@@ -70,11 +70,11 @@ export default async function WeeklyReportPage() {
     <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-4">
       <PageHeader
         title="Weekly report"
-        back="/admin/reports"
+        back="/admin/messages?tab=scheduled"
         subtitle="The Monday Budget vs Actual: what goes in, how it is grouped, which channels are on, who gets it."
       />
       <p className="text-[12px] text-gray-500">
-        Every other report and its per-person mutes are on <Link href="/admin/reports" className="text-indigo-700 hover:underline">Messages</Link>. The IN4 figures themselves come from the live sync; this page only decides how they are shown and to whom.
+        Every other report is on <Link href="/admin/messages?tab=scheduled" className="text-indigo-700 hover:underline">Messages</Link>. The IN4 figures themselves come from the live sync; this page only decides how they are shown and to whom.
       </p>
       <WeeklyClient data={data} />
     </div>

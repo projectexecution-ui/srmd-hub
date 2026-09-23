@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils'
 import type { Role } from '@/lib/types'
 import type { RoleLabelMap } from '@/lib/role-labels'
 import { NOTIFICATION_EVENTS, NOTIFICATION_CHANNELS, builtInDefault } from '@/lib/notification-events'
-import type { NotificationRuleRow } from './page'
+import type { NotificationRuleRow } from './body'
 
 const keyOf = (scope: string, scopeKey: string, event: string, channel: string) =>
   `${scope}|${scopeKey}|${event}|${channel}`
@@ -34,8 +34,10 @@ const TIMING_MODES = [
 ] as const
 
 export default function NotificationRulesClient({
-  initialRules, initialSchedules = [], roles, roleLabels, currentUserId,
+  initialRules, initialSchedules = [], roles, roleLabels, currentUserId, embedded = false,
 }: {
+  /** Inside the Messages door (Instant alerts tab): no page header or padding of its own. */
+  embedded?: boolean
   initialRules: NotificationRuleRow[]
   initialSchedules?: NotificationScheduleRow[]
   roles: Role[]
@@ -131,12 +133,14 @@ export default function NotificationRulesClient({
   }
 
   return (
-    <div className="p-4 md:p-6 max-w-4xl mx-auto space-y-4">
-      <PageHeader
-        title="Notifications"
-        back="/admin"
-        subtitle="Decide which alerts your team gets, and on which channel."
-      />
+    <div className={embedded ? 'space-y-4' : 'p-4 md:p-6 max-w-4xl mx-auto space-y-4'}>
+      {!embedded && (
+        <PageHeader
+          title="Notifications"
+          back="/admin"
+          subtitle="Decide which alerts your team gets, and on which channel."
+        />
+      )}
 
       {error && (
         <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-700">{error}</div>

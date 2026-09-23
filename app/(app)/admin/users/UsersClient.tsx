@@ -56,8 +56,10 @@ interface UserModuleBlock {
 export default function UsersClient({
   initialUsers, initialAllowedEmails, initialModuleRoles, initialModuleBlocks,
   currentUserId, currentUserIsPortalOwner, roleLabels, adminEmail,
-  roleSides, approvalRoles,
+  roleSides, approvalRoles, embedded = false,
 }: {
+  /** Inside the People door (Accounts tab): no page header or padding of its own. */
+  embedded?: boolean
   initialUsers: Profile[]
   initialAllowedEmails: AllowedEmail[]
   initialModuleRoles: UserModuleRole[]
@@ -382,18 +384,22 @@ export default function UsersClient({
 
   const totalUsers = users.length
 
+  const inviteButton = (
+    <Button onClick={copyInviteLink} variant="outline" size="sm">
+      {copied ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
+      {copied ? 'Copied' : 'Copy invite link'}
+    </Button>
+  )
+
   return (
-    <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-4">
-      <PageHeader
-        title="Users & Roles"
-        back="/admin"
-        subtitle="Active accounts, their roles, and per-user access controls."
-      >
-        <Button onClick={copyInviteLink} variant="outline" size="sm">
-          {copied ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
-          {copied ? 'Copied' : 'Copy invite link'}
-        </Button>
-      </PageHeader>
+    <div className={embedded ? 'space-y-4' : 'p-4 md:p-6 max-w-6xl mx-auto space-y-4'}>
+      {embedded ? (
+        <div className="flex justify-end">{inviteButton}</div>
+      ) : (
+        <PageHeader title="Users & Roles" back="/admin" subtitle="Active accounts, their roles, and per-user access controls.">
+          {inviteButton}
+        </PageHeader>
+      )}
 
       {error && (
         <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-700">{error}</div>

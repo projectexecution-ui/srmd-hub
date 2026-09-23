@@ -19,7 +19,7 @@
 // the client NavBar.
 
 import {
-  LayoutDashboard, Building2, Receipt, Library, Shield, Archive, CreditCard, Warehouse, ReceiptText,
+  LayoutDashboard, Building2, Receipt, Shield, Archive, CreditCard, Warehouse, ReceiptText,
   ClipboardList,
   type LucideIcon,
 } from 'lucide-react'
@@ -80,7 +80,8 @@ export const REVAMP_PRIMARY: RevampNavItem[] = [
   // the pane (13 Sep 2026: "make the Whole Section in Left Pane for Admin
   // only"). Admin-only, matching requireBillsAccess() on every page inside it.
   { href: '/bills-booking',  label: 'Bills Approval', icon: ReceiptText, slug: 'bills-booking',  built: true, adminOnly: true },
-  { href: '/masters',        label: 'Masters',   icon: Library,         slug: 'cost-control',   built: true },
+  // Masters left the pane on 23 Sep 2026 (Aksha, E1): it lives under
+  // Admin › Data › Masters, and /masters itself still answers.
   { href: '/admin',          label: 'Admin',     icon: Shield,          slug: null,             built: true },
 ]
 
@@ -169,14 +170,6 @@ export function buildRevampNav(
   return { primary, groups: [] as RevampNavGroup[] }
 }
 
-/**
- * The old screens this person may still open — for the "Old screens" fold on
- * the Admin home, not the pane. Same two gates as a lane: permission and the
- * module switch. Replaced screens first, then parked ones.
- */
-export function oldScreensFor(permissions: PermissionMap, disabledSlugs: Set<string>): RevampNavItem[] {
-  const allowed = (it: RevampNavItem) =>
-    it.slug !== null && !disabledSlugs.has(it.slug) &&
-    (it.adminOnly ? permissions[it.slug]?.admin === true : permissions[it.slug]?.view === true)
-  return [...REVAMP_OLD_SCREENS, ...REVAMP_PARKED].filter(allowed)
-}
+// The "Old screens" fold that listed REVAMP_OLD_SCREENS on the Admin home went
+// on 23 Sep 2026 (Aksha, G2). The addresses still answer; they are just no
+// longer offered anywhere.

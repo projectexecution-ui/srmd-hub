@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildRevampNav, REVAMP_PRIMARY, REVAMP_OLD_SCREENS, oldScreensFor } from './nav'
+import { buildRevampNav, REVAMP_PRIMARY, REVAMP_OLD_SCREENS } from './nav'
 import { MODULES } from '@/lib/modules'
 
 const allow = (...slugs: string[]) =>
@@ -33,13 +33,6 @@ describe('revamped left pane', () => {
     const { groups } = buildRevampNav(
       allow('budget-vs-actual', 'jmr', 'schedule', 'warehouse'), new Set(), NOT_ADMIN)
     expect(groups).toEqual([])
-  })
-
-  it('lists the old screens a person may still open, for the Admin fold', () => {
-    const labels = oldScreensFor(allow('procurement-tracker', 'stuck-bills'), new Set()).map(i => i.label)
-    expect(labels).toEqual(['Indent → PO', 'Stuck Bills'])
-    // A switched-off module drops out even when the role holds it.
-    expect(oldScreensFor(allow('stuck-bills'), new Set(['stuck-bills']))).toEqual([])
   })
 
   it('drops a branch entirely when none of its screens are visible', () => {
@@ -78,23 +71,19 @@ describe('revamped left pane', () => {
     expect(buildRevampNav({}, new Set(), NOT_ADMIN).primary.map(i => i.label)).not.toContain('Admin')
   })
 
-  // Every Masters page calls requirePermission('cost-control'), so an ungated
-  // lane offered a link that then refused whoever clicked it.
-  it('gates Masters on cost-control, matching what its pages require', () => {
-    const withPerm = buildRevampNav(allow('cost-control'), new Set(), NOT_ADMIN)
-    expect(withPerm.primary.map(i => i.label)).toContain('Masters')
-
-    const without = buildRevampNav({}, new Set(), NOT_ADMIN)
-    expect(without.primary.map(i => i.label)).not.toContain('Masters')
+  // Masters left the pane on 23 Sep 2026 (Aksha, E1) — it is Admin › Data ›
+  // Masters now, so nobody sees it as a lane whatever they hold.
+  it('never offers Masters as a lane', () => {
+    expect(buildRevampNav(allow('cost-control'), new Set(), ADMIN).primary.map(i => i.label)).not.toContain('Masters')
   })
 
   // Stores joined on 13 Sep 2026 — Material In & Out. Bills Approval joined on
   // 14 Sep 2026, out of REVAMP_PARKED: it stopped being a two-record module and
   // became the section over IN4's live certificate ledger. Both are admin-only,
   // so most people still see five.
-  it('is eight lanes — Dashboard, Projects, Bills, Accounts, Stores, Bills Approval, Masters, Admin', () => {
-    // Nine since 21 Sep 2026: OLD INDENT TO PO, which only Aksha ever sees.
-    expect(REVAMP_PRIMARY.map(i => i.label)).toEqual(['Dashboard', 'Projects', 'Bills', 'Accounts', 'Stores', 'OLD INDENT TO PO', 'Bills Approval', 'Masters', 'Admin'])
+  it('is eight lanes — Dashboard, Projects, Bills, Accounts, Stores, OLD INDENT TO PO, Bills Approval, Admin', () => {
+    // Masters left for Admin › Data on 23 Sep 2026.
+    expect(REVAMP_PRIMARY.map(i => i.label)).toEqual(['Dashboard', 'Projects', 'Bills', 'Accounts', 'Stores', 'OLD INDENT TO PO', 'Bills Approval', 'Admin'])
     expect(REVAMP_OLD_SCREENS.length).toBeGreaterThan(0)
   })
 
