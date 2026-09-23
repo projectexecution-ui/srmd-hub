@@ -1,0 +1,158 @@
+// What an admin is actually TRYING TO DO, and every screen that job touches.
+//
+// THE PROBLEM THIS SOLVES. The revamped Admin grouped 33 screens into four
+// areas and called it done. It wasn't: the areas describe where the CODE lives,
+// not what a person came to do. Setting up one new project means visiting seven
+// screens spread across four different areas, and nothing tells you that — you
+// find out by discovering, a week later, that the project has no approver.
+//
+// So this is the missing layer: the job first, the screens as its steps, in the
+// order they must happen. The A–Z list stays underneath for when you already
+// know the screen you want.
+//
+// RULES
+//  1. Every step's href MUST exist in ADMIN_SCREENS. Tested — a task cannot
+//     point at a screen that isn't real.
+//  2. `why` says what that step achieves, in the words of someone doing the job.
+//  3. Steps are ORDERED. Where order does not matter, say so with `anyOrder`.
+//  4. Every screen must appear in at least one task, or it is unreachable by
+//     job and the sprawl is back. Tested.
+
+import { ADMIN_SCREENS } from './admin-map'
+
+export interface TaskStep {
+  /** Must match an ADMIN_SCREENS href. */
+  href: string
+  /** What this step achieves. Not what the screen is called. */
+  why: string
+  /** Skip-able — the job still works without it. */
+  optional?: boolean
+}
+
+export interface AdminTask {
+  id: string
+  /** Written as the job, starting with a verb. */
+  label: string
+  hint: string
+  /** True when the steps can be done in any order. */
+  anyOrder?: boolean
+  steps: TaskStep[]
+}
+
+export const ADMIN_TASKS: AdminTask[] = [
+  {
+    id: 'new-project',
+    label: 'Start a new project',
+    hint: 'Seven screens, and missing one is how a project ends up with no approver',
+    steps: [
+      { href: '/cost-control/projects/new', why: 'Create it, with its code and its parent group' },
+      { href: '/cost-control/admin/disciplines', why: 'Add any work category it needs that does not exist yet', optional: true },
+      { href: '/admin/projects', why: 'Name who signs it — Project Head, Atm Head, Trustee — and who works on it' },
+      { href: '/procurement-tracker/admin', why: 'Decide who sees its indents and POs', optional: true },
+      { href: '/bills-booking/admin', why: 'Say who works each bill desk on it', optional: true },
+    ],
+  },
+  {
+    id: 'add-person',
+    label: 'Add someone to the hub',
+    hint: 'The account is the easy part — the per-module access is what gets forgotten',
+    steps: [
+      { href: '/admin/users', why: 'Approve their access and give them one role' },
+      { href: '/admin/permissions', why: 'Check that role can reach what they need' },
+      { href: '/admin/people', why: 'Grant powers, put them on projects, choose which indents they see, set their alert channels' },
+      { href: '/procurement-tracker/admin', why: 'Choose which projects they see in the tracker', optional: true },
+    ],
+  },
+  {
+    id: 'approvals',
+    label: 'Change who signs off what',
+    hint: 'Approval order lives in three places depending on the module',
+    anyOrder: true,
+    steps: [
+      { href: '/admin/approvals', why: 'The chain itself — who may move a document to the next stage' },
+      { href: '/bills-booking/admin', why: 'Bill desks, which have their own per-project owners' },
+      { href: '/admin/delete-requests', why: 'Deletions that need a second pair of eyes' },
+    ],
+  },
+  {
+    id: 'whats-sent',
+    label: 'Control what gets emailed out',
+    hint: 'Start at the one list — it shows what is going nowhere',
+    steps: [
+      { href: '/admin/reports', why: 'Every scheduled report — switch channels, see who gets it, send it now, mute a person' },
+      { href: '/admin/email', why: 'See every message, who receives it, and what reaches nobody', optional: true },
+      { href: '/admin/notifications', why: 'Turn an alert on or off, per channel' },
+      { href: '/bills-pipeline/digest-settings', why: 'Set who gets the bills digest and the stuck list', optional: true },
+      { href: '/admin/reports/weekly', why: 'The Monday Budget vs Actual — what goes in, how it is grouped, who gets it', optional: true },
+    ],
+  },
+  {
+    id: 'module-onoff',
+    label: 'Turn a module on or off',
+    hint: 'Switching it off is not enough on its own — the nav and permissions follow separately',
+    steps: [
+      { href: '/admin/dashboard-modules', why: 'Switch it off for everyone, or rename it' },
+      { href: '/admin/sidebar-groups', why: 'Tidy where it sits in the sidebar', optional: true },
+      { href: '/admin/permissions', why: 'Check no role is left pointing at something switched off' },
+    ],
+  },
+  {
+    id: 'lists',
+    label: 'Tidy up the lists',
+    hint: 'The same thing is kept in more than one place — start where the duplicates are named',
+    steps: [
+      { href: '/masters', why: 'See every list and where they duplicate each other' },
+      { href: '/cost-control/admin/disciplines', why: 'Work categories and sub-skills' },
+    ],
+  },
+  {
+    id: 'recover',
+    label: 'Get something back that was deleted',
+    hint: 'Nothing is removed automatically — it is all still there',
+    anyOrder: true,
+    steps: [
+      { href: '/admin/recycle-bin', why: 'Restore it yourself' },
+      { href: '/admin/delete-requests', why: 'Or approve the deletion someone asked for' },
+      { href: '/cost-control/audit', why: 'Find out who changed it, and when', optional: true },
+    ],
+  },
+  // Imports and behaviour switches used to be two jobs across five modules;
+  // since the 10 Sep 2026 clean-up only Cost Control's remain, so they are one job.
+  {
+    id: 'project-settings',
+    label: 'Change how Cost Control behaves, or load a budget in',
+    hint: 'Feature switches and field names on one screen, Excel and BPH imports on the other',
+    anyOrder: true,
+    steps: [
+      { href: '/cost-control/settings', why: 'Feature switches, field names, what engineers can see' },
+      { href: '/cost-control/import', why: 'Excel and BPH budget imports' },
+      { href: '/admin/manual-upload', why: 'If the IN4 read fails, switch this on and upload the sheets by hand', optional: true },
+    ],
+  },
+]
+
+/** Steps whose screen is inside a switched-off module are not offered. */
+export function taskSteps(task: AdminTask, disabled: Set<string> = new Set()): TaskStep[] {
+  const byHref = new Map(ADMIN_SCREENS.map(s => [s.href, s]))
+  return task.steps.filter(step => {
+    const screen = byHref.get(step.href)
+    if (!screen) return false
+    return !screen.visibilitySlug || !disabled.has(screen.visibilitySlug)
+  })
+}
+
+/** Tasks that still have something to do once switched-off modules are removed. */
+export function visibleTasks(disabled: Set<string> = new Set()): AdminTask[] {
+  return ADMIN_TASKS.filter(t => taskSteps(t, disabled).length > 0)
+}
+
+/** Every screen a task can reach. Used to prove nothing is orphaned. */
+export function screensCoveredByTasks(): Set<string> {
+  return new Set(ADMIN_TASKS.flatMap(t => t.steps.map(s => s.href)))
+}
+
+/** Which jobs touch a given screen — shown on the A–Z list so a screen found
+ *  by search still says what it is FOR. */
+export function tasksTouching(href: string): AdminTask[] {
+  return ADMIN_TASKS.filter(t => t.steps.some(s => s.href === href))
+}
