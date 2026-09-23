@@ -46,6 +46,8 @@ export async function GET(req: NextRequest) {
       mappings: res.outcomes.length,
       synced,
       errors,
+      not_reached: res.not_reached,
+      ...(res.skipped_reason ? { skipped_reason: res.skipped_reason } : {}),
       failures: res.outcomes.filter(o => !o.ok).map(o => ({ cc_project_id: o.cc_project_id, error: o.error })),
     })
   } catch (e) {

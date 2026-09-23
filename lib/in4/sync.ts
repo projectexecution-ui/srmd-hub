@@ -19,6 +19,7 @@ import { buildReports, splitCode, type SubprojectReport } from './compute'
 import { compareProject, summarise, type ComparisonSummary, type HubProjectData } from './compare'
 import { pruneHistory } from './history-retention'
 import { readManualUpload } from './manual-upload'
+import { makeDeadline, assertTimeLeft, closeOrphanRuns, type Deadline } from './run-guard'
 
 export const IN4_LIVE_KEY = 'in4_budget_live'
 export const IN4_LAST_SYNC_KEY = 'in4_last_sync'
@@ -35,7 +36,9 @@ export interface SyncResult {
   comparison?: ComparisonSummary
   wroteBudgetHub: boolean
   budgetHubVersion?: number
-  autoPull?: { ok: number; failed: number }
+  /** notReached = mapped projects the run had no time left to pull; the
+   *  next pass takes them first (least recently pulled go first). */
+  autoPull?: { ok: number; failed: number; notReached: number; skipped?: string }
   startedAt: string
   finishedAt: string
 }
@@ -150,7 +153,7 @@ async function seedLinksFromFileNames(sb: SupabaseClient, state: HubState, x: In
 /** Write the rebuilt rows into budget_hub_state exactly as the Excel upload
  *  does — history snapshot, version bump, cache invalidation, then the
  *  BPH → Cost Control pull for every mapped project. */
-async function writeBudgetHub(sb: SupabaseClient, state: HubState, version: number, reports: Map<number, SubprojectReport>, links: Map<number, string>, actorId: string | null) {
+async function writeBudgetHub(sb: SupabaseClient, state: HubState, version: number, reports: Map<number, SubprojectReport>, links: Map<number, string>, actorId: string | null, deadline: Deadline) {
   const bySp = new Map<string, SubprojectReport>()
   for (const [sp, bph] of links) { const r = reports.get(sp); if (r) bySp.set(bph, r) }
   const stamp = Date.now()
@@ -182,11 +185,17 @@ async function writeBudgetHub(sb: SupabaseClient, state: HubState, version: numb
   if (updErr) throw new Error(`budget_hub_state: ${updErr.message}`)
   revalidateBudgetV2Soon()
 
-  let autoPull = { ok: 0, failed: 0 }
+  // The BPH → Cost Control pull, one project at a time, is the open-ended part
+  // of this run: the RU group alone added 20 linked sub-projects on 21 Sep
+  // 2026, and from that afternoon the budget run stopped fitting in the
+  // function limit and died without recording anything. It now stops at the
+  // deadline and says how many it did not reach; the next pass takes those
+  // first.
+  let autoPull: NonNullable<SyncResult['autoPull']> = { ok: 0, failed: 0, notReached: 0 }
   try {
     const { runAllMappedPulls } = await import('@/app/(app)/cost-control/import/bph/actions')
-    const r = await runAllMappedPulls({ client: sb, actorId })
-    autoPull = { ok: r.outcomes.filter(o => o.ok).length, failed: r.outcomes.filter(o => !o.ok).length }
+    const r = await runAllMappedPulls({ client: sb, actorId, deadlineMs: deadline.at })
+    autoPull = { ok: r.outcomes.filter(o => o.ok).length, failed: r.outcomes.filter(o => !o.ok).length, notReached: r.not_reached, ...(r.skipped_reason ? { skipped: r.skipped_reason } : {}) }
   } catch (e) {
     console.warn('[in4-sync] BPH → Cost Control pull failed:', e instanceof Error ? e.message : e)
   }
@@ -196,6 +205,11 @@ async function writeBudgetHub(sb: SupabaseClient, state: HubState, version: numb
 export async function runIn4Sync(opts: SyncOptions): Promise<SyncResult> {
   const sb = svc()
   const startedAt = new Date().toISOString()
+  // Every run row must end with ok true/false and a reason. A run the
+  // function limit killed could not write its own ending, so each run first
+  // closes whatever the budget feed left open last time (see ./run-guard.ts).
+  const deadline = makeDeadline()
+  await closeOrphanRuns(sb, 'budget')
   const { data: liveRow } = await sb.from('app_settings').select('value').eq('key', IN4_LIVE_KEY).maybeSingle()
   // Admin → Manual upload (IN4 fallback) switched on = the feed reads and compares but does not write.
   const paused = opts.forceMode ? false : await readManualUpload(sb)
@@ -204,11 +218,16 @@ export async function runIn4Sync(opts: SyncOptions): Promise<SyncResult> {
   const { data: runRow } = await sb.from('in4_sync_runs').insert({ trigger: opts.trigger, mode, actor_id: opts.actorId ?? null }).select('id').single()
   const runId = (runRow?.id as number | undefined) ?? null
   const finish = async (patch: Record<string, unknown>) => {
-    if (runId != null) await sb.from('in4_sync_runs').update({ finished_at: new Date().toISOString(), ...patch }).eq('id', runId)
+    if (runId == null) return
+    try {
+      const { error } = await sb.from('in4_sync_runs').update({ finished_at: new Date().toISOString(), ...patch }).eq('id', runId)
+      if (error) console.warn('[in4-sync] could not record the run\'s result:', error.message)
+    } catch (e) { console.warn('[in4-sync] could not record the run\'s result:', e instanceof Error ? e.message : e) }
   }
 
   try {
     const x = await extractAll()
+    assertTimeLeft(deadline, 'rebuilding the report')
     const rowsRead = Object.values(x).reduce((t, arr) => t + (Array.isArray(arr) ? arr.length : 0), 0)
     const reports = buildReports(x)
 
@@ -218,6 +237,7 @@ export async function runIn4Sync(opts: SyncOptions): Promise<SyncResult> {
     const version = Number(stateRow.version ?? 0)
 
     const links = await seedLinksFromFileNames(sb, state, x)
+    assertTimeLeft(deadline, 'writing the IN4 mirror')
     await loadMirror(sb, x, reports)
 
     // Shadow comparison: for every linked project, IN4 today vs the stored upload.
@@ -229,9 +249,10 @@ export async function runIn4Sync(opts: SyncOptions): Promise<SyncResult> {
     }
     const comparison = summarise(comparisons)
 
-    let wroteBudgetHub = false, budgetHubVersion: number | undefined, autoPull: { ok: number; failed: number } | undefined
+    let wroteBudgetHub = false, budgetHubVersion: number | undefined, autoPull: SyncResult['autoPull']
     if (mode === 'live') {
-      const w = await writeBudgetHub(sb, state, version, reports, links, opts.actorId ?? null)
+      assertTimeLeft(deadline, 'writing Budget Hub')
+      const w = await writeBudgetHub(sb, state, version, reports, links, opts.actorId ?? null, deadline)
       wroteBudgetHub = true; budgetHubVersion = w.newVersion; autoPull = w.autoPull
     }
 
@@ -244,13 +265,15 @@ export async function runIn4Sync(opts: SyncOptions): Promise<SyncResult> {
     await sb.from('app_settings').upsert({ key: IN4_LAST_SYNC_KEY, value: JSON.stringify({
       at: result.finishedAt, mode, ok: true, linked: links.size, subprojects: reports.size,
       exact: comparison.totals.exact, near: comparison.totals.near, off: comparison.totals.off, figures: comparison.totals.figures,
-      wroteBudgetHub, budgetHubVersion,
+      wroteBudgetHub, budgetHubVersion, autoPull,
     }) }, { onConflict: 'key' })
     return result
   } catch (e) {
     const error = e instanceof Error ? e.message : String(e)
     await finish({ ok: false, error })
-    await sb.from('app_settings').upsert({ key: IN4_LAST_SYNC_KEY, value: JSON.stringify({ at: new Date().toISOString(), mode, ok: false, error }) }, { onConflict: 'key' })
+    try {
+      await sb.from('app_settings').upsert({ key: IN4_LAST_SYNC_KEY, value: JSON.stringify({ at: new Date().toISOString(), mode, ok: false, error }) }, { onConflict: 'key' })
+    } catch (e2) { console.warn('[in4-sync] could not update the status pointer:', e2 instanceof Error ? e2.message : e2) }
     return { ok: false, runId, mode, error, rowsRead: 0, subprojects: 0, linked: 0, wroteBudgetHub: false, startedAt, finishedAt: new Date().toISOString() }
   }
 }
@@ -259,6 +282,7 @@ export interface LastSync {
   at: string; mode: 'shadow' | 'live'; ok: boolean; error?: string
   linked?: number; subprojects?: number; exact?: number; near?: number; off?: number; figures?: number
   wroteBudgetHub?: boolean; budgetHubVersion?: number
+  autoPull?: { ok: number; failed: number; notReached: number; skipped?: string }
 }
 
 /** Cheap read for status chips. Works with any Supabase client. */

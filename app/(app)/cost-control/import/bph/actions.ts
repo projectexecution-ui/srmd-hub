@@ -45,7 +45,7 @@ async function bphWriteClient(opts?: ServiceOpts): Promise<CcClient> {
   return (await createClient()) as CcClient
 }
 import { generateJSON, hasAiProvider } from '@/lib/ai'
-import { formatINR } from '@/lib/utils'
+import { formatINR, formatDateTime } from '@/lib/utils'
 
 const previewSchema = z.object({
   bph_project_id: z.string(),
@@ -806,10 +806,33 @@ export interface MappedPullOutcome {
   error?: string
 }
 
+/** Two callers can start this loop in the same minute — the IN4 budget feed
+ *  (right after it writes Budget Hub) and the bph-sync cron job — and the
+ *  dispatcher fires both at once. Two copies pulling the same projects into
+ *  the same Cost Control rows wait on each other's locks, and from 21 Sep
+ *  2026 that pushed the budget feed past its function limit. A short lease
+ *  in app_settings lets the first one run and tells the second to stand
+ *  down; a lease older than this is a dead run's and is taken over. */
+const BPH_PULL_LEASE_KEY = 'cc_bph_pull_lease'
+const BPH_PULL_LEASE_MS = 5 * 60_000
+
+export interface RunAllMappedPullsResult {
+  ok: true
+  outcomes: MappedPullOutcome[]
+  ran_at: string
+  /** Mapped projects left untouched because the caller's deadline arrived first. */
+  not_reached: number
+  /** Set when the loop did not run at all, and why. */
+  skipped_reason?: string
+}
+
 export async function runAllMappedPulls(
   // Pass { client, actorId } for the unattended cron (service role, no user).
-  opts?: ServiceOpts,
-): Promise<{ ok: true; outcomes: MappedPullOutcome[]; ran_at: string }> {
+  // deadlineMs (epoch ms): stop starting new pulls once it has passed, so a
+  // caller with a function limit ends on its own terms and records a result.
+  opts?: ServiceOpts & { deadlineMs?: number },
+): Promise<RunAllMappedPullsResult> {
+  const ranAt = new Date().toISOString()
   // Soft permission gate for the user-triggered path (/budget save hook):
   // only cost-control EDIT users may write CC budget lines / audit events,
   // so a non-CC user saving the BPH report doesn't pollute Cost Control.
@@ -817,7 +840,7 @@ export async function runAllMappedPulls(
   if (!opts?.client) {
     const perms = await getMyPermissions()
     if (!can(perms, 'cost-control', 'edit')) {
-      return { ok: true, outcomes: [], ran_at: new Date().toISOString() }
+      return { ok: true, outcomes: [], ran_at: ranAt, not_reached: 0 }
     }
   }
 
@@ -831,14 +854,28 @@ export async function runAllMappedPulls(
   const { data: flagRow } = await supabase
     .from('app_settings').select('value').eq('key', 'cc_bph_sync').maybeSingle()
   const bphOn = ['true', '1', 'on'].includes(String(flagRow?.value ?? '').trim().toLowerCase())
-  if (!bphOn) return { ok: true, outcomes: [], ran_at: new Date().toISOString() }
+  if (!bphOn) return { ok: true, outcomes: [], ran_at: ranAt, not_reached: 0 }
 
+  const { data: leaseRow } = await supabase
+    .from('app_settings').select('value').eq('key', BPH_PULL_LEASE_KEY).maybeSingle()
+  const leaseAt = Date.parse(String(leaseRow?.value ?? ''))
+  if (Number.isFinite(leaseAt) && Date.now() - leaseAt < BPH_PULL_LEASE_MS) {
+    return { ok: true, outcomes: [], ran_at: ranAt, not_reached: 0, skipped_reason: `Another BPH → Cost Control pull started at ${formatDateTime(new Date(leaseAt))} IST and is still running; this one stood down so the two do not fight over the same rows.` }
+  }
+  await supabase.from('app_settings').upsert({ key: BPH_PULL_LEASE_KEY, value: ranAt }, { onConflict: 'key' })
+
+  // Least recently pulled first, so a run that stops at its deadline leaves
+  // the freshest ones for later and nothing is skipped twice in a row.
   const { data: links } = await supabase
     .from('cc_bph_project_links')
     .select('bph_project_id, cc_project_id')
-  const ranAt = new Date().toISOString()
+    .order('last_pulled_at', { ascending: true, nullsFirst: true })
   const outcomes: MappedPullOutcome[] = []
-  for (const link of links ?? []) {
+  let notReached = 0
+  const queue = links ?? []
+  for (let i = 0; i < queue.length; i++) {
+    const link = queue[i]
+    if (opts?.deadlineMs !== undefined && Date.now() >= opts.deadlineMs) { notReached = queue.length - i; break }
     try {
       // useAi:false — nobody reviews this pull, so only exact/normalised
       // code matches are written. Unmatched rows are skipped and counted in
@@ -873,7 +910,10 @@ export async function runAllMappedPulls(
       })
     }
   }
-  return { ok: true, outcomes, ran_at: ranAt }
+  // Release the lease (an empty value never parses as a time). Best effort:
+  // if this write fails the lease expires on its own within 5 minutes.
+  await supabase.from('app_settings').upsert({ key: BPH_PULL_LEASE_KEY, value: '' }, { onConflict: 'key' })
+  return { ok: true, outcomes, ran_at: ranAt, not_reached: notReached }
 }
 
 // Lightweight read for the freshness chip on the dashboard.

@@ -29,6 +29,7 @@ import type { ReportDoc as ContractorDoc } from '@/lib/contractor-report'
 import type { ReportDoc as SupplierDoc } from '@/lib/supplier-report'
 import { pruneHistory } from './history-retention'
 import { readManualUpload } from './manual-upload'
+import { makeDeadline, assertTimeLeft, withRetry, describeFailure, closeOrphanRuns, type Deadline } from './run-guard'
 
 export type Feed = 'budget' | 'tracker' | 'contractor' | 'supplier' | 'masters' | 'boq' | 'purchase' | 'trail'
 export type FeedMode = 'shadow' | 'live' | 'mirror'
@@ -245,10 +246,14 @@ async function writeReportState<D extends { projectName: string; areaBySub?: Rec
   revalidateReportState(table)
 }
 
-async function runTracker(sb: SupabaseClient, now: string, mode: FeedMode, actorId: string | null) {
+async function runTracker(sb: SupabaseClient, now: string, mode: FeedMode, actorId: string | null, deadline: Deadline) {
   const rows = await extractIndentRows()
+  assertTimeLeft(deadline, 'rebuilding the tracker')
   const { lines, items } = buildTracker(rows)
   const state = buildTrackerState(lines, `IN4 live sync ${now.slice(0, 10)}`, now)
+  // The blob's size, for the run summary: the last upload was 854 kB, and the
+  // write below is what times out when this grows or the instance is busy.
+  const stateKb = Math.round(JSON.stringify(state).length / 1024)
 
   await upsertAll(sb, 'in4_indent_items', items.map(i => ({ ...i, synced_at: now })), 'indent_item_id')
   await dropStale(sb, 'in4_indent_items', now)
@@ -261,24 +266,40 @@ async function runTracker(sb: SupabaseClient, now: string, mode: FeedMode, actor
   const comparison = compareTracker(hubState, state)
 
   let wrote = false
+  let attempts = 1
   if (mode === 'live') {
+    assertTimeLeft(deadline, 'writing the tracker state')
     // Snapshot both slots, then write: everything in the indent slot, and an
     // empty PO slot — IN4's rates are already on every line, so the second
     // report has nothing left to add and the merge just passes the first through.
+    //
+    // A snapshot is another ~0.9 MB write, and a run that then fails at the
+    // state write leaves the slot at the same version — so the next run would
+    // snapshot the identical blob again (22 Sep 2026: three runs, three
+    // copies of version 83). Skip it when history already holds that version.
     for (const s of [global, po]) {
       if (!s) continue
+      const { data: have } = await sb.from('procurement_tracker_state_history').select('id').eq('state_id', s.id).eq('version', s.version).limit(1)
+      if (have?.length) continue
       const { error: snapErr } = await sb.from('procurement_tracker_state_history').insert({ state_id: s.id, state: s.state, version: s.version, snapshot_by: actorId })
       if (snapErr) console.warn('[in4-tracker] history snapshot failed:', snapErr.message)
     }
-    // Keep the last 30 snapshots only (clean-up round 1, 10 Sep 2026).
-    await pruneHistory(sb, 'procurement_tracker_state_history', 'snapshot_at')
     const emptyPo: TrackerStoredState = { format: 'flat', fileName: 'IN4 live sync — rates are on the indent lines', savedAt: now, projects: [], pendingLineCount: 0, totalGrnValue: 0, pendingValue: 0, indentStatuses: [], lineStatuses: [] }
-    const { error: w1 } = await sb.from('procurement_tracker_state').upsert({ id: 'global', state: state, version: (global?.version ?? 0) + 1, updated_at: now, updated_by: actorId })
-    if (w1) throw new Error(`procurement_tracker_state(global): ${w1.message}`)
-    const { error: w2 } = await sb.from('procurement_tracker_state').upsert({ id: 'po', state: emptyPo, version: (po?.version ?? 0) + 1, updated_at: now, updated_by: actorId })
-    if (w2) throw new Error(`procurement_tracker_state(po): ${w2.message}`)
+    // One row, ~0.9 MB of JSON, its own statement. The service role's
+    // statement timeout is 30 s (migration 20260923; Supabase's inherited
+    // default was 8 s, and every run from 22 Sep 2026 died on it). The cron
+    // slot still lands ~20 jobs on the instance at once, so a write that hits
+    // the limit anyway is tried again after the others have cleared.
+    const w1 = await withRetry(async () => (await sb.from('procurement_tracker_state').upsert({ id: 'global', state: state, version: (global?.version ?? 0) + 1, updated_at: now, updated_by: actorId })).error?.message ?? null, { deadline })
+    if (!w1.ok) throw new Error(describeFailure('procurement_tracker_state(global)', w1))
+    attempts = w1.attempts
+    const w2 = await withRetry(async () => (await sb.from('procurement_tracker_state').upsert({ id: 'po', state: emptyPo, version: (po?.version ?? 0) + 1, updated_at: now, updated_by: actorId })).error?.message ?? null, { deadline })
+    if (!w2.ok) throw new Error(describeFailure('procurement_tracker_state(po)', w2))
     revalidateTrackerSoon()
     wrote = true
+    // Keep the last 30 snapshots only (clean-up round 1, 10 Sep 2026). After
+    // the writes, so a timeout here can no longer cost the run its result.
+    await pruneHistory(sb, 'procurement_tracker_state_history', 'snapshot_at')
 
     // The known-projects registry the visibility picker uses.
     const known = state.projects.map(p => p.projectName?.trim()).filter((x): x is string => !!x).map(name => ({ name, last_seen_at: now, last_seen_by: actorId }))
@@ -289,7 +310,7 @@ async function runTracker(sb: SupabaseClient, now: string, mode: FeedMode, actor
   }
 
   const t = comparison.totals
-  const summary = `${state.lineStatuses.length} lines · ${state.projects.length} projects · ${state.pendingLineCount} pending (upload had ${t.hubLines} lines · ${t.hubPending} pending)`
+  const summary = `${state.lineStatuses.length} lines · ${state.projects.length} projects · ${state.pendingLineCount} pending · ${stateKb} kB state${attempts > 1 ? ` (written on attempt ${attempts})` : ''} (upload had ${t.hubLines} lines · ${t.hubPending} pending)`
   return { rows: rows.length, comparison, wrote, summary }
 }
 
@@ -370,15 +391,24 @@ export interface FeedOptions { trigger: 'cron' | 'manual'; actorId?: string | nu
 export async function runFeed(feed: Exclude<Feed, 'budget'>, opts: FeedOptions): Promise<FeedResult> {
   const sb = svc()
   const startedAt = new Date().toISOString()
+  // Every run row must end with ok true/false and a reason. A run the
+  // function limit killed could not write its own ending, so each run first
+  // closes whatever its feed left open last time (see ./run-guard.ts).
+  const deadline = makeDeadline()
+  await closeOrphanRuns(sb, feed)
   const mode = await readMode(sb, feed, opts.forceMode)
   const { data: runRow } = await sb.from('in4_sync_runs').insert({ feed, trigger: opts.trigger, mode, actor_id: opts.actorId ?? null }).select('id').single()
   const runId = (runRow?.id as number | undefined) ?? null
   const finish = async (patch: Record<string, unknown>) => {
-    if (runId != null) await sb.from('in4_sync_runs').update({ finished_at: new Date().toISOString(), ...patch }).eq('id', runId)
+    if (runId == null) return
+    try {
+      const { error } = await sb.from('in4_sync_runs').update({ finished_at: new Date().toISOString(), ...patch }).eq('id', runId)
+      if (error) console.warn(`[in4-${feed}] could not record the run's result:`, error.message)
+    } catch (e) { console.warn(`[in4-${feed}] could not record the run's result:`, e instanceof Error ? e.message : e) }
   }
   try {
     let out: { rows: number; comparison?: unknown; wrote?: boolean; summary: string }
-    if (feed === 'tracker') out = await runTracker(sb, startedAt, mode, opts.actorId ?? null)
+    if (feed === 'tracker') out = await runTracker(sb, startedAt, mode, opts.actorId ?? null, deadline)
     else if (feed === 'masters') out = await runMasters(sb, startedAt)
     else if (feed === 'purchase') out = await runPurchase(sb, startedAt)
     else if (feed === 'boq') out = await runBoq(sb, startedAt)
@@ -394,7 +424,9 @@ export async function runFeed(feed: Exclude<Feed, 'budget'>, opts: FeedOptions):
   } catch (e) {
     const error = e instanceof Error ? e.message : String(e)
     await finish({ ok: false, error })
-    await sb.from('app_settings').upsert({ key: feedLastKey(feed), value: JSON.stringify({ at: new Date().toISOString(), mode, ok: false, error } satisfies LastFeedSync) }, { onConflict: 'key' })
+    try {
+      await sb.from('app_settings').upsert({ key: feedLastKey(feed), value: JSON.stringify({ at: new Date().toISOString(), mode, ok: false, error } satisfies LastFeedSync) }, { onConflict: 'key' })
+    } catch (e2) { console.warn(`[in4-${feed}] could not update the status pointer:`, e2 instanceof Error ? e2.message : e2) }
     return { ok: false, feed, runId, mode, error, rowsRead: 0, wrote: false, startedAt, finishedAt: new Date().toISOString() }
   }
 }

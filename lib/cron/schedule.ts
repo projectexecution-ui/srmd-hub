@@ -63,9 +63,13 @@ export const CRON_JOBS: CronJob[] = [
   // ── Each-slot jobs (intentionally run at both 09:00 and 15:00) ────────────
   { key: 'bills-pipeline',        policy: 'each', module: 'bills-pipeline',  am: '/api/cron/bills-pipeline?cron=1',      pm: '/api/cron/bills-pipeline?cron=1&slot=pm' },
   // IN4 live budget sync — reads IN4's SQL Server, rebuilds the SRMD Budget vs
-  // Expenses report and (in live mode) replaces the weekly Excel upload. Listed
-  // before bph-sync so the pull that follows sees fresh figures. Portal-wide on
-  // purpose: Cost Control's ERP columns depend on it even if the BPH tile is off.
+  // Expenses report and (in live mode) replaces the weekly Excel upload. Note
+  // the dispatcher fires every job in a slot AT ONCE (Promise.all), so the
+  // order of this list is not a running order: this feed does its own
+  // BPH → Cost Control pull right after it writes, and bph-sync below is the
+  // catch-up pass — a lease in runAllMappedPulls stops the two colliding.
+  // Portal-wide on purpose: Cost Control's ERP columns depend on it even if
+  // the BPH tile is off.
   { key: 'in4-sync',              policy: 'each',  am: '/api/cron/in4-sync?cron=1',    pm: '/api/cron/in4-sync?cron=1' },
   // The other IN4 feeds — Indent → PO tracker, Contractor and Supplier reports,
   // and the masters mirror. One job each so a slow one cannot time out another.

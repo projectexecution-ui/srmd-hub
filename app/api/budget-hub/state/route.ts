@@ -129,7 +129,7 @@ export async function PUT(req: Request) {
   //
   // Best-effort: failures get returned but never block the save. The
   // BPH UI shows "n synced / m failed" in a chip after the response.
-  let autoSync: { ran_at: string; ok_count: number; err_count: number; outcomes: unknown[] } | null = null
+  let autoSync: { ran_at: string; ok_count: number; err_count: number; outcomes: unknown[]; skipped_reason?: string } | null = null
   try {
     const { runAllMappedPulls } = await import('@/app/(app)/cost-control/import/bph/actions')
     // Run the mapped-link sync with ELEVATED rights so the Internal Estimate
@@ -151,6 +151,7 @@ export async function PUT(req: Request) {
       ok_count: r.outcomes.filter(o => o.ok).length,
       err_count: r.outcomes.filter(o => !o.ok).length,
       outcomes: r.outcomes,
+      ...(r.skipped_reason ? { skipped_reason: r.skipped_reason } : {}),
     }
   } catch (e) {
     console.warn('[budget-hub] auto-pull failed:', e instanceof Error ? e.message : e)
