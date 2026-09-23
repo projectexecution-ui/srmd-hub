@@ -29,6 +29,7 @@ import type { ReportDoc as ContractorDoc } from '@/lib/contractor-report'
 import type { ReportDoc as SupplierDoc } from '@/lib/supplier-report'
 import { pruneHistory } from './history-retention'
 import { readManualUpload } from './manual-upload'
+import { recordNewArrivals } from './intake.server'
 import { makeDeadline, assertTimeLeft, withRetry, describeFailure, closeOrphanRuns, type Deadline } from './run-guard'
 
 export type Feed = 'budget' | 'tracker' | 'contractor' | 'supplier' | 'masters' | 'boq' | 'purchase' | 'trail'
@@ -134,6 +135,10 @@ async function runMasters(sb: SupabaseClient, now: string): Promise<{ rows: numb
   ]
   await upsertAll(sb, 'in4_projects', projects.map(p => ({ ...p, synced_at: now })), 'id')
   await upsertAll(sb, 'in4_subprojects', subprojects.map(s => ({ ...s, synced_at: now })), 'id')
+  // IN4 → hub intake (Aksha, 23 Sep 2026, N1): record every active sub-project
+  // the hub does not hold; Execution work comes in by itself, marked "Not
+  // finished". Never allowed to fail the masters run — it is reported instead.
+  const intake = await recordNewArrivals(sb, now).catch((e: unknown) => ({ recorded: 0, adopted: 0, error: e instanceof Error ? e.message : String(e) }))
   // Same expression as the budget sync in lib/in4/sync.ts, which writes this
   // table too — two feeds computing one column two ways is a flip-flop waiting
   // to happen. cleanLabel used to wrap this; it strips "(M)" from MATERIAL
@@ -151,7 +156,10 @@ async function runMasters(sb: SupabaseClient, now: string): Promise<{ rows: numb
   for (const t of ['in4_parties', 'in4_materials', 'in4_stores', 'in4_companies', 'in4_company_gstins', 'in4_uoms', 'in4_last_po_by_material']) await dropStale(sb, t, now)
   const rows = projects.length + subprojects.length + skills.length + parties.length + materials.length + stores.length + companies.length + gstins.length + uoms.length + lastPo.length
   const contractors = parties.filter(p => p.kind === 'contractor').length
-  return { rows, summary: `${contractors} contractors · ${parties.length - contractors} suppliers · ${materials.length} materials · ${stores.length} stores · ${companies.length} trusts · ${uoms.length} units · ${lastPo.length} last POs` }
+  const intakeNote = intake.error
+    ? ` · intake FAILED: ${intake.error}`
+    : intake.recorded > 0 ? ` · ${intake.recorded} new from IN4 (${intake.adopted} brought in)` : ''
+  return { rows, summary: `${contractors} contractors · ${parties.length - contractors} suppliers · ${materials.length} materials · ${stores.length} stores · ${companies.length} trusts · ${uoms.length} units · ${lastPo.length} last POs${intakeNote}` }
 }
 
 // ── The purchase mirror: what was ordered, received and billed ───────────────

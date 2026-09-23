@@ -4,6 +4,7 @@ import { adminViewer } from '@/lib/admin/viewer'
 import { doorById, resolveTab, visibleTabs } from '@/lib/admin/doors'
 import { AdminDoor, NothingHere } from '../Door'
 import { In4Body } from '../in4/body'
+import { IntakeBody } from './IntakeBody'
 import { ManualFallbackBody } from '../manual-upload/body'
 import { MastersBody } from '@/app/(app)/masters/body'
 import { DeleteRequestsBody } from '../delete-requests/body'
@@ -32,6 +33,7 @@ export default async function DataPage({ searchParams }: { searchParams: Promise
   return (
     <AdminDoor door={door} tabs={tabs} current={current}>
       {current.id === 'in4' && <In4Body />}
+      {current.id === 'intake' && <IntakeBody />}
       {current.id === 'fallback' && <ManualFallbackBody />}
       {current.id === 'imports' && <Imports />}
       {current.id === 'masters' && <MastersBody />}

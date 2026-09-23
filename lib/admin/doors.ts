@@ -35,7 +35,7 @@ export type DoorId = 'people' | 'projects' | 'messages' | 'data' | 'hub'
 
 /** Who may see a door or a tab. The doors never widen access: every gate
  *  here is one the underlying screen already required. */
-export type Gate = 'anyone' | 'cc-view' | 'settings-view' | 'cc-admin' | 'admin' | 'owner'
+export type Gate = 'anyone' | 'cc-view' | 'settings-view' | 'cc-admin' | 'intake' | 'admin' | 'owner'
 
 export interface Viewer {
   /** Portal Owner or role admin. */
@@ -47,6 +47,8 @@ export interface Viewer {
   ccAdmin: boolean
   /** can(cost-control, view) — nearly everyone. */
   ccView: boolean
+  /** Named under People › Powers › "Bring in from IN4" (Parimal). */
+  intake: boolean
 }
 
 export interface DoorTab {
@@ -104,6 +106,7 @@ export const DOORS: readonly Door[] = [
     hint: 'IN4, imports, the lists everything points at, and anything deleted.',
     tabs: [
       { id: 'in4',      label: 'IN4 live sync',   gate: 'settings-view', hint: 'Every IN4 feed: last run, comparison with the old upload, live switch', was: ['/admin/in4'] },
+      { id: 'intake',   label: 'From IN4',        gate: 'intake',        hint: 'IN4 sub-projects not yet in the hub — tick what comes in' },
       { id: 'fallback', label: 'Manual fallback', gate: 'admin',         hint: 'When IN4 cannot be read: switch on, upload the sheets by hand, switch off after' },
       { id: 'imports',  label: 'Imports',         gate: 'cc-admin',      hint: 'The Excel budget import and the BPH → project links' },
       { id: 'masters',  label: 'Masters',         gate: 'cc-view',       hint: 'Contacts, items, stores, trusts, projects and work categories — IN4’s register against the hub’s lists' },
@@ -128,6 +131,7 @@ export function canOpen(gate: Gate, v: Viewer): boolean {
     case 'cc-view': return v.ccView || v.admin || v.owner
     case 'settings-view': return v.settingsView || v.admin || v.owner
     case 'cc-admin': return v.ccAdmin || v.admin || v.owner
+    case 'intake': return v.intake || v.admin || v.owner
     case 'admin': return v.admin || v.owner
     case 'owner': return v.owner
   }

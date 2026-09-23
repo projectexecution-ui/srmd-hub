@@ -4,11 +4,12 @@ import { createClient } from '@/lib/supabase/server'
 import { isPendingAccessRequest, allowedEmailSet } from '@/lib/access-requests'
 import { loadHealth } from '@/lib/revamp/admin-health'
 import { FEEDS, FEED_META } from '@/lib/in4/feeds'
+import { intakeSummary } from '@/lib/in4/intake.server'
 import { todayRows, type FeedState, type TodayRow } from './today'
 
 export async function loadToday(opts: { admin: boolean }): Promise<TodayRow[]> {
   const supabase = await createClient()
-  const [accessRes, allowedRes, emailRes, delRes, runsRes, ledgerRes, findings] = await Promise.all([
+  const [accessRes, allowedRes, emailRes, delRes, runsRes, ledgerRes, findings, intake] = await Promise.all([
     opts.admin ? supabase.from('profiles').select('email, is_active, access_state').eq('is_active', false).is('access_state', null) : Promise.resolve({ data: [] }),
     opts.admin ? supabase.from('allowed_emails').select('email') : Promise.resolve({ data: [] }),
     supabase.from('app_settings').select('value').eq('key', 'admin_email').maybeSingle(),
@@ -17,6 +18,7 @@ export async function loadToday(opts: { admin: boolean }): Promise<TodayRow[]> {
     supabase.from('in4_sync_runs').select('feed, started_at, ok, error').order('id', { ascending: false }).limit(80),
     supabase.from('app_settings').select('value').eq('key', 'cron_ledger').maybeSingle(),
     loadHealth(),
+    intakeSummary(supabase).catch(() => ({ waiting: 0, arrivedRecently: 0 })),
   ])
 
   const adminEmail = (emailRes.data?.value as string | null) ?? 'projectexecution@construction.srmd.org'
@@ -47,5 +49,6 @@ export async function loadToday(opts: { admin: boolean }): Promise<TodayRow[]> {
     feeds,
     ledger,
     findings,
+    intake,
   })
 }

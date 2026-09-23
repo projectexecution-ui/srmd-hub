@@ -34,6 +34,13 @@ describe('todayRows', () => {
     expect(rows[0].href).toBe('/admin/messages?tab=health')
   })
 
+  it('IN4 intake: arrivals that need finishing are amber, the waiting backlog is a quiet info line', () => {
+    const rows = todayRows({ ...base, intake: { waiting: 67, arrivedRecently: 2 } })
+    expect(rows.map(r => [r.id, r.tone])).toEqual([['intake-arrived', 'warn'], ['intake-waiting', 'info']])
+    expect(rows[0].href).toBe('/admin/projects')
+    expect(rows[1].href).toBe('/admin/data?tab=intake')
+    expect(todayRows({ ...base, intake: { waiting: 0, arrivedRecently: 0 } })).toEqual([])
+  })
   it('no ledger at all is an info line, not a red one', () => {
     expect(todayRows({ ...base, ledger: null })[0]).toMatchObject({ tone: 'info', id: 'ledger' })
   })

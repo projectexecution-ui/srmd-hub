@@ -10,6 +10,7 @@
 // Pure: the loader (today.server.ts) fetches, this decides and words.
 
 import { formatDateTime } from '@/lib/utils'
+import { intakeWords } from '@/lib/in4/intake'
 import type { HealthFinding } from '@/lib/revamp/admin-health'
 
 export interface FeedState {
@@ -30,6 +31,8 @@ export interface TodayInput {
   /** cron_ledger: job key → IST date it last succeeded. */
   ledger: Record<string, string> | null
   findings: HealthFinding[]
+  /** IN4 → hub intake (N1): what waits to be chosen, what the sync brought in lately. */
+  intake?: { waiting: number; arrivedRecently: number }
 }
 
 export interface TodayRow {
@@ -103,6 +106,12 @@ export function todayRows(i: TodayInput): TodayRow[] {
         text: `The scheduled-jobs record was last saved on ${when} — jobs are running unrecorded, so a daily digest can go out twice.`,
       })
     }
+  }
+
+  if (i.intake) {
+    const w = intakeWords(i.intake)
+    if (w.arrived) out.push({ id: 'intake-arrived', tone: 'warn', text: w.arrived, href: '/admin/projects', action: 'Finish them' })
+    if (w.waiting) out.push({ id: 'intake-waiting', tone: 'info', text: w.waiting, href: '/admin/data?tab=intake', action: 'Choose' })
   }
 
   for (const f of i.findings) {

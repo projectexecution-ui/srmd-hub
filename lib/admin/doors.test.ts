@@ -8,12 +8,14 @@ import {
 const APP = join(__dirname, '..', '..', 'app', '(app)')
 const routeExists = (href: string) => existsSync(join(APP, ...href.split('?')[0].split('/').filter(Boolean), 'page.tsx'))
 
-const OWNER: Viewer = { admin: true, owner: true, settingsView: true, ccAdmin: true, ccView: true }
-const ADMIN: Viewer = { admin: true, owner: false, settingsView: true, ccAdmin: true, ccView: true }
-const TRUSTEE: Viewer = { admin: false, owner: false, settingsView: true, ccAdmin: true, ccView: true }   // founder today
-const BACKOFFICE: Viewer = { admin: false, owner: false, settingsView: true, ccAdmin: false, ccView: true }
-const ENGINEER: Viewer = { admin: false, owner: false, settingsView: false, ccAdmin: false, ccView: true }
-const NOBODY: Viewer = { admin: false, owner: false, settingsView: false, ccAdmin: false, ccView: false }
+const OWNER: Viewer = { admin: true, owner: true, settingsView: true, ccAdmin: true, ccView: true, intake: true }
+const ADMIN: Viewer = { admin: true, owner: false, settingsView: true, ccAdmin: true, ccView: true, intake: true }
+const TRUSTEE: Viewer = { admin: false, owner: false, settingsView: true, ccAdmin: true, ccView: true, intake: false }   // founder today
+const BACKOFFICE: Viewer = { admin: false, owner: false, settingsView: true, ccAdmin: false, ccView: true, intake: false }
+const ENGINEER: Viewer = { admin: false, owner: false, settingsView: false, ccAdmin: false, ccView: true, intake: false }
+const NOBODY: Viewer = { admin: false, owner: false, settingsView: false, ccAdmin: false, ccView: false, intake: false }
+/** Parimal: an uploader named under People › Powers › Bring in from IN4. */
+const PARIMAL: Viewer = { admin: false, owner: false, settingsView: false, ccAdmin: false, ccView: true, intake: true }
 
 describe('one list', () => {
   it('is five doors, each with a route, and every tab id is unique within its door', () => {
@@ -62,6 +64,9 @@ describe('gates never widen access', () => {
   it('Back Office (settings view only) gets reports, health, IN4 and masters', () => {
     const ids = visibleDoors(BACKOFFICE).flatMap(d => visibleTabs(d, BACKOFFICE)).map(t => t.id).sort()
     expect(ids).toEqual(['health', 'in4', 'masters', 'scheduled'])
+  })
+  it('Parimal gets From IN4 and Masters — the named grant, not his role, opens the intake', () => {
+    expect(visibleDoors(PARIMAL).flatMap(d => visibleTabs(d, PARIMAL)).map(t => t.id).sort()).toEqual(['intake', 'masters'])
   })
   it('an engineer gets Masters and nothing else; a viewer with nothing gets no door', () => {
     expect(visibleDoors(ENGINEER).flatMap(d => visibleTabs(d, ENGINEER)).map(t => t.id)).toEqual(['masters'])
