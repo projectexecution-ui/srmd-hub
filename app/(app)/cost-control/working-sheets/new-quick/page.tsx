@@ -43,13 +43,17 @@ export default async function NewWorkingSheetQuickPage({
   // version's BOQ so the downloaded template is pre-filled as the next version
   // (engineer edits deltas → identical descriptions → clean v-to-v matching).
   type SeedRow = { description: string; unit: string | null; qty: number | null; qtyFormula: string | null; material: number | null; installation: number | null; ml: number | null }
+  // sourceWsId: the latest version's sheet id, when it has an uploaded file —
+  // the form downloads THAT file back (formulas + Working Sheet intact) via
+  // /api/cost-control/working-sheets/[id]/next-version, and only falls back
+  // to a fresh template seeded from `rows` when the file isn't our template.
   let priorVersion:
-    | { versionNo: number; wsCode: string; lineType: 'work' | 'material' | 'combined' | null; rows: SeedRow[] }
+    | { versionNo: number; wsCode: string; lineType: 'work' | 'material' | 'combined' | null; rows: SeedRow[]; sourceWsId: string | null }
     | null = null
   if (sp.project && sp.discipline && sp.sub_skill) {
     const { data: chainRows } = await supabase
       .from('cc_ws_with_versions')
-      .select('id, ws_code, version_no, line_type, status, summary_notes, archived_at, created_at')
+      .select('id, ws_code, version_no, line_type, status, summary_notes, archived_at, created_at, source_excel_url')
       .eq('project_id', sp.project)
       .eq('discipline_id', sp.discipline)
       .eq('sub_skill_id', sp.sub_skill)
@@ -86,6 +90,7 @@ export default async function NewWorkingSheetQuickPage({
           wsCode: latest.ws_code,
           lineType: (latest.line_type as 'work' | 'material' | 'combined' | null) ?? null,
           rows,
+          sourceWsId: latest.source_excel_url ? latest.id : null,
         }
       }
     }

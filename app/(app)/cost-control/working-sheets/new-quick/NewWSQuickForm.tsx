@@ -13,6 +13,7 @@ import { SearchableSelect } from '@/components/ui/searchable-select'
 import { Loader2, Upload, FileSpreadsheet, X, Sparkles, AlertTriangle, Image as ImageIcon, Download, Paperclip, FileText } from 'lucide-react'
 import { formatINR, formatDate } from '@/lib/utils'
 import { downloadBoqTemplate } from '@/lib/cost-control/boq-template-xlsx'
+import { filenameFromDisposition } from '@/lib/cost-control/next-version-file'
 import { COL as BOQ_COL } from '@/lib/cost-control/boq-template'
 import { detectTemplate, parseTemplateSheet, evaluateItem } from '@/lib/cost-control/boq-template-parse'
 import { parseSourceRef } from '@/lib/cost-control/formula-ref'
@@ -112,6 +113,10 @@ interface Props {
     wsCode: string
     lineType: 'work' | 'material' | 'combined' | null
     rows: Array<{ description: string; unit: string | null; qty: number | null; qtyFormula: string | null; material: number | null; installation: number | null; ml: number | null }>
+    /** The prior version's sheet id when it has an uploaded file. The download
+     *  then serves THAT file back as v(N+1) — Working Sheet + every formula
+     *  intact — and `rows` is only the fallback seed when it isn't our template. */
+    sourceWsId?: string | null
   } | null
 }
 
@@ -421,7 +426,43 @@ export function NewWSQuickForm({ projects, allDisciplines, allSubSkills, default
   const selDiscipline = useMemo(() => disciplines.find(d => d.id === disciplineId), [disciplines, disciplineId])
   const selSubSkill   = useMemo(() => subSkills.find(s => s.id === subSkillId), [subSkills, subSkillId])
 
-  function onDownloadTemplate() {
+  // Next-version download state: busy while the previous file streams, and a
+  // note when we had to fall back to a fresh seeded template (never silent).
+  const [dlBusy, setDlBusy] = useState(false)
+  const [dlNote, setDlNote] = useState<string | null>(null)
+
+  async function onDownloadTemplate() {
+    setDlNote(null)
+    // Raising v(N+1): hand back the previous version's OWN uploaded file,
+    // byte-for-byte — its Working Sheet take-off, D×H formulas, GST ROUND and
+    // the engineer's own =946+104.5 quantities all survive. A fresh template
+    // seeded from the parsed rows (below) can only carry numbers, which is
+    // exactly the "previous working with formula is not coming" complaint.
+    if (priorVersion?.sourceWsId) {
+      setDlBusy(true)
+      try {
+        const res = await fetch(`/api/cost-control/working-sheets/${priorVersion.sourceWsId}/next-version`)
+        if (res.ok) {
+          const blob = await res.blob()
+          const name = filenameFromDisposition(res.headers.get('content-disposition'))
+            ?? `BOQ_v${priorVersion.versionNo + 1}.xlsx`
+          const url = URL.createObjectURL(blob)
+          const a = document.createElement('a')
+          a.href = url; a.download = name
+          document.body.appendChild(a); a.click(); a.remove()
+          setTimeout(() => URL.revokeObjectURL(url), 1000)
+          return
+        }
+        const why = res.status === 409
+          ? `v${priorVersion.versionNo} was not uploaded on the standard template`
+          : `the v${priorVersion.versionNo} file could not be fetched`
+        setDlNote(`${why} — so this is a fresh template pre-filled with its ${priorVersion.rows.length} rows as numbers. The take-off formulas from v${priorVersion.versionNo} are not in it; open that version's Excel from its own page if you need them.`)
+      } catch {
+        setDlNote(`The v${priorVersion.versionNo} file could not be fetched — so this is a fresh template pre-filled with its ${priorVersion.rows.length} rows as numbers, without its formulas.`)
+      } finally {
+        setDlBusy(false)
+      }
+    }
     downloadBoqTemplate({
       projectCode: selProject?.code,   projectName: selProject?.name,
       disciplineCode: selDiscipline?.code, disciplineName: selDiscipline?.name,
@@ -911,11 +952,16 @@ export function NewWSQuickForm({ projects, allDisciplines, allSubSkills, default
               {priorVersion ? (
                 <>
                   <p className="text-sm font-semibold text-emerald-900">
-                    Download the Version {priorVersion.versionNo + 1} template — pre-filled with {priorVersion.wsCode} (v{priorVersion.versionNo})
+                    Download Version {priorVersion.versionNo + 1} — {priorVersion.sourceWsId ? `your ${priorVersion.wsCode} (v${priorVersion.versionNo}) file as you uploaded it` : `pre-filled with ${priorVersion.wsCode} (v${priorVersion.versionNo})`}
                   </p>
                   <p className="text-xs text-emerald-800/80 mt-0.5">
-                    The last version&apos;s {priorVersion.rows.length} row{priorVersion.rows.length === 1 ? '' : 's'} are already in it. Change only what&apos;s new, add extra rows at the bottom, then upload — it continues the same chain, so the approver sees exactly what changed since v{priorVersion.versionNo}.
+                    {priorVersion.sourceWsId
+                      ? <>Working Sheet tab, every formula and remark from v{priorVersion.versionNo} are intact — nothing is retyped. Change only what&apos;s new, add rows at the bottom, then upload. The hub numbers it v{priorVersion.versionNo + 1} and continues the same chain, so the approver sees exactly what changed.</>
+                      : <>The last version&apos;s {priorVersion.rows.length} row{priorVersion.rows.length === 1 ? '' : 's'} are already in it. Change only what&apos;s new, add extra rows at the bottom, then upload — it continues the same chain, so the approver sees exactly what changed since v{priorVersion.versionNo}.</>}
                   </p>
+                  {dlNote && (
+                    <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1 mt-1.5">{dlNote}</p>
+                  )}
                 </>
               ) : (
                 <>
@@ -929,8 +975,9 @@ export function NewWSQuickForm({ projects, allDisciplines, allSubSkills, default
             </div>
             <Button type="button" size="sm" variant="outline"
               className="flex-shrink-0 border-emerald-300 text-emerald-800 hover:bg-emerald-100"
-              onClick={onDownloadTemplate}>
-              <Download className="h-4 w-4 mr-1.5" /> {priorVersion ? `Download v${priorVersion.versionNo + 1} template` : 'Download template'}
+              onClick={() => { void onDownloadTemplate() }} disabled={dlBusy}>
+              {dlBusy ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Download className="h-4 w-4 mr-1.5" />}
+              {dlBusy ? 'Fetching…' : priorVersion ? `Download v${priorVersion.versionNo + 1}` : 'Download template'}
             </Button>
           </div>
         )}
