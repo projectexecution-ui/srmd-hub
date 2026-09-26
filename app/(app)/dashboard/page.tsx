@@ -18,8 +18,6 @@ import { getHomeBudgetGroups } from '@/lib/cost-control/my-budget-approvals'
 import { CostControlSnapshot } from '@/components/dashboard/CostControlSnapshot'
 import { ReturnedToEngineer } from '@/components/dashboard/ReturnedToEngineer'
 import { getReturnedToEngineer } from '@/lib/cost-control/returned-to-engineer'
-import { getRevampOn } from '@/lib/revamp/shell-switch'
-import { WorkStrip } from './WorkStrip'
 import { VerifyInIn4 } from '@/components/dashboard/VerifyInIn4'
 import { loadVerifyPortfolio } from '@/lib/revamp/verify-counts'
 import { getShell } from '@/lib/shell'
@@ -28,7 +26,6 @@ import { verifyRowsFor, tileBadges, istGreeting } from '@/lib/dashboard/scope'
 export const dynamic = 'force-dynamic'
 
 export default async function DashboardPage() {
-  const revampOn = await getRevampOn()
   const [profile, permissions, disabledSlugs, moduleLabels] = await Promise.all([
     getMyProfile(),
     getMyPermissions(),
@@ -94,13 +91,10 @@ export default async function DashboardPage() {
     }
   }
 
-  // Admin housekeeping (delete requests, whether the IN4 reports refreshed)
-  // is for the people who act on it. Bhoya Vatsal, an engineer, opened his
-  // home on 23 Sep 2026 to "0 delete requests waiting on an admin" and two
-  // report dates — "why unnecessary data is being shown which is not relevant".
-  const isAdmin = profile.role === 'admin' || !!profile.is_portal_owner
+  // Admin housekeeping (delete requests, IN4 feed health) is not on the home
+  // page at all any more (Aksha, 27 Sep 2026: "clean up with only limited
+  // required tabs and sections") — the Admin console carries both.
   const badges = tileBadges(inbox)
-  const anyBadge = Object.values(badges).some(n => n > 0)
 
   const firstName = profile.name || profile.full_name?.split(' ')[0] || 'there'
   const today = new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata' })
@@ -150,16 +144,11 @@ export default async function DashboardPage() {
           that don't appear in the approval inbox). Self-hides when there's none. */}
       {showCC && <CostControlSnapshot counts={ccWork} />}
 
-      {/* REVAMP, admins only: the hub's housekeeping — deletions waiting on
-          an admin, and whether the IN4 report feeds refreshed. */}
-      {revampOn && isAdmin && <WorkStrip />}
-
-      {/* Module tiles — role-filtered, each with its live "waiting" count */}
+      {/* Module tiles — role-filtered, each with its live "waiting" count.
+          Icon, name, count; nothing else. The Admin screens are not tiles:
+          they are the Admin lane. */}
       <section>
-        <div className="flex items-baseline justify-between mb-3">
-          <h2 className="text-sm font-bold uppercase tracking-wide text-gray-500">Apps</h2>
-          {anyBadge && <p className="text-[11px] text-gray-400">A count on a tile is work waiting on you there</p>}
-        </div>
+        <h2 className="text-sm font-bold uppercase tracking-wide text-gray-500 mb-3">Apps</h2>
         <TileLauncher
           permissions={permissions}
           disabledSlugs={Array.from(disabledSlugs)}
