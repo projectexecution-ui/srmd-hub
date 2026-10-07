@@ -123,3 +123,43 @@ export function isManagementRole(role: string | null | undefined, activeRules: R
   if (role === 'admin') return true
   return activeRules.some(r => r.approver_role === role || r.override_role === role)
 }
+
+// ── Trustee stage: one figure walks the chain ──────────────────────────────
+//
+// Aksha, 7 Oct 2026 (SRAH-1302-Q02): "the amount checked by Project head n
+// Atm head is same and Chirag Shah amt is different … this cannot happen" and
+// "Previous approved adjusted in this Approval - that is not right". So the
+// Trustee approves the SAME figure the Atm Head checked: never more (a
+// round-up belongs at the Atm Head's check), and money approved on earlier
+// versions is not netted into it. Mirrors cc_approve_release's cap.
+
+export interface TrusteeApproval {
+  /** What is still to approve on THIS sheet: checked minus approved so far. */
+  balance: number
+  /** Why the typed amount cannot go — shown inline, never a silent block. */
+  error: string | null
+  /** True when the typed amount is less than the balance (sheet stays partly approved). */
+  partial: boolean
+}
+
+const inr = (n: number) => '₹' + Math.round(n).toLocaleString('en-IN')
+
+export function trusteeApproval(checked: number, approvedSoFar: number, amount: number | null | undefined): TrusteeApproval {
+  const cap = Number.isFinite(checked) ? checked : 0
+  const already = Number.isFinite(approvedSoFar) ? Math.max(approvedSoFar, 0) : 0
+  const balance = Math.max(cap - already, 0)
+  if (balance <= 0.5) {
+    return { balance: 0, error: `Nothing left to approve — the Atm Head's ${inr(cap)} is already approved on this sheet.`, partial: false }
+  }
+  if (amount == null || !Number.isFinite(amount) || amount <= 0) {
+    return { balance, error: 'Enter an amount greater than zero.', partial: false }
+  }
+  if (amount > balance + 0.5) {
+    return {
+      balance,
+      error: `${inr(amount)} is more than the Atm Head checked. The Trustee approves the same figure (${inr(cap)}); ${inr(balance)} is still to approve. A round-up belongs at the Atm Head's check.`,
+      partial: false,
+    }
+  }
+  return { balance, error: null, partial: amount < balance - 0.5 }
+}

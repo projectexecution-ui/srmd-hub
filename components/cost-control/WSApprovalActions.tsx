@@ -58,17 +58,15 @@ const OTHER_DEPT = 'Other…'
 const DEPARTMENTS = ['Design', 'Security', 'ICT', 'Housekeeping', OTHER_DEPT]
 
 export function WSApprovalActions({
-  wsId, status, ctx, totalAmount, approvedSoFar, chainReleasedSoFar, submitDisabled = false, onBeforeSubmit, signOffCfg,
+  wsId, status, ctx, totalAmount, approvedSoFar, submitDisabled = false, onBeforeSubmit, signOffCfg,
 }: {
   wsId: string
   status: string
   ctx: WSApprovalContext
   totalAmount: number
+  /** Approved on THIS sheet so far. Earlier versions of the budget are not
+   *  netted in (Aksha, 7 Oct 2026). */
   approvedSoFar: number
-  /** Chain-wide released-so-far (max approved_for_erp_amt over the version
-   *  chain) — the Trustee release balance nets against this, not the sheet's
-   *  own tranche. Passed straight through to ApproveTrancheButton. */
-  chainReleasedSoFar?: number
   /** Extra client-side condition (e.g. no items yet / zero total). */
   submitDisabled?: boolean
   /** Runs before submit — e.g. the BOQ editor flushes unsaved rows. */
@@ -92,6 +90,11 @@ export function WSApprovalActions({
   const [err, setErr] = useState<string | null>(null)
 
   const cfg = signOffCfg ?? DEFAULT_SIGNOFF_CFG
+  // One figure walks the chain (Aksha, 7 Oct 2026): the Atm Head starts from
+  // what the Project Head checked, and the Trustee approves what the Atm Head
+  // checked. Older sheets without a recorded check fall back to the total.
+  const signOffPrefill = ctx.nextSignOff === 'atm_approved' && cfg.phChecked ? cfg.phChecked.amt : totalAmount
+  const checkedForTrustee = cfg.atmChecked?.amt ?? totalAmount
   const done = stageIndexFor(status)
   const isReturned = status === 'returned'
   const isCancelled = status === 'cancelled'
@@ -189,8 +192,8 @@ export function WSApprovalActions({
             isReturned ? 'text-rose-700' : done >= CHAIN_STEPS.length ? 'text-emerald-700' : 'text-gray-900',
           )}>
             {plainStatusLabel(status)}
-            {status === 'partially_approved' && totalAmount > 0 && (
-              <span className="text-amber-700 font-medium"> — ₹{approvedSoFar.toLocaleString('en-IN')} of ₹{totalAmount.toLocaleString('en-IN')} released so far</span>
+            {status === 'partially_approved' && checkedForTrustee > 0 && (
+              <span className="text-amber-700 font-medium"> — ₹{approvedSoFar.toLocaleString('en-IN')} of ₹{Math.round(checkedForTrustee).toLocaleString('en-IN')} approved so far</span>
             )}
           </p>
           {(cfg.phChecked || cfg.atmChecked || approvedSoFar > 0) && (
@@ -242,9 +245,11 @@ export function WSApprovalActions({
         {signOffLabel && (
           <Button
             onClick={() => {
-              // Pre-fill with the amount to approve (grand total, incl. GST) so
-              // the approver just confirms; still editable if they checked less.
-              if (!signOffOpen) setCheckedRaw(String(Math.round(totalAmount)))
+              // Pre-fill with the amount to approve so the approver just
+              // confirms; still editable if they checked a different figure.
+              // The Atm Head starts from the Project Head's checked figure —
+              // one figure walks the chain (Aksha, 7 Oct 2026).
+              if (!signOffOpen) setCheckedRaw(String(Math.round(signOffPrefill)))
               setSignOffOpen(o => !o); setErr(null)
             }}
             disabled={busy}
@@ -287,9 +292,11 @@ export function WSApprovalActions({
               make the approval round figure". Next thousand / ten thousand /
               lakh above the asked total; the buffer shows on each chip and in
               the trail (the checked figure is recorded as typed). */}
-          <RoundUpChips base={Math.round(totalAmount)} current={Number(checkedRaw) || null} onPick={v => setCheckedRaw(String(v))} disabled={busy} />
+          <RoundUpChips base={Math.round(signOffPrefill)} current={Number(checkedRaw) || null} onPick={v => setCheckedRaw(String(v))} disabled={busy} />
           <p className="text-[11px] text-emerald-800/80">
-            Pre-filled with the amount to approve (incl. GST). Change it only if you checked a different figure.
+            {ctx.nextSignOff === 'atm_approved' && cfg.phChecked
+              ? 'Pre-filled with the figure the Project Head checked. The Trustee approves exactly what you sign here — round up here if a round figure is wanted.'
+              : 'Pre-filled with the amount to approve (incl. GST). Change it only if you checked a different figure.'}
           </p>
           <label className="text-xs font-semibold text-emerald-900 block">Note on your check <span className="text-rose-600">*</span></label>
           <textarea
@@ -379,13 +386,14 @@ export function WSApprovalActions({
         </div>
       )}
 
-      {/* Trustee release — the only stage where money moves */}
+      {/* Trustee approval — the only stage where money moves. The Trustee
+          approves the figure the Atm Head checked, nothing else. */}
       {ctx.canRelease && (
         <ApproveTrancheButton
           wsId={wsId}
-          totalAmount={totalAmount}
+          checkedAmount={checkedForTrustee}
           approvedSoFar={approvedSoFar}
-          chainReleasedSoFar={chainReleasedSoFar}
+          phCheckedAmount={cfg.phChecked?.amt ?? null}
           compact
         />
       )}

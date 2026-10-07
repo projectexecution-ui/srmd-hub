@@ -81,13 +81,12 @@ function isPercentRow(r: Row): boolean {
 }
 
 export function ExcelSummaryPanel({
-  wsId, status, ctx, reviewer, aiEnabled = true, signOffCfg, totalAmount, approvedSoFar, chainReleasedSoFar,
+  wsId, status, ctx, reviewer, aiEnabled = true, signOffCfg, totalAmount, approvedSoFar,
   summaryTotal, summaryNotes, flagSummary, rows, grandTotal, ladder,
 }: {
   wsId: string
   status: WSStatus
   ctx: WSApprovalContext
-  chainReleasedSoFar?: number
   reviewer: boolean
   aiEnabled?: boolean
   signOffCfg?: SignOffCfg
@@ -337,7 +336,6 @@ export function ExcelSummaryPanel({
           ctx={ctx}
           totalAmount={totalAmount}
           approvedSoFar={approvedSoFar}
-          chainReleasedSoFar={chainReleasedSoFar}
           submitDisabled={!summaryTotal || summaryTotal <= 0}
         />
       </div>

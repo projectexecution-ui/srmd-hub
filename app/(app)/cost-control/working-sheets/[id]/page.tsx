@@ -32,7 +32,7 @@ import { VersionLedgerStrip } from './VersionLedgerStrip'
 import { CumulativeBoqPanel } from './CumulativeBoqPanel'
 import { ConfidenceScorecard } from './ConfidenceScorecard'
 import { BudgetPositionPanel } from './BudgetPositionPanel'
-import { chainCumulative, chainReleasedSoFar, matchBoqRows, summarizeMatch, normalizeKey, basisCounts } from '@/lib/cost-control/version-ledger'
+import { chainCumulative, matchBoqRows, summarizeMatch, normalizeKey, basisCounts } from '@/lib/cost-control/version-ledger'
 import { EditDeadlineButton } from './EditDeadlineButton'
 import { QueryError } from '@/components/ui/query-error'
 import { formatINR, formatDate, istCalendarDaysAgo } from '@/lib/utils'
@@ -142,20 +142,10 @@ export default async function WorkingSheetEditorPage(
       )
     : null
 
-  // Trustee release baseline: money already pushed to ERP across the WHOLE
-  // version chain (max approved_for_erp_amt over live versions). On a revision
-  // an earlier version may have released more than THIS sheet's own tranche, so
-  // the release balance nets against the chain, not the sheet's own field. With
-  // the flag off (or a standalone v1) this equals the sheet's own released amt,
-  // so behaviour is unchanged. The cc_approve_release RPC computes the SAME
-  // chain baseline server-side; this only mirrors it for the display.
-  const chainReleasedSoFarAmt = ccSettings.cumulative_versions
-    ? chainReleasedSoFar(siblings.map(s => ({
-        id: s.id, version_no: s.version_no, status: s.status as string,
-        total_amount: Number(s.total_amount ?? 0), approved_for_erp_amt: Number(s.approved_for_erp_amt ?? 0),
-        summary_notes: s.summary_notes ?? null, archived_at: s.archived_at,
-      })))
-    : Number(ws.approved_for_erp_amt ?? 0)
+  // The Trustee approves the figure the Atm Head checked on THIS sheet —
+  // earlier versions are no longer netted into the balance (Aksha, 7 Oct
+  // 2026: "Previous approved adjusted in this Approval - that is not right").
+  // The version ledger strip still shows the chain's money, for reading.
 
   // Per-stage checked amounts + IN4 tracking + archive state live on the
   // base table (the versions view has a frozen column list on old rows) —
@@ -571,7 +561,6 @@ export default async function WorkingSheetEditorPage(
           ctx={ctx}
           totalAmount={Number(ws.total_amount ?? 0)}
           approvedSoFar={Number(ws.approved_for_erp_amt ?? 0)}
-          chainReleasedSoFar={chainReleasedSoFarAmt}
           summaryNotes={ws.summary_notes}
           pastApproved={Number(ws.past_approved_in_subskill ?? 0)}
           showPastApproved={reviewer}
@@ -885,7 +874,6 @@ export default async function WorkingSheetEditorPage(
               aiEnabled={ccSettings.ai_tools}
               totalAmount={Number(ws.total_amount ?? 0)}
               approvedSoFar={Number(ws.approved_for_erp_amt ?? 0)}
-              chainReleasedSoFar={chainReleasedSoFarAmt}
               summaryTotal={ws.summary_total != null ? Number(ws.summary_total) : null}
               summaryNotes={ws.summary_notes}
               flagSummary={ws.flag_summary as { generated_at: string; total_rows: number; flagged_rows: number; by_flag: Record<string, number>; narrative: string | null; ai_used: boolean; ai_error: string | null } | null}
@@ -1217,7 +1205,6 @@ export default async function WorkingSheetEditorPage(
         canEdit={canEdit && (isOwner || isAdmin)}
         ctx={ctx}
         approvedSoFar={Number(ws.approved_for_erp_amt ?? 0)}
-        chainReleasedSoFar={chainReleasedSoFarAmt}
         vendors={vendorsRes.data ?? []}
         initialItems={itemsRes.data ?? []}
         pastItems={(pastItemsRes.data ?? []).map(p => {

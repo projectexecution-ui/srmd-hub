@@ -1,24 +1,29 @@
 'use client'
-// Trustee release — the FINAL stage of the 3-step chain (Project Head →
-// Atm Head → Trustee). Opens a small panel with the estimate /
-// already-released / remaining numbers and an amount input (pre-filled
-// with the remaining). The Trustee can type a smaller number to release
-// just part of the budget; "Approve all remaining" finalises the sheet.
+// Trustee approval — the FINAL stage of the 3-step chain (Project Head →
+// Atm Head → Trustee). One figure walks the whole chain: the Trustee
+// approves the SAME amount the Atm Head checked. The panel shows the two
+// checks side by side, pre-fills that figure, and refuses anything above it
+// with the reason (a round-up belongs at the Atm Head's check). Approving
+// less is allowed — the sheet stays "partly approved" until the rest goes.
 //
-// Every release is logged into approval_events via record_approval_event
-// with an optional comment + attachments, using the sheet's REAL
-// from-stage (atm_approved for the first release, partially_approved for
-// later tranches).
+// Aksha, 7 Oct 2026 (SRAH-1302-Q02): "the amount checked by Project head n
+// Atm head is same and Chirag Shah amt is different … this cannot happen" and
+// "Previous approved adjusted in this Approval - that is not right - as this
+// will create confusion". Earlier versions of the budget are therefore NOT
+// netted into this sheet's figure any more.
+//
+// Every approval is logged into approval_events via record_approval_event
+// with a comment + optional attachments, using the sheet's REAL from-stage
+// (atm_approved for the first approval, partially_approved after a partial).
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { approveWorkingSheet } from '@/components/cost-control/ws-actions'
+import { trusteeApproval } from '@/lib/cost-control/chain'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { MoneyInput } from '@/components/ui/money-input'
-import { RoundUpChips } from '@/components/cost-control/RoundUpChips'
 import { Textarea } from '@/components/ui/textarea'
-import { confirm } from '@/components/ui/confirm-dialog'
 import { Check, Loader2, Wallet, Paperclip, MessageSquare, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
@@ -26,8 +31,8 @@ import { toast } from 'sonner'
 const MODULE_SLUG = 'cost-control'
 const DOC_TYPE = 'cc_working_sheet'
 const DOC_TABLE = 'cc_working_sheets'
-// Releases start AFTER both sign-offs — the sheet sits at atm_approved
-// for the first release, partially_approved for subsequent tranches.
+// Approvals start AFTER both sign-offs — the sheet sits at atm_approved
+// for the first approval, partially_approved after a partial one.
 const FROM_STAGE = 'atm_approved'
 const TO_STAGE = 'partially_approved'
 
@@ -44,31 +49,26 @@ interface Attachment {
 }
 
 export function ApproveTrancheButton({
-  wsId, totalAmount, approvedSoFar, chainReleasedSoFar, compact = false,
+  wsId, checkedAmount, approvedSoFar, phCheckedAmount = null, compact = false,
 }: {
   wsId: string
-  totalAmount: number
+  /** The figure the Atm Head signed (the sheet total when no check was
+   *  recorded). The Trustee approves this same figure — cc_approve_release
+   *  caps at it server-side; this panel mirrors the cap. */
+  checkedAmount: number
+  /** Approved on THIS sheet so far (a partial approval earlier). Never the
+   *  chain's — earlier versions are not netted in. */
   approvedSoFar: number
-  /** Money already released into ERP across the WHOLE version chain (max
-   *  approved_for_erp_amt over live versions). On a revision the earlier
-   *  versions may have released more than THIS sheet's own tranche, so the
-   *  balance the Trustee can release now must net against the chain total,
-   *  not the sheet's own approved_for_erp_amt. Falls back to approvedSoFar
-   *  (identical for v1 / a standalone sheet). The cc_approve_release RPC
-   *  computes the same chain baseline server-side — this only mirrors it. */
-  chainReleasedSoFar?: number
+  /** The Project Head's checked figure, shown beside the Atm Head's so the
+   *  three figures read together. */
+  phCheckedAmount?: number | null
   compact?: boolean
 }) {
   const router = useRouter()
   const supabase = createClient()
   const [open, setOpen] = useState(false)
-  // The release baseline is the chain's released-so-far when we have it.
-  const releaseBaseline = chainReleasedSoFar ?? approvedSoFar
-  // True when EARLIER versions have released more than this sheet itself — the
-  // note + "(all versions)" caption only make sense then.
-  const chainHasPriorRelease = releaseBaseline > approvedSoFar + 0.5
-  const remaining = Math.max(totalAmount - releaseBaseline, 0)
-  const [amount, setAmount] = useState<string>(String(remaining))
+  const balance = Math.max(checkedAmount - approvedSoFar, 0)
+  const [amount, setAmount] = useState<string>(String(Math.round(balance)))
   const [comment, setComment] = useState('')
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [uploading, setUploading] = useState(false)
@@ -76,15 +76,22 @@ export function ApproveTrancheButton({
   const [err, setErr] = useState<string | null>(null)
   const [requiresAttachment, setRequiresAttachment] = useState(false)
 
-  // The sheet's REAL current stage: a sheet with releases already against
-  // it sits at partially_approved, not submitted. Rule lookups and the
-  // audit event must use the true transition.
+  // The sheet's REAL current stage: a sheet with a partial approval against
+  // it sits at partially_approved. Rule lookups and the audit event must
+  // use the true transition.
   const fromStage = approvedSoFar > 0 ? 'partially_approved' : FROM_STAGE
+
+  // What the typed figure means, re-read on every keystroke: the balance,
+  // whether it is partial, and why it cannot go (shown inline, never a
+  // silent block).
+  const typed = amount.trim() === '' ? null : Number(amount)
+  const check = trusteeApproval(checkedAmount, approvedSoFar, typed)
+  const phDiffers = phCheckedAmount != null && Math.round(phCheckedAmount) !== Math.round(checkedAmount)
 
   useEffect(() => {
     if (!open) return
     void (async () => {
-      // A release can land on either to-stage (partial or completing), so
+      // An approval can land on either to-stage (partial or completing), so
       // honour the strictest requirements across both possible rules.
       const { data } = await supabase
         .from('approval_rules')
@@ -98,12 +105,18 @@ export function ApproveTrancheButton({
     })()
   }, [open, supabase, fromStage])
 
-  useEffect(() => {
-    if (!open) {
-      setComment(''); setAttachments([])
-      setErr(null); setBusy(false); setUploading(false)
-    }
-  }, [open])
+  // Opening and closing reset the panel in the handlers themselves (no
+  // effect): a fresh amount, note and files every time it opens.
+  function openPanel() {
+    setAmount(String(Math.round(balance)))
+    setComment(''); setAttachments([])
+    setErr(null); setBusy(false); setUploading(false)
+    setOpen(true)
+  }
+  function closePanel() {
+    setErr(null); setBusy(false); setUploading(false)
+    setOpen(false)
+  }
 
   async function handleFiles(files: FileList | null) {
     if (!files || files.length === 0) return
@@ -142,49 +155,34 @@ export function ApproveTrancheButton({
     setAttachments(prev => prev.filter((_, i) => i !== idx))
   }
 
-  async function submit(useAll: boolean) {
+  async function submit() {
     setErr(null)
-    let trancheArg: number | null = null
-    let trancheAmount: number = remaining
-    if (!useAll) {
-      const num = Number(amount)
-      if (!Number.isFinite(num) || num <= 0) { setErr('Enter an amount greater than zero'); return }
-      trancheArg = num
-      trancheAmount = num
-      // Rounding UP above the asked amount is allowed (e.g. 9,90,000 → 10,00,000)
-      // — warn + confirm, never a hard block. The extra is recorded on the sheet.
-      if (num > remaining + 0.5) {
-        const ok = await confirm({
-          title: 'Release more than the asked amount?',
-          message: `You're releasing ${formatINR(num)} — that is ${formatINR(num - remaining)} ABOVE the asked ${formatINR(remaining)}. This is allowed (e.g. rounding up), and the extra is recorded against this sheet. Proceed?`,
-          confirmLabel: 'Yes, release this amount',
-          danger: true,
-        })
-        if (!ok) return
-      }
-    }
+    if (check.error) { setErr(check.error); return }
+    const num = typed as number
 
     // Comment is mandatory at every approval stage (not just when the rule
-    // flags it) — the Trustee's release note is read by the whole team.
-    if (!comment.trim()) { setErr('A comment is required for this release.'); return }
+    // flags it) — the Trustee's note is read by the whole team.
+    if (!comment.trim()) { setErr('A comment is required for this approval.'); return }
     if (requiresAttachment && attachments.length === 0) { setErr('An attachment is required for this approval.'); return }
 
     setBusy(true)
 
-    const r = await approveWorkingSheet(wsId, trancheArg)
+    // Pass the typed figure; the RPC snaps a full approval to the checked
+    // figure exactly, so paise never drift.
+    const r = await approveWorkingSheet(wsId, num)
     if (!r.ok) { setErr(r.error ?? 'Approve failed'); setBusy(false); return }
 
-    const released = r.released ?? trancheAmount
+    const released = r.released ?? num
     const fullyApproved = (r.new_status ?? TO_STAGE) === 'approved'
     toast.success(
       fullyApproved
-        ? `Released ${formatINR(released)} — sheet is now fully approved`
-        : `Released ${formatINR(released)} — sheet stays partially approved`,
+        ? `Approved ${formatINR(released)} — the figure the Atm Head checked. Sheet fully approved.`
+        : `Approved ${formatINR(released)} — sheet stays partly approved`,
     )
 
-    // Log the ACTUAL transition, not a hardcoded one — a release that
-    // completes a partially-approved sheet is partially_approved →
-    // approved, and the matrix rules for that exact pair are what
+    // Log the ACTUAL transition, not a hardcoded one — an approval that
+    // completes a partly-approved sheet is partially_approved → approved,
+    // and the matrix rules for that exact pair are what
     // record_approval_event re-checks.
     const actualToStage = r.new_status ?? TO_STAGE
     const { error: recErr } = await supabase.rpc('record_approval_event', {
@@ -197,7 +195,7 @@ export function ApproveTrancheButton({
       p_decision:    'approved',
       p_comment:     comment.trim() || null,
       p_attachments: attachments,
-      p_amount:      trancheAmount,
+      p_amount:      released,
     })
     setBusy(false)
     if (recErr) {
@@ -205,7 +203,7 @@ export function ApproveTrancheButton({
       router.refresh()
       return
     }
-    setOpen(false)
+    closePanel()
     router.refresh()
   }
 
@@ -214,56 +212,54 @@ export function ApproveTrancheButton({
       <Button
         variant="success"
         size={compact ? 'sm' : 'default'}
-        onClick={() => { setOpen(true); setAmount(String(remaining)) }}
+        onClick={openPanel}
       >
         <Check className="h-4 w-4" />
-        {approvedSoFar > 0 ? 'Release more into ERP' : 'Release into ERP'}
+        {approvedSoFar > 0 ? `Approve the balance ${formatINR(balance)}` : `Approve ${formatINR(checkedAmount)}`}
       </Button>
     )
   }
+
+  const typedIsFull = !check.error && !check.partial
 
   return (
     <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-3 space-y-3">
       <div className="flex items-center gap-2 text-xs">
         <Wallet className="h-3.5 w-3.5 text-emerald-700" />
-        <span className="text-emerald-900 font-semibold">Trustee release into ERP</span>
+        <span className="text-emerald-900 font-semibold">Trustee approval</span>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
-        <Stat label="This version" value={formatINR(totalAmount)} />
-        <Stat
-          label={chainHasPriorRelease ? 'Released so far (all versions)' : 'Released so far'}
-          value={formatINR(releaseBaseline)}
-          tone="green"
-        />
-        <Stat label="Balance to release" value={formatINR(remaining)} tone="amber" />
+        {phCheckedAmount != null && <Stat label="Project Head checked" value={formatINR(phCheckedAmount)} />}
+        <Stat label="Atm Head checked" value={formatINR(checkedAmount)} tone="green" />
+        {approvedSoFar > 0
+          ? <Stat label="Approved so far · balance" value={`${formatINR(approvedSoFar)} · ${formatINR(balance)}`} tone="amber" />
+          : <Stat label="To approve" value={formatINR(balance)} tone="amber" />}
       </div>
-      {chainHasPriorRelease && (
-        <p className="text-[11px] text-gray-600 bg-white border border-gray-200 rounded px-2 py-1.5">
-          {formatINR(releaseBaseline)} has already been released on earlier versions of this budget.
-          You&apos;re releasing the <b>balance</b> — this version&apos;s total {formatINR(totalAmount)} minus what&apos;s already out.
+      {phDiffers && (
+        <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
+          The Project Head and the Atm Head checked different figures. The Atm Head&apos;s {formatINR(checkedAmount)} is the one you approve — if that is wrong, return the sheet rather than approve a third figure.
         </p>
       )}
       <div>
-        <label className="text-[11px] font-semibold text-gray-700">Release amount (₹)</label>
+        <label className="text-[11px] font-semibold text-gray-700">Amount to approve (₹)</label>
         <MoneyInput
           value={amount}
           onChange={setAmount}
-          placeholder={String(remaining)}
+          placeholder={String(Math.round(balance))}
           className="mt-1 font-mono"
         />
-        {/* Nominal round-up (next ₹1,000 / ₹10,000 / ₹1,00,000 above the balance).
-            cc_approve_release already allows releasing above the ask and records
-            the extra; this only saves typing the round figure by hand. */}
-        <div className="mt-1.5">
-          <RoundUpChips base={remaining} current={Number(amount) || null} onPick={v => setAmount(String(v))} disabled={busy} />
-        </div>
-        {Number(amount) > remaining + 0.5 && (
-          <p className="text-[11px] font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1 mt-1">
-            ⚠ {formatINR(Number(amount) - remaining)} above the asked {formatINR(remaining)} — allowed (e.g. rounding up); you&apos;ll confirm before it goes.
+        {check.error && typed != null && (
+          <p className="text-[11px] font-semibold text-rose-800 bg-rose-50 border border-rose-200 rounded px-2 py-1 mt-1">
+            {check.error}
+          </p>
+        )}
+        {check.partial && (
+          <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1 mt-1">
+            Less than the Atm Head&apos;s {formatINR(checkedAmount)} — the sheet stays &quot;partly approved&quot; until the remaining {formatINR(balance - (typed ?? 0))} is approved.
           </p>
         )}
         <p className="text-[11px] text-gray-500 mt-1">
-          Enter the amount being released now. The sheet stays open at &quot;partly released&quot; until the full estimate is reached.
+          Pre-filled with the figure the Atm Head checked. Earlier versions of this budget are not netted in here.
         </p>
       </div>
 
@@ -276,7 +272,7 @@ export function ApproveTrancheButton({
           value={comment}
           onChange={e => setComment(e.target.value)}
           rows={2}
-          placeholder="Why HOD is releasing this amount (visible to the team)."
+          placeholder="Why this amount is being approved (visible to the team)."
           disabled={busy}
           className="mt-1"
         />
@@ -328,16 +324,12 @@ export function ApproveTrancheButton({
 
       {err && <p className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded px-2 py-1.5">{err}</p>}
       <div className="flex flex-wrap gap-2 justify-end">
-        <Button variant="ghost" size="sm" disabled={busy} onClick={() => setOpen(false)}>
+        <Button variant="ghost" size="sm" disabled={busy} onClick={closePanel}>
           Cancel
         </Button>
-        <Button variant="outline" size="sm" disabled={busy || uploading} onClick={() => submit(true)}>
-          {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-          Approve all remaining ({formatINR(remaining)})
-        </Button>
-        <Button variant="success" size="sm" disabled={busy || uploading || !amount} onClick={() => submit(false)}>
+        <Button variant="success" size="sm" disabled={busy || uploading} onClick={submit}>
           {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
-          Approve this release
+          {typedIsFull ? `Approve ${formatINR(balance)}` : check.partial ? `Approve ${formatINR(typed ?? 0)} (partial)` : 'Approve'}
         </Button>
       </div>
     </div>

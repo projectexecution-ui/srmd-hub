@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
+  trusteeApproval,
   PENDING_STATUSES, isPendingStatus, awaitingLabel, nextSignOffStage,
   canReleaseFrom, canReturnFrom, canSubmitFrom, stageIndexFor,
   plainStatusLabel, isManagementRole, CHAIN_STEPS, type ChainStatus,
@@ -142,5 +143,35 @@ describe('isPendingStatus', () => {
     for (const s of ['draft', 'approved', 'returned', 'paid', 'cancelled', '']) {
       expect(isPendingStatus(s)).toBe(false)
     }
+  })
+})
+
+describe('trusteeApproval — the Trustee approves the figure the Atm Head checked', () => {
+  it('pre-fills the whole checked figure on a fresh sheet', () => {
+    const r = trusteeApproval(1_080_450, 0, 1_080_450)
+    expect(r).toEqual({ balance: 1_080_450, error: null, partial: false })
+  })
+  it('refuses anything above the checked figure, in words (SRAH-1302-Q02: 8,60,000 over 8,56,250 was the bug)', () => {
+    const r = trusteeApproval(1_080_450, 0, 1_084_200)
+    expect(r.error).toMatch(/more than the Atm Head checked/)
+    expect(r.error).toContain('₹10,80,450')
+    expect(r.balance).toBe(1_080_450)
+  })
+  it('never nets earlier versions in: the balance is this sheet alone', () => {
+    // v1 released 2,24,200 elsewhere in the chain — irrelevant here.
+    expect(trusteeApproval(1_080_450, 0, 856_250)).toMatchObject({ balance: 1_080_450, error: null, partial: true })
+  })
+  it('a partial approval earlier reduces the balance; the rest completes it', () => {
+    expect(trusteeApproval(1_000_000, 400_000, 600_000)).toEqual({ balance: 600_000, error: null, partial: false })
+    expect(trusteeApproval(1_000_000, 400_000, 600_001)).toMatchObject({ partial: false })
+    expect(trusteeApproval(1_000_000, 400_000, 700_000).error).toMatch(/more than/)
+  })
+  it('nothing left once the checked figure is fully approved', () => {
+    expect(trusteeApproval(1_000_000, 1_000_000, 10).error).toMatch(/Nothing left to approve/)
+  })
+  it('zero / blank amounts are refused with a reason', () => {
+    expect(trusteeApproval(1_000, 0, null).error).toBe('Enter an amount greater than zero.')
+    expect(trusteeApproval(1_000, 0, Number.NaN).error).toBe('Enter an amount greater than zero.')
+    expect(trusteeApproval(1_000, 0, 0).error).toBe('Enter an amount greater than zero.')
   })
 })
