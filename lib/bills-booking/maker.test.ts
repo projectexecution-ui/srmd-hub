@@ -220,3 +220,50 @@ describe('which rate the sheet opens on', () => {
     expect(pickRate([], 18)).toMatchObject({ pct: 18, basis: 'default', total: 0 })
   })
 })
+
+describe('deductions under Retention — Aksha, 7 Oct 2026', () => {
+  // One line, 1,000 units at ₹100 → basic 1,00,000; GST 18% → gross 1,18,000.
+  const line = { itemId: 1, sr: 1, particular: 'Work', uom: 'Sqm', orderedQty: 2000, rate: 100, orderedAmt: 200000, priorQty: 0, priorAmt: 0, thisQty: 1000 }
+
+  it('a percentage deduction is taken on the basic value, like retention', () => {
+    const s = priceAbstract([line], { gstPct: 18, retentionPct: 5, deductions: [{ kind: 'advance', mode: 'pct', value: 10 }] })
+    expect(s.basicThisBill).toBe(100000)
+    expect(s.retentionThisBill).toBe(5000)
+    expect(s.deductionsThisBill).toBe(10000)       // 10% of 1,00,000, not of 1,18,000
+    expect(s.netThisBill).toBe(118000 - 5000 - 10000)
+  })
+
+  it('an amount deduction is taken as typed, and several add up', () => {
+    const s = priceAbstract([line], { gstPct: 18, retentionPct: 5, deductions: [
+      { kind: 'recovery', mode: 'amt', value: 2500, note: 'water charges' },
+      { kind: 'debit', mode: 'amt', value: 1200 },
+    ] })
+    expect(s.deductionsThisBill).toBe(3700)
+    expect(s.netThisBill).toBe(118000 - 5000 - 3700)
+    const rows = s.totals.filter(t => t.kind === 'deduction')
+    expect(rows.map(t => t.label)).toEqual(['Other recovery', 'Debit / deduction'])
+    expect(rows[0].note).toBe('water charges')
+  })
+
+  it('retention typed as an amount wins over the percentage (IN4 holds rupees, not a clean rate)', () => {
+    const s = priceAbstract([line], { gstPct: 18, retentionPct: 5, retentionAmt: 4869 })
+    expect(s.retentionThisBill).toBe(4869)
+    expect(s.netThisBill).toBe(118000 - 4869)
+    expect(s.totals.find(t => t.kind === 'retention')?.mode).toBe('amt')
+  })
+
+  it('no deductions given → the sheet reads exactly as before', () => {
+    const before = priceAbstract([line], { gstPct: 18, retentionPct: 5 })
+    expect(before.netThisBill).toBe(113000)
+    expect(before.deductionsThisBill).toBe(0)
+    expect(before.totals.map(t => t.kind)).toEqual(['sub', 'gst', 'total', 'retention', 'net'])
+  })
+
+  it('deductions never go negative, and sit between Retention and Net on the ladder', () => {
+    const s = priceAbstract([line], { gstPct: 18, retentionPct: 5, deductions: [{ kind: 'debit', mode: 'amt', value: -500 }] })
+    expect(s.deductionsThisBill).toBe(0)
+    const s2 = priceAbstract([line], { gstPct: 0, retentionPct: 0, deductions: [{ kind: 'advance', mode: 'pct', value: 20 }] })
+    expect(s2.totals.map(t => t.kind)).toEqual(['sub', 'gst', 'total', 'retention', 'deduction', 'net'])
+    expect(s2.netThisBill).toBe(80000)
+  })
+})

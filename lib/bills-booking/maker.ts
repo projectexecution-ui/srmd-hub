@@ -62,9 +62,50 @@ export interface TotalRow {
   thisBill: number
   cumulative: number
   balance: number
-  kind: 'sub' | 'gst' | 'total' | 'retention' | 'net'
+  kind: 'sub' | 'gst' | 'total' | 'retention' | 'deduction' | 'net'
   /** Shown beside the label: "GST @ 18%". */
   rate?: number
+  /** For a deduction row: which typed deduction it is, how it was given,
+   *  and the reason the person wrote. */
+  dedIndex?: number
+  mode?: 'pct' | 'amt'
+  note?: string | null
+}
+
+/** Deductions under Retention — Aksha, 7 Oct 2026: "build the deductions -
+ *  also give PERCENTAGE option also - this all should come to CT Disc Head
+ *  and CT Head". Until then the sheet stopped at Retention, so the three
+ *  approvers signed a net payable with no advance recovery, no other recovery
+ *  and no debit in it — the real net only appeared once CT Billing had made
+ *  the certificate in IN4 (Desai RA-3: sheet ₹14,20,254, IN4 ₹13,83,061).
+ *
+ *  A percentage is always of the Sub Total (basic value) of THIS bill — the
+ *  same base IN4 uses for retention. An amount is taken as typed. */
+export type DeductionKind = 'advance' | 'recovery' | 'debit'
+export const DEDUCTION_LABELS: Record<DeductionKind, string> = {
+  advance: 'Advance recovery',
+  recovery: 'Other recovery',
+  debit: 'Debit / deduction',
+}
+export interface Deduction {
+  kind: DeductionKind
+  mode: 'pct' | 'amt'
+  value: number
+  note?: string | null
+}
+export interface SheetRates {
+  gstPct: number
+  retentionPct: number
+  /** Retention typed as an amount — wins over the percentage when set. IN4
+   *  holds retention as rupees (Desai RA-3: ₹61,198 on ₹12,56,862, which is
+   *  no clean rate), so a sheet that only knew percentages could never agree. */
+  retentionAmt?: number | null
+  deductions?: Deduction[]
+}
+
+export function deductionAmount(d: Deduction, basic: number): number {
+  const v = Number.isFinite(d.value) ? Math.max(d.value, 0) : 0
+  return r2(d.mode === 'pct' ? basic * v / 100 : v)
 }
 
 export interface PricedSheet {
@@ -74,6 +115,9 @@ export interface PricedSheet {
   netThisBill: number
   grossThisBill: number
   basicThisBill: number
+  retentionThisBill: number
+  /** Advance recovery + other recoveries + debits on this bill. */
+  deductionsThisBill: number
   /** Share of the ordered value this bill represents, for the "12% ·" prefix. */
   pctOfOrder: number
   anyOverrun: boolean
@@ -84,7 +128,7 @@ const q3 = (n: number) => Math.round(n * 1000) / 1000
 
 export function priceAbstract(
   lines: MakerLine[],
-  rates: { gstPct: number; retentionPct: number },
+  rates: SheetRates,
 ): PricedSheet {
   const priced: PricedLine[] = lines.map(l => {
     const thisAmt = r2(l.thisQty * l.rate)
@@ -121,11 +165,37 @@ export function priceAbstract(
     cumulative: r2(basic.cumulative + gst.cumulative),
     balance: r2(basic.balance + gst.balance),
   }
-  const retention = { previous: ret(basic.previous), thisBill: ret(basic.thisBill), cumulative: ret(basic.cumulative), balance: ret(basic.balance) }
+  // Retention: the typed amount when there is one, else the percentage. The
+  // earlier bills are only known by rate, so Previous stays on the rate and
+  // Cumulative is Previous plus what this bill actually holds.
+  const retThis = rates.retentionAmt != null && Number.isFinite(rates.retentionAmt)
+    ? r2(Math.max(rates.retentionAmt, 0))
+    : ret(basic.thisBill)
+  const retention = {
+    previous: ret(basic.previous),
+    thisBill: retThis,
+    cumulative: r2(ret(basic.previous) + retThis),
+    balance: ret(basic.balance),
+  }
+  // Deductions are this bill's alone — nothing is known of earlier bills'
+  // recoveries here, so Previous and Balance stay empty rather than invented.
+  const dedRows: TotalRow[] = (rates.deductions ?? []).map((d, i) => {
+    const amt = deductionAmount(d, basic.thisBill)
+    return {
+      label: DEDUCTION_LABELS[d.kind] ?? 'Deduction',
+      kind: 'deduction' as const,
+      dedIndex: i,
+      mode: d.mode,
+      rate: d.mode === 'pct' ? d.value : undefined,
+      note: d.note ?? null,
+      previous: 0, thisBill: amt, cumulative: amt, balance: 0,
+    }
+  })
+  const dedThis = r2(dedRows.reduce((s, d) => s + d.thisBill, 0))
   const net = {
     previous: r2(total.previous - retention.previous),
-    thisBill: r2(total.thisBill - retention.thisBill),
-    cumulative: r2(total.cumulative - retention.cumulative),
+    thisBill: r2(total.thisBill - retention.thisBill - dedThis),
+    cumulative: r2(total.previous - retention.previous + total.thisBill - retention.thisBill - dedThis),
     // Retention on work not yet done is not money held — it is money that will
     // be held. Carrying it as a deduction here would understate what is left.
     balance: total.balance,
@@ -139,12 +209,15 @@ export function priceAbstract(
       { label: 'Sub Total', kind: 'sub', ...basic },
       { label: 'GST', kind: 'gst', rate: rates.gstPct, ...gst },
       { label: 'Total Amount', kind: 'total', ...total },
-      { label: 'Retention', kind: 'retention', rate: rates.retentionPct, ...retention },
+      { label: 'Retention', kind: 'retention', rate: rates.retentionPct, mode: rates.retentionAmt != null ? 'amt' : 'pct', ...retention },
+      ...dedRows,
       { label: 'Net Payable Amount', kind: 'net', ...net },
     ],
     netThisBill: net.thisBill,
     grossThisBill: total.thisBill,
     basicThisBill: basic.thisBill,
+    retentionThisBill: retention.thisBill,
+    deductionsThisBill: dedThis,
     pctOfOrder: orderedTotal > 0 ? Math.round((basic.thisBill / orderedTotal) * 100) : 0,
     anyOverrun: priced.some(l => l.overrun),
   }

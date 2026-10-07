@@ -52,11 +52,12 @@ export function ActionBar({ billId, stage, netAmount, certified, claimed, preHol
   const [ask, setAsk] = useState<'send_back' | 'reject' | null>(null)
   const [reason, setReason] = useState('')
   const dlg = useRef<HTMLDialogElement>(null)
-  const [, tick] = useState(0)
-  // The undo window closes on its own; the button has to notice.
+  // The clock is state, read once and advanced by the interval, so render
+  // stays pure. The undo window closes on its own; the button has to notice.
+  const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
     if (!undoUntil) return
-    const t = setInterval(() => tick(x => x + 1), 15_000)
+    const t = setInterval(() => setNow(Date.now()), 15_000)
     return () => clearInterval(t)
   }, [undoUntil])
 
@@ -67,7 +68,7 @@ export function ActionBar({ billId, stage, netAmount, certified, claimed, preHol
   const showAmount = stage === 'ct_head'
   const resumeTo = preHoldStage ?? 'site_head'
   const needsDoc = stage === 'disc_head' && !hasStampedBill
-  const canUndo = !!undoUntil && new Date(undoUntil).getTime() > Date.now()
+  const canUndo = !!undoUntil && new Date(undoUntil).getTime() > now
   const figure = netAmount ?? certified ?? claimed
   const figureLabel = netAmount != null ? 'Net payable' : certified != null ? 'Certified' : 'Claimed'
 
@@ -77,7 +78,9 @@ export function ActionBar({ billId, stage, netAmount, certified, claimed, preHol
       p_bill: billId, p_to: to, p_action: action,
       p_comment: why?.trim() || null,
       p_net: showAmount && net ? Number(net) : null,
-      p_certified: showAmount && net ? Number(net) : null,
+      // Certified is the basic value the sheet computed; it is not the net the
+      // CT Head types here (writing the net into both was a bug, 7 Oct 2026).
+      p_certified: null,
     })
     setBusy(null)
     if (error) { setErr(error.message); return false }

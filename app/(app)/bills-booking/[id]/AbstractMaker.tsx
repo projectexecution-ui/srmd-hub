@@ -6,8 +6,8 @@ import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Check, ChevronDown, Loader2, Ruler } from 'lucide-react'
-import { priceAbstract, type MakerLine, type RatePick } from '@/lib/bills-booking/maker'
+import { Check, ChevronDown, Loader2, Plus, Ruler, X } from 'lucide-react'
+import { priceAbstract, DEDUCTION_LABELS, type Deduction, type DeductionKind, type MakerLine, type RatePick } from '@/lib/bills-booking/maker'
 import { formatINR, formatINRCompact, formatNumber, formatDate } from '@/lib/utils'
 import { Particular, ExpandAll } from './Particular'
 import { shortenBoq } from '@/lib/bills-booking/shorten'
@@ -24,7 +24,7 @@ import type { EarlierBill } from '@/lib/bills-booking/abstract'
  *  balance, GST, retention and the green Net Payable line. The rate is never
  *  editable — it is what the work order ordered, and a rate somebody can
  *  retype is a rate that ends up wrong. */
-export function AbstractMaker({ billId, woNo, vendor, work, seed, gst: gstPick, retention: retPick, canEdit, raLabel, ownSheet, in4Total, source = 'ct', sourceNote, earlierBills = [] }: {
+export function AbstractMaker({ billId, woNo, vendor, work, seed, gst: gstPick, retention: retPick, canEdit, canEditDeductions = false, retentionAmt = null, deductions: dedSeed = [], in4Net = null, raLabel, ownSheet, in4Total, source = 'ct', sourceNote, earlierBills = [] }: {
   billId: string
   woNo: string
   vendor: string
@@ -33,6 +33,16 @@ export function AbstractMaker({ billId, woNo, vendor, work, seed, gst: gstPick, 
   gst: RatePick
   retention: RatePick
   canEdit: boolean
+  /** The deductions block (retention as ₹ or %, advance recovery, other
+   *  recovery, debits) is typed at the CT Disc Head and CT Head desks —
+   *  Aksha, 7 Oct 2026 — even when the quantities are IN4's and read-only. */
+  canEditDeductions?: boolean
+  /** Retention typed as rupees on this bill, when somebody did. */
+  retentionAmt?: number | null
+  deductions?: Deduction[]
+  /** What IN4's certificate says is payable on this bill, once it exists, so
+   *  the sheet can say whether its own net agrees. */
+  in4Net?: number | null
   /** "RA-4", for the strip along the top. */
   raLabel: string
   /** True once CT Hub holds lines of its own for this bill. */
@@ -67,15 +77,32 @@ export function AbstractMaker({ billId, woNo, vendor, work, seed, gst: gstPick, 
   const [err, setErr] = useState<string | null>(null)
   const [gst, setGst] = useState(String(gstPick.pct))
   const [ret, setRet] = useState(String(retPick.pct))
+  // Retention as rupees or as a rate; deductions as typed rows. Values are kept
+  // as strings while typing so a half-typed "12." does not snap to 12.
+  const [retMode, setRetMode] = useState<'pct' | 'amt'>(retentionAmt != null ? 'amt' : 'pct')
+  const [retAmt, setRetAmt] = useState(retentionAmt != null ? String(retentionAmt) : '')
+  type DedDraft = { kind: DeductionKind; mode: 'pct' | 'amt'; value: string; note: string }
+  const [deds, setDeds] = useState<DedDraft[]>(
+    () => dedSeed.map(d => ({ kind: d.kind, mode: d.mode, value: String(d.value), note: d.note ?? '' })))
   const [qty, setQty] = useState<Record<number, string>>(
     () => Object.fromEntries(seed.map(l => [l.sr, l.thisQty ? String(l.thisQty) : ''])))
 
   const lines: MakerLine[] = useMemo(
     () => seed.map(l => ({ ...l, thisQty: Number(qty[l.sr]) || 0 })), [seed, qty])
 
+  const typedDeds: Deduction[] = useMemo(
+    () => deds.map(d => ({ kind: d.kind, mode: d.mode, value: Number(d.value) || 0, note: d.note.trim() || null })),
+    [deds])
   const sheet = useMemo(
-    () => priceAbstract(lines, { gstPct: Number(gst) || 0, retentionPct: Number(ret) || 0 }),
-    [lines, gst, ret])
+    () => priceAbstract(lines, {
+      gstPct: Number(gst) || 0, retentionPct: Number(ret) || 0,
+      retentionAmt: retMode === 'amt' ? (Number(retAmt) || 0) : null,
+      deductions: typedDeds,
+    }),
+    [lines, gst, ret, retMode, retAmt, typedDeds])
+  // Rates and quantities follow the sheet's own edit right; the deductions
+  // block has its own, so an IN4 sheet can still carry them.
+  const canEditRates = canEdit || canEditDeductions
 
   const touched = sheet.lines.filter(l => l.thisQty !== 0).length
   // How many rows actually hide something, for the Show-full-text control.
@@ -126,24 +153,49 @@ export function AbstractMaker({ billId, woNo, vendor, work, seed, gst: gstPick, 
   const prevCols = (rolled > 0 ? 1 : 0) + Math.max(shownBills.length, earlierBills.length === 0 ? 1 : 0)
   const hidden = useMemo(() => seed.filter(l => shortenBoq(l.particular).shortened).length, [seed])
 
+  const dedPayload = typedDeds.filter(d => d.value > 0).map(d => ({ kind: d.kind, mode: d.mode, value: d.value, note: d.note }))
+  const retAmtPayload = retMode === 'amt' ? (Number(retAmt) || 0) : null
+
   function save() {
     setErr(null)
     start(async () => {
-      const { error } = await supabase.rpc('bb_rpc_save_abstract', {
-        p_bill: billId,
-        p_gst: Number(gst) || 0,
-        p_retention: Number(ret) || 0,
-        p_lines: sheet.lines.map(l => ({
-          item_id: l.itemId, sr: l.sr, particular: l.particular, uom: l.uom,
-          ordered_qty: l.orderedQty, rate: l.rate, ordered_amt: l.orderedAmt,
-          prior_qty: l.priorQty, prior_amt: l.priorAmt, this_qty: l.thisQty,
-        })),
-      })
+      // The sheet's own lines save with everything; an IN4 sheet saves only the
+      // money block, through the desk-gated function.
+      const { error } = canEdit
+        ? await supabase.rpc('bb_rpc_save_abstract', {
+            p_bill: billId,
+            p_gst: Number(gst) || 0,
+            p_retention: Number(ret) || 0,
+            p_lines: sheet.lines.map(l => ({
+              item_id: l.itemId, sr: l.sr, particular: l.particular, uom: l.uom,
+              ordered_qty: l.orderedQty, rate: l.rate, ordered_amt: l.orderedAmt,
+              prior_qty: l.priorQty, prior_amt: l.priorAmt, this_qty: l.thisQty,
+            })),
+            p_retention_amt: retAmtPayload,
+            p_deductions: dedPayload,
+          })
+        : await supabase.rpc('bb_rpc_save_deductions', {
+            p_bill: billId,
+            p_gst: Number(gst) || 0,
+            p_retention_pct: Number(ret) || 0,
+            p_retention_amt: retAmtPayload,
+            p_deductions: dedPayload,
+          })
       if (error) { setErr(error.message); return }
-      toast.success(`Abstract saved — ${touched} ${touched === 1 ? 'item' : 'items'}, net payable ${formatINR(sheet.netThisBill)}`)
+      toast.success(canEdit
+        ? `Abstract saved — ${touched} ${touched === 1 ? 'item' : 'items'}, net payable ${formatINR(sheet.netThisBill)}`
+        : `Deductions saved — net payable ${formatINR(sheet.netThisBill)}`)
       router.refresh()
     })
   }
+
+  function addDed() {
+    setDeds(d => [...d, { kind: d.some(x => x.kind === 'advance') ? 'recovery' : 'advance', mode: 'pct', value: '', note: '' }])
+  }
+  function setDed(i: number, patch: Partial<DedDraft>) {
+    setDeds(d => d.map((x, j) => (j === i ? { ...x, ...patch } : x)))
+  }
+  const num = (s: string) => s.replace(/[^\d.]/g, '')
 
   const q3 = (v: number) => Math.round(v * 1000) / 1000
   const n = (v: number) => (v === 0 ? '—' : formatNumber(v, v % 1 === 0 ? 0 : 2))
@@ -313,49 +365,123 @@ export function AbstractMaker({ billId, woNo, vendor, work, seed, gst: gstPick, 
           </tbody>
 
           <tbody>
-            {sheet.totals.map(t => (
-              <tr key={t.kind} className={
+            {sheet.totals.map(t => {
+              const less = t.kind === 'retention' || t.kind === 'deduction'
+              const isDed = t.kind === 'deduction'
+              const d = isDed && t.dedIndex != null ? deds[t.dedIndex] : null
+              return (
+              <tr key={isDed ? `ded-${t.dedIndex}` : t.kind} className={
                 t.kind === 'net' ? 'bg-emerald-700 font-bold text-white'
-                  : t.kind === 'retention' ? 'bg-rose-50 font-bold text-rose-900'
+                  : less ? 'bg-rose-50 font-bold text-rose-900'
                     : t.kind === 'gst' ? 'bg-amber-50 font-bold' : 'bg-slate-50 font-bold'}>
                 <td className="border border-gray-100 px-2 py-1.5 text-left" colSpan={6}>
-                  {t.label}
-                  {t.rate != null && (
-                    canEdit
-                      ? <> @ <input inputMode="decimal" value={t.kind === 'gst' ? gst : ret}
-                              onChange={e => (t.kind === 'gst' ? setGst : setRet)(e.target.value.replace(/[^\d.]/g, ''))}
-                              aria-label={`${t.label} percentage`}
+                  {t.kind === 'gst' && (
+                    canEditRates
+                      ? <>{t.label} @ <input inputMode="decimal" value={gst}
+                              onChange={e => setGst(num(e.target.value))}
+                              aria-label="GST percentage"
                               className="w-[46px] rounded border border-slate-300 bg-white px-1 py-0.5 text-right text-[11px] tabular-nums text-gray-900" />%</>
-                      : <> @ {t.rate}%</>
+                      : <>{t.label} @ {t.rate}%</>
                   )}
+                  {t.kind === 'retention' && (
+                    canEditRates ? (
+                      <span className="inline-flex flex-wrap items-center gap-1.5">
+                        {t.label}
+                        <ModeToggle mode={retMode} onChange={setRetMode} label="retention" />
+                        {retMode === 'pct'
+                          ? <>@ <input inputMode="decimal" value={ret} onChange={e => setRet(num(e.target.value))}
+                                  aria-label="Retention percentage"
+                                  className="w-[46px] rounded border border-slate-300 bg-white px-1 py-0.5 text-right text-[11px] tabular-nums text-gray-900" />%</>
+                          : <>₹ <input inputMode="decimal" value={retAmt} onChange={e => setRetAmt(num(e.target.value))}
+                                  aria-label="Retention amount" placeholder="0"
+                                  className="w-[90px] rounded border border-slate-300 bg-white px-1 py-0.5 text-right text-[11px] tabular-nums text-gray-900" /></>}
+                      </span>
+                    ) : (
+                      <>{t.label}{t.mode === 'amt' ? ' (typed)' : ` @ ${t.rate}%`}</>
+                    )
+                  )}
+                  {isDed && d && (
+                    canEditDeductions ? (
+                      <span className="inline-flex flex-wrap items-center gap-1.5 font-semibold">
+                        <select value={d.kind} onChange={e => setDed(t.dedIndex!, { kind: e.target.value as DeductionKind })}
+                                aria-label="Deduction type"
+                                className="rounded border border-slate-300 bg-white px-1 py-0.5 text-[11px] text-gray-900">
+                          {(Object.keys(DEDUCTION_LABELS) as DeductionKind[]).map(k => <option key={k} value={k}>{DEDUCTION_LABELS[k]}</option>)}
+                        </select>
+                        <ModeToggle mode={d.mode} onChange={mode => setDed(t.dedIndex!, { mode })} label={DEDUCTION_LABELS[d.kind]} />
+                        {d.mode === 'pct'
+                          ? <>@ <input inputMode="decimal" value={d.value} onChange={e => setDed(t.dedIndex!, { value: num(e.target.value) })}
+                                  aria-label={`${DEDUCTION_LABELS[d.kind]} percentage`} placeholder="0"
+                                  className="w-[46px] rounded border border-slate-300 bg-white px-1 py-0.5 text-right text-[11px] tabular-nums text-gray-900" />%</>
+                          : <>₹ <input inputMode="decimal" value={d.value} onChange={e => setDed(t.dedIndex!, { value: num(e.target.value) })}
+                                  aria-label={`${DEDUCTION_LABELS[d.kind]} amount`} placeholder="0"
+                                  className="w-[90px] rounded border border-slate-300 bg-white px-1 py-0.5 text-right text-[11px] tabular-nums text-gray-900" /></>}
+                        <input value={d.note} onChange={e => setDed(t.dedIndex!, { note: e.target.value })}
+                               aria-label="Reason" placeholder="reason (e.g. water charges)"
+                               className="w-[150px] rounded border border-slate-300 bg-white px-1.5 py-0.5 text-[11px] font-normal text-gray-900" />
+                        <button type="button" onClick={() => setDeds(x => x.filter((_, j) => j !== t.dedIndex))}
+                                aria-label={`Remove ${DEDUCTION_LABELS[d.kind]}`}
+                                className="inline-flex h-6 w-6 items-center justify-center rounded text-rose-700 hover:bg-rose-100">
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </span>
+                    ) : (
+                      <>{t.label}{t.mode === 'pct' ? ` @ ${t.rate}%` : ''}{t.note ? <span className="font-normal text-rose-800/80"> — {t.note}</span> : null}</>
+                    )
+                  )}
+                  {(t.kind === 'sub' || t.kind === 'total' || t.kind === 'net') && t.label}
                 </td>
                 <td className={`border border-gray-100 px-2 py-1.5 text-right tabular-nums ${t.kind === 'net' ? 'text-emerald-50' : 'text-gray-500'}`} colSpan={Math.max(prevCols, 1) + 1}>
-                  {t.kind === 'retention' && t.previous > 0 ? '− ' : ''}{m(t.previous)}
+                  {less && t.previous > 0 ? '− ' : ''}{isDed ? '' : m(t.previous)}
                 </td>
                 <td className="border border-gray-100 px-2 py-1.5 text-right tabular-nums" colSpan={2}>
-                  {t.kind === 'retention' && t.thisBill > 0 ? '− ' : ''}{m(t.thisBill)}
+                  {less && t.thisBill > 0 ? '− ' : ''}{m(t.thisBill)}
                 </td>
                 <td className="border border-gray-100 px-2 py-1.5 text-right tabular-nums" colSpan={2}>
-                  {t.kind === 'retention' && t.cumulative > 0 ? '− ' : ''}{m(t.cumulative)}
+                  {less && t.cumulative > 0 ? '− ' : ''}{isDed ? '' : m(t.cumulative)}
                 </td>
-                <td className="border border-gray-100 px-2 py-1.5 text-right tabular-nums" colSpan={2}>{m(t.balance)}</td>
+                <td className="border border-gray-100 px-2 py-1.5 text-right tabular-nums" colSpan={2}>{isDed ? '' : m(t.balance)}</td>
               </tr>
-            ))}
+              )
+            })}
           </tbody>
         </table>
       </div>
 
+      {canEditDeductions && (
+        <div className="flex flex-wrap items-center gap-2 border-t border-gray-100 bg-rose-50/40 px-4 py-2 text-[11.5px] text-rose-900">
+          <button type="button" onClick={addDed}
+                  className="inline-flex min-h-[32px] items-center gap-1 rounded-md border border-rose-300 bg-white px-2.5 py-1 text-[11.5px] font-semibold text-rose-900 hover:bg-rose-50">
+            <Plus className="h-3.5 w-3.5" /> Add deduction
+          </button>
+          <span>Advance recovery, other recovery or a debit — as a % of the Sub Total or as an amount. Retention can be typed as an amount too.</span>
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center gap-3 border-t border-gray-200 px-4 py-3">
         <Chip k="This bill — net payable" v={formatINR(sheet.netThisBill)} tone="green" />
+        {sheet.deductionsThisBill > 0 && <Chip k="Deductions this bill" v={formatINR(sheet.deductionsThisBill)} tone="red" />}
         <Chip k="Cumulative billed" v={formatINR(sheet.totals[2].cumulative)} />
         <Chip k="Retention held (running)" v={formatINR(sheet.totals[3].cumulative)} tone="red" />
-        {canEdit && (
+        {(canEdit || canEditDeductions) && (
           <Button onClick={save} disabled={busy} className="ml-auto bg-indigo-600 hover:bg-indigo-700">
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-            Save abstract
+            {canEdit ? 'Save abstract' : 'Save deductions'}
           </Button>
         )}
       </div>
+
+      {in4Net != null && Math.abs(in4Net - sheet.netThisBill) > 2 && (
+        <p className="border-t border-amber-200 bg-amber-50 px-4 py-2 text-[11.5px] text-amber-900">
+          <b>IN4&apos;s certificate pays {formatINR(in4Net)} on this bill; this sheet&apos;s net is {formatINR(sheet.netThisBill)}</b> —
+          {' '}{formatINR(Math.abs(in4Net - sheet.netThisBill))} apart. The difference is a retention or deduction IN4 applied that is not on this sheet, or the other way round. Settle it here so every desk approves the figure Billing will enter.
+        </p>
+      )}
+      {in4Net != null && Math.abs(in4Net - sheet.netThisBill) <= 2 && (
+        <p className="border-t border-emerald-200 bg-emerald-50 px-4 py-2 text-[11.5px] text-emerald-800">
+          Net payable agrees with IN4&apos;s certificate for this bill, to the rupee.
+        </p>
+      )}
 
       {in4Total != null && ownSheet && Math.abs(in4Total - sheet.basicThisBill) > 2 && (
         <p className="border-t border-amber-200 bg-amber-50 px-4 py-2 text-[11.5px] text-amber-900">
@@ -381,11 +507,26 @@ export function AbstractMaker({ billId, woNo, vendor, work, seed, gst: gstPick, 
       )}
 
       <p className="px-4 pb-4 pt-2 text-[11.5px] text-gray-500">
-        You type only <b>This Qty</b>. This Amt, Cumulative, Balance, GST, Retention and Net Payable all compute.
+        You type only <b>This Qty</b>, and at the Disc Head and CT Head desks the <b>deductions</b>. This Amt, Cumulative, Balance, GST, Retention and Net Payable all compute.
         The rate is what the work order ordered and is not editable here. Saving writes the figures onto the bill and
         leaves a line in its history.
       </p>
     </Card>
+  )
+}
+
+/** "% | ₹" — which way a retention or deduction is given. */
+function ModeToggle({ mode, onChange, label }: { mode: 'pct' | 'amt'; onChange: (m: 'pct' | 'amt') => void; label: string }) {
+  const btn = (m: 'pct' | 'amt', text: string) => (
+    <button type="button" onClick={() => onChange(m)} aria-pressed={mode === m} aria-label={`${label} as ${m === 'pct' ? 'a percentage' : 'an amount'}`}
+            className={`px-1.5 py-0.5 text-[10.5px] font-bold ${mode === m ? 'bg-slate-800 text-white' : 'bg-white text-gray-600 hover:bg-gray-100'}`}>
+      {text}
+    </button>
+  )
+  return (
+    <span className="inline-flex overflow-hidden rounded border border-slate-300">
+      {btn('pct', '%')}{btn('amt', '₹')}
+    </span>
   )
 }
 

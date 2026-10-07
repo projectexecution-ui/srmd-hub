@@ -16,7 +16,7 @@ import { Calculation } from './Calculation'
 import { GrnSheetPanel } from './GrnSheet'
 import { loadBillCalc, loadMakerSeed } from '@/lib/bills-booking/load-calc'
 import { AbstractMaker } from './AbstractMaker'
-import { linesFromSheet } from '@/lib/bills-booking/maker'
+import { linesFromSheet, type Deduction } from '@/lib/bills-booking/maker'
 import { buildTimeline, type RawEvent } from '@/lib/bills-booking/timeline'
 import { formatDate, formatDateTime, formatINR } from '@/lib/utils'
 
@@ -217,6 +217,10 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
           gst={bill.gst_pct != null ? { ...maker.gst, pct: bill.gst_pct as number } : maker.gst}
           retention={bill.retention_pct != null ? { ...maker.retention, pct: bill.retention_pct as number } : maker.retention}
           canEdit={!fromIn4 && canAct && openStages.includes(stage)}
+          canEditDeductions={canAct && (stage === 'disc_head' || stage === 'ct_head')}
+          retentionAmt={(bill.retention_amt as number | null) ?? null}
+          deductions={Array.isArray(bill.deductions) ? (bill.deductions as Deduction[]) : []}
+          in4Net={calc?.mine?.netPayable ?? null}
           raLabel={raLabel}
           ownSheet={maker.ownSheet}
           in4Total={calc?.sheet?.thisBill ?? null}
