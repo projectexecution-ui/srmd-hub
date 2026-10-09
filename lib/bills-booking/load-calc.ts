@@ -2,7 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { billLadder, woHistory, earlierBillsOn, type CertMoney, type BillLadder, type WoHistory } from './calc'
 import { buildAbstractSheet, type AbstractSheet, type AbstractLine, type BoqLine, type LadderBill } from './abstract'
 import { seedLines, pickRate, type MakerLine, type RatePick } from './maker'
-import { buildGrnSheet, advancePosition, type GrnSheet, type AdvancePosition } from './purchase'
+import { buildGrnSheet, grossUpPoLines, advancePosition, type GrnSheet, type AdvancePosition } from './purchase'
 
 /** The live IN4 position behind one CT Hub bill.
  *
@@ -307,12 +307,13 @@ async function loadPoCalc(
   const grn = mineCert
     ? await loadGrnSheet(sb, {
         poId,
+        poValue: ordered,
         lines: lines.filter(l => n(l.certificate_id) === mineCert.certificateId),
         landed: mineCert.gross,
         earlier: earlierLines,
         ladder,
       }).catch(() => null)
-    : await loadUnbilledGrn(sb, { poId, billedGrns, earlier: earlierLines, ladder }).catch(() => null)
+    : await loadUnbilledGrn(sb, { poId, poValue: ordered, billedGrns, earlier: earlierLines, ladder }).catch(() => null)
 
   return {
     orderNo: bill.orderNo,
@@ -341,6 +342,9 @@ async function loadGrnSheet(
   sb: SupabaseClient,
   opts: {
     poId: number; lines: Record<string, unknown>[]; landed: number; billed?: boolean
+    /** The order's gross value (po_value), so the PO lines can be put on the
+     *  receipt's money basis — see grossUpPoLines. */
+    poValue?: number
     earlier?: Record<string, unknown>[]; ladder?: LadderBill[]
   },
 ): Promise<GrnSheet | null> {
@@ -376,17 +380,9 @@ async function loadGrnSheet(
     certified: n(l.certified_amt),
   })
 
-  return buildGrnSheet(
-    opts.lines.map(payLine),
-    grns.map(g => ({
-      grnId: (g.grn_id as number | null) ?? null,
-      materialId: (g.material_id as number | null) ?? null,
-      qty: n(g.received_qty),
-      cost: n(g.grn_material_cost),
-      no: (g.grn_no as string | null) ?? null,
-      on: (g.grn_dt as string | null) ?? null,
-      challanNo: (g.delivery_challan_no as string | null) ?? null,
-    })),
+  // PO lines as IN4 holds them (material_value is BEFORE tax), lifted to the
+  // order's gross value so they compare with the receipt cost, which is after.
+  const lifted = grossUpPoLines(
     items.map(i => {
       const id = (i.material_id as number | null) ?? null
       return {
@@ -399,11 +395,31 @@ async function loadGrnSheet(
         receivedQty: n(i.grn_qty),
       }
     }),
+    opts.poValue ?? 0,
+  )
+
+  const sheet = buildGrnSheet(
+    opts.lines.map(payLine),
+    grns.map(g => ({
+      grnId: (g.grn_id as number | null) ?? null,
+      materialId: (g.material_id as number | null) ?? null,
+      qty: n(g.received_qty),
+      cost: n(g.grn_material_cost),
+      no: (g.grn_no as string | null) ?? null,
+      on: (g.grn_dt as string | null) ?? null,
+      challanNo: (g.delivery_challan_no as string | null) ?? null,
+    })),
+    lifted.lines,
     opts.landed,
     opts.billed ?? true,
     (opts.earlier ?? []).map(payLine),
     opts.ladder ?? [],
   )
+  if (sheet && lifted.pct != null) {
+    sheet.orderedTaxPct = lifted.pct
+    sheet.orderedBasic = Math.round((sheet.ordered / (1 + lifted.pct / 100)) * 100) / 100
+  }
+  return sheet
 }
 
 /* ── the abstract sheet ──────────────────────────────────────────────────── */
@@ -574,7 +590,7 @@ export async function loadMakerSeed(
 async function loadUnbilledGrn(
   sb: SupabaseClient,
   opts: {
-    poId: number; billedGrns: Set<number>
+    poId: number; billedGrns: Set<number>; poValue?: number
     earlier?: Record<string, unknown>[]; ladder?: LadderBill[]
   },
 ): Promise<GrnSheet | null> {
@@ -588,6 +604,7 @@ async function loadUnbilledGrn(
 
   return loadGrnSheet(sb, {
     poId: opts.poId,
+    poValue: opts.poValue,
     // Each receipt line stands in for its own bill line: the money IS what the
     // receipt says the goods cost, so nothing is inferred.
     lines: open.map(g => ({

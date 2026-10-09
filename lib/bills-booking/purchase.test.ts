@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildGrnSheet, advancePosition, poScope, type PayLine, type GrnItem, type PoLine } from './purchase'
+import { buildGrnSheet, advancePosition, poScope, grossUpPoLines, type PayLine, type GrnItem, type PoLine } from './purchase'
 import type { LadderBill } from './abstract'
 
 /** Certificate 784 on PO/SRET/RU/2025-26/… as the live mirror holds it: one
@@ -323,5 +323,34 @@ describe('every earlier bill on the purchase order, as its own column', () => {
     expect(s.earlierBills).toEqual([])
     expect(s.rows[0].history).toEqual([])
     expect(s.rows[0].priorAmt).toBe(0)
+  })
+})
+
+describe('grossUpPoLines — PO line amounts on the same basis as the receipt cost', () => {
+  // RAWJI INDUSTRIES, PO/SRASSK/CVR/2026-27/93, 9 Oct 2026: one line, 57.5 SqFt
+  // at ₹195 = ₹11,212.50 basic; po_value ₹13,231 and the GRN cost ₹13,230.75
+  // both carry 18% GST. The sheet showed Bal Amt −₹2,018 on a line that was
+  // "done" — a gross receipt against a basic order.
+  const line = { materialId: 1969, material: 'Door Shutter', uom: 'SqFt', orderedQty: 57.5, rate: 195, orderedAmt: 11212.5, receivedQty: 57.5 }
+
+  it('scales the lines to the order value and names the rate', () => {
+    const g = grossUpPoLines([line], 13231)
+    expect(g.pct).toBe(18)
+    expect(g.lines[0].orderedAmt).toBe(13231)
+    expect(g.lines[0].rate).toBe(230.1)        // the rate moves with it, so qty × rate still holds
+    expect(g.basic).toBe(11212.5)
+  })
+
+  it('leaves an untaxed order alone', () => {
+    const g = grossUpPoLines([line], 11212.5)
+    expect(g.pct).toBeNull()
+    expect(g.lines[0].orderedAmt).toBe(11212.5)
+  })
+
+  it('refuses a ratio that is not a tax (and says nothing)', () => {
+    // po_value far above the lines is an amendment or a bad mirror, not GST.
+    expect(grossUpPoLines([line], 50000).pct).toBeNull()
+    expect(grossUpPoLines([line], 0).pct).toBeNull()
+    expect(grossUpPoLines([], 13231).pct).toBeNull()
   })
 })

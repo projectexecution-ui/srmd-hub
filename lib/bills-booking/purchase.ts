@@ -164,6 +164,46 @@ export interface GrnSheet {
   reconciles: boolean
   outBy: number
   anyOverrun: boolean
+  /** When the PO line amounts were lifted to the order's gross value so they
+   *  sit on the same basis as the receipt cost: the tax rate that did it.
+   *  Null when the lines already matched the order value. See grossUpPoLines. */
+  orderedTaxPct: number | null
+  /** The order's basic value (the lines as IN4 holds them), for the note. */
+  orderedBasic: number
+}
+
+/** Put the PO lines on the same money basis as the receipt.
+ *
+ *  Aksha, 9 Oct 2026, RAWJI INDUSTRIES PO/SRASSK/CVR/2026-27/93: one line,
+ *  57.5 SqFt at ₹195 = ₹11,212.50, received in full — and the sheet said
+ *  Bal Amt −₹2,018 against Bal Qty "done". IN4 keeps `material_value` on a PO
+ *  line BEFORE tax but values the receipt (`grn_material_cost`) and the order
+ *  (`po_value`) WITH it; ₹11,212.50 × 1.18 = ₹13,230.75 to the paise. A gross
+ *  receipt against a basic order will always look over.
+ *
+ *  So when the order value is a clean tax step above the lines (0–28%, the GST
+ *  slabs), every line and its rate are lifted by that ratio and the rate is
+ *  reported, so the screen can say "incl. GST @ 18%". Anything outside that
+ *  band is not a tax — an amendment, a freight line, a bad mirror — and the
+ *  lines are left exactly as IN4 holds them, with no claim made. */
+export function grossUpPoLines(order: PoLine[], poValue: number): { lines: PoLine[]; pct: number | null; basic: number } {
+  const basic = r2(order.reduce((s, l) => s + (Number(l.orderedAmt) || 0), 0))
+  if (!(basic > 0) || !(poValue > 0)) return { lines: order, pct: null, basic }
+  const factor = poValue / basic
+  const pct = Math.round((factor - 1) * 10000) / 100
+  // A rate only if it is a tax-sized step and lands within a rupee of the order value.
+  if (pct < 0.5 || pct > 28.5 || Math.abs(r2(basic * (1 + pct / 100)) - poValue) >= 1) {
+    return { lines: order, pct: null, basic }
+  }
+  return {
+    pct,
+    basic,
+    lines: order.map(l => ({
+      ...l,
+      orderedAmt: r2(l.orderedAmt * factor),
+      rate: r2(l.rate * factor),
+    })),
+  }
 }
 
 export function buildGrnSheet(
@@ -317,6 +357,8 @@ export function buildGrnSheet(
     reconciles: Math.abs(outBy) < 2,
     outBy,
     anyOverrun: rows.some(r => r.overrun),
+    orderedTaxPct: null,
+    orderedBasic: orderedTotal,
   }
 }
 

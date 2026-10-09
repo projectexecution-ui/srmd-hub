@@ -230,6 +230,12 @@ export function GrnSheetPanel({ s, orderNo, vendor, billLabel }: {
         <Chip k="Billed before on these materials" v={formatINR(s.prevBill)} />
         <Chip k="Ordered on these materials" v={formatINR(s.ordered)} />
       </div>
+      {s.orderedTaxPct != null && (
+        <p className="mx-4 mb-3 text-[11.5px] text-gray-500">
+          PO amounts here include GST @ {s.orderedTaxPct}%, the basis IN4 uses for the receipt cost — so Bal Amt compares like with like.
+          The order&apos;s basic value is {formatINR(s.orderedBasic)}.
+        </p>
+      )}
 
       {!s.reconciles && (
         <p className="mx-4 mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
