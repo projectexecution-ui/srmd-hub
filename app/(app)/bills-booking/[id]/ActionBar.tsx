@@ -186,7 +186,11 @@ export function ActionBar({ billId, stage, netAmount, certified, claimed, preHol
                     <Undo2 className="h-4 w-4" /> Send back
                   </Button>
                 )}
-                {fwd && !waitsOnIn4 && (
+                {/* The Forward button is never hidden. Aksha, 9 Oct 2026: "i am
+                    unable to go ahead" — the Site Head step showed only "moves on
+                    at the next check" and the check never came. A person can
+                    always push the bill on; the note beside it says what IN4 has. */}
+                {fwd && (
                   <span className="inline-flex flex-col items-end">
                     <Button onClick={forward} disabled={busy !== null || needsDoc}
                             className="min-h-[44px] bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60"
@@ -197,8 +201,8 @@ export function ActionBar({ billId, stage, netAmount, certified, claimed, preHol
                   </span>
                 )}
                 {waitsOnIn4 && (
-                  <span className={`rounded-lg border px-3 py-2 text-[12px] ${measured ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : 'border-blue-200 bg-blue-50 text-blue-900'}`}>
-                    {measured ? <>IN4 has approved the {thing} — moves on at the next check</> : <>Waiting on IN4 to approve the {thing}</>}
+                  <span className={`order-first mr-auto rounded-lg border px-3 py-2 text-[12px] ${measured ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : 'border-blue-200 bg-blue-50 text-blue-900'}`}>
+                    {measured ? <>IN4 has approved the {thing} — forward it now, or it moves on at the next check</> : <>IN4 has not approved the {thing} yet — you can still forward</>}
                   </span>
                 )}
               </>
