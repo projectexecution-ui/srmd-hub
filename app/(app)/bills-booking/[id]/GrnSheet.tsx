@@ -24,12 +24,20 @@ import type { GrnSheet } from '@/lib/bills-booking/purchase'
  *    pay for part of a receipt, and deriving the share by proportion produced
  *    95× on one live line. The money is exact on every certificate, so the
  *    amount columns are always filled; only the quantity holds back. */
-export function GrnSheetPanel({ s, orderNo, vendor, billLabel }: {
+export function GrnSheetPanel({ s, orderNo, vendor, billLabel, claimed = null }: {
   s: GrnSheet
   orderNo: string
   vendor: string
   billLabel: string
+  /** The supplier's invoice as entered on the bill. On a receipt not yet
+   *  certified this is the figure being passed, and IN4's receipt value is
+   *  only its valuation of the goods — Arihant 26-27/A/203: invoice ₹3,988,
+   *  receipt ₹4,219, because IN4 spreads the order's courier charge across
+   *  the lines and the invoice billed courier at ₹100. The two are shown side
+   *  by side, never one in place of the other. */
+  claimed?: number | null
 }) {
+  const invoiceGap = claimed != null && claimed > 0 && !s.billed ? Math.round((claimed - s.thisBill) * 100) / 100 : null
   const earlierBills = s.earlierBills
   //   auto    the last three stand alone, anything older folds  (the default)
   //   all     every bill as its own column
@@ -68,7 +76,7 @@ export function GrnSheetPanel({ s, orderNo, vendor, billLabel }: {
           <p className="text-[11px] text-slate-300">
             {s.billed
               ? 'Received in IN4 against the purchase order — the certificate is raised on it'
-              : 'Received in IN4, no supplier certificate yet — this is what the bill is being passed for'}
+              : 'Received in IN4, no supplier certificate yet — IN4’s value of what arrived; the invoice is what is being passed'}
           </p>
         </div>
         <span className="w-full text-[11px] text-slate-300 sm:w-auto">
@@ -226,14 +234,34 @@ export function GrnSheetPanel({ s, orderNo, vendor, billLabel }: {
       </div>
 
       <div className="flex flex-wrap items-center gap-3 border-t border-gray-200 px-4 py-3">
-        <Chip k="This bill — gross" v={formatINR(s.thisBill)} tone="green" />
+        {s.billed
+          ? <Chip k="This bill — gross" v={formatINR(s.thisBill)} tone="green" />
+          : <>
+              {claimed != null && claimed > 0 && <Chip k="Invoice, as entered" v={formatINR(claimed)} tone="green" />}
+              <Chip k="IN4 receipt value" v={formatINR(s.thisBill)} />
+            </>}
+        {s.orderedTaxPct != null && <Chip k="Goods at PO rates" v={formatINR(s.orderedBasic)} />}
         <Chip k="Billed before on these materials" v={formatINR(s.prevBill)} />
         <Chip k="Ordered on these materials" v={formatINR(s.ordered)} />
       </div>
       {s.orderedTaxPct != null && (
         <p className="mx-4 mb-3 text-[11.5px] text-gray-500">
-          PO amounts here include GST @ {s.orderedTaxPct}%, the basis IN4 uses for the receipt cost — so Bal Amt compares like with like.
-          The order&apos;s basic value is {formatINR(s.orderedBasic)}.
+          {s.orderedLiftGst
+            ? <>PO amounts here include GST @ {s.orderedTaxPct}%, the basis IN4 values the receipt at — so Bal Amt compares like with like.</>
+            : <>PO amounts here are lifted {s.orderedTaxPct}% to the basis IN4 values the receipt at: GST plus the order&apos;s other charges (freight, courier) spread across the lines — so Bal Amt compares like with like.</>}
+          {' '}At PO rates the goods on this sheet come to {formatINR(s.orderedBasic)}.
+        </p>
+      )}
+      {invoiceGap != null && Math.abs(invoiceGap) > 2 && (
+        <p className="mx-4 mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          <b>Invoice {formatINR(claimed as number)} against IN4&apos;s receipt value {formatINR(s.thisBill)} — {formatINR(Math.abs(invoiceGap))} {invoiceGap < 0 ? 'less' : 'more'}.</b>{' '}
+          IN4 values a receipt at the order&apos;s rates with the order&apos;s tax and other charges spread across the lines; the invoice may bill freight, courier or tax differently.
+          {s.orderedTaxPct != null && <> Check the invoice&apos;s goods against {formatINR(s.orderedBasic)} at PO rates, then its tax and other charges, before passing.</>}
+        </p>
+      )}
+      {invoiceGap != null && Math.abs(invoiceGap) <= 2 && (
+        <p className="mx-4 mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+          Invoice agrees with IN4&apos;s receipt value, to the rupee.
         </p>
       )}
 

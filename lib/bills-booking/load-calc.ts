@@ -380,8 +380,19 @@ async function loadGrnSheet(
     certified: n(l.certified_amt),
   })
 
+  const receiptRows = grns.map(g => ({
+    grnId: (g.grn_id as number | null) ?? null,
+    materialId: (g.material_id as number | null) ?? null,
+    qty: n(g.received_qty),
+    cost: n(g.grn_material_cost),
+    no: (g.grn_no as string | null) ?? null,
+    on: (g.grn_dt as string | null) ?? null,
+    challanNo: (g.delivery_challan_no as string | null) ?? null,
+  }))
+
   // PO lines as IN4 holds them (material_value is BEFORE tax), lifted to the
-  // order's gross value so they compare with the receipt cost, which is after.
+  // basis IN4 values the receipt at (after tax, plus any order charges spread
+  // across the lines) so Bal Amt compares like with like.
   const lifted = grossUpPoLines(
     items.map(i => {
       const id = (i.material_id as number | null) ?? null
@@ -396,19 +407,12 @@ async function loadGrnSheet(
       }
     }),
     opts.poValue ?? 0,
+    receiptRows,
   )
 
   const sheet = buildGrnSheet(
     opts.lines.map(payLine),
-    grns.map(g => ({
-      grnId: (g.grn_id as number | null) ?? null,
-      materialId: (g.material_id as number | null) ?? null,
-      qty: n(g.received_qty),
-      cost: n(g.grn_material_cost),
-      no: (g.grn_no as string | null) ?? null,
-      on: (g.grn_dt as string | null) ?? null,
-      challanNo: (g.delivery_challan_no as string | null) ?? null,
-    })),
+    receiptRows,
     lifted.lines,
     opts.landed,
     opts.billed ?? true,
@@ -417,6 +421,7 @@ async function loadGrnSheet(
   )
   if (sheet && lifted.pct != null) {
     sheet.orderedTaxPct = lifted.pct
+    sheet.orderedLiftGst = lifted.gst
     sheet.orderedBasic = Math.round((sheet.ordered / (1 + lifted.pct / 100)) * 100) / 100
   }
   return sheet

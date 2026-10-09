@@ -168,6 +168,10 @@ export interface GrnSheet {
    *  sit on the same basis as the receipt cost: the tax rate that did it.
    *  Null when the lines already matched the order value. See grossUpPoLines. */
   orderedTaxPct: number | null
+  /** True when that lift is a GST slab (5 / 12 / 18 / 28); false when IN4's
+   *  receipt value carries more than tax (other order charges spread across
+   *  the lines — Arihant PO/SRASSK/NGH/2026-27/114 runs 28.6%). */
+  orderedLiftGst: boolean
   /** The order's basic value (the lines as IN4 holds them), for the note. */
   orderedBasic: number
 }
@@ -186,24 +190,54 @@ export interface GrnSheet {
  *  reported, so the screen can say "incl. GST @ 18%". Anything outside that
  *  band is not a tax — an amendment, a freight line, a bad mirror — and the
  *  lines are left exactly as IN4 holds them, with no claim made. */
-export function grossUpPoLines(order: PoLine[], poValue: number): { lines: PoLine[]; pct: number | null; basic: number } {
+const GST_SLABS = [5, 12, 18, 28]
+
+export function grossUpPoLines(
+  order: PoLine[], poValue: number,
+  /** The receipt lines, when known. IN4's own valuation of the goods against
+   *  the PO rates is the surest basis: Arihant PO/SRASSK/NGH/2026-27/114
+   *  values every received line at ×1.2863 of qty × PO rate — 18% GST plus
+   *  the order's courier charge spread across the lines — which no tax slab
+   *  would ever match. The lift is taken from the receipt when every line
+   *  agrees on it; the order value is the fallback. */
+  receipts: GrnItem[] = [],
+): { lines: PoLine[]; pct: number | null; basic: number; gst: boolean } {
   const basic = r2(order.reduce((s, l) => s + (Number(l.orderedAmt) || 0), 0))
-  if (!(basic > 0) || !(poValue > 0)) return { lines: order, pct: null, basic }
+  const none = { lines: order, pct: null, basic, gst: false }
+  if (!(basic > 0)) return none
+
+  const lift = (factor: number) => {
+    const pct = Math.round((factor - 1) * 10000) / 100
+    return {
+      pct,
+      basic,
+      gst: GST_SLABS.some(s => Math.abs(s - pct) < 0.05),
+      lines: order.map(l => ({ ...l, orderedAmt: r2(l.orderedAmt * factor), rate: r2(l.rate * factor) })),
+    }
+  }
+
+  // 1. From the receipt: cost ÷ (qty × PO rate), line by line, all agreeing.
+  const byMat = new Map(order.filter(l => l.materialId != null).map(l => [l.materialId as number, l]))
+  const ratios: number[] = []
+  for (const g of receipts) {
+    const l = g.materialId != null ? byMat.get(g.materialId) : undefined
+    if (!l || !(g.qty > 0) || !(l.rate > 0) || !(g.cost > 0)) continue
+    ratios.push(g.cost / (g.qty * l.rate))
+  }
+  if (ratios.length) {
+    const sorted = [...ratios].sort((a, b) => a - b)
+    const mid = sorted[Math.floor(sorted.length / 2)]
+    const agree = sorted.every(r => Math.abs(r - mid) / mid < 0.005)
+    if (agree && mid > 1.005 && mid <= 1.6) return lift(mid)
+    if (agree && Math.abs(mid - 1) <= 0.005) return none    // receipt is at PO basic — nothing to lift
+  }
+
+  // 2. From the order value: only when it is a clean tax step above the lines.
+  if (!(poValue > 0)) return none
   const factor = poValue / basic
   const pct = Math.round((factor - 1) * 10000) / 100
-  // A rate only if it is a tax-sized step and lands within a rupee of the order value.
-  if (pct < 0.5 || pct > 28.5 || Math.abs(r2(basic * (1 + pct / 100)) - poValue) >= 1) {
-    return { lines: order, pct: null, basic }
-  }
-  return {
-    pct,
-    basic,
-    lines: order.map(l => ({
-      ...l,
-      orderedAmt: r2(l.orderedAmt * factor),
-      rate: r2(l.rate * factor),
-    })),
-  }
+  if (pct < 0.5 || pct > 28.5 || Math.abs(r2(basic * (1 + pct / 100)) - poValue) >= 1) return none
+  return lift(factor)
 }
 
 export function buildGrnSheet(
@@ -358,6 +392,7 @@ export function buildGrnSheet(
     outBy,
     anyOverrun: rows.some(r => r.overrun),
     orderedTaxPct: null,
+    orderedLiftGst: false,
     orderedBasic: orderedTotal,
   }
 }

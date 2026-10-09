@@ -354,3 +354,52 @@ describe('grossUpPoLines — PO line amounts on the same basis as the receipt co
     expect(grossUpPoLines([], 13231).pct).toBeNull()
   })
 })
+
+describe('grossUpPoLines — the lift read off the receipt itself', () => {
+  // Arihant, PO/SRASSK/NGH/2026-27/114, invoice 26-27/A/203 (9 Oct 2026). IN4
+  // values every received line at ×1.2863 of qty × PO rate: 18% GST plus the
+  // order's courier charge spread across the lines. po_value ₹4,283 over
+  // basic ₹3,330.56 is 28.6% — no tax slab, so the order rule would refuse it
+  // and the sheet showed Bal Amt negative on eight lines that were "done".
+  const order = [
+    { materialId: 793,  material: 'Files', uom: 'Nos', orderedQty: 12, rate: 148.75, orderedAmt: 1785,   receivedQty: 12 },
+    { materialId: 3182, material: 'A4 Paper', uom: 'Pkt.', orderedQty: 5, rate: 193,  orderedAmt: 965,    receivedQty: 5 },
+    { materialId: 3518, material: 'Mouse Pad', uom: 'Nos', orderedQty: 1, rate: 50.85, orderedAmt: 50.85, receivedQty: 0 },
+  ]
+  const receipts = [
+    { grnId: 1682, materialId: 793,  qty: 12, cost: 2296.02, no: 'GRN/…/1', on: '2026-10-06', challanNo: '26-27/A/203' },
+    { grnId: 1682, materialId: 3182, qty: 5,  cost: 1241.26, no: 'GRN/…/1', on: '2026-10-06', challanNo: '26-27/A/203' },
+  ]
+
+  it('lifts by the receipt ratio when every line agrees, and says it is not a GST slab', () => {
+    const g = grossUpPoLines(order, 4283, receipts)
+    expect(g.pct).toBeCloseTo(28.63, 1)
+    expect(g.gst).toBe(false)
+    expect(g.lines[0].orderedAmt).toBeCloseTo(2296.02, 0)   // Files now sits on the receipt's basis
+    expect(g.basic).toBe(2800.85)
+  })
+
+  it('names GST when the receipt ratio is a slab (RAWJI: 13,230.75 on 11,212.50)', () => {
+    const g = grossUpPoLines(
+      [{ materialId: 1969, material: 'Door Shutter', uom: 'SqFt', orderedQty: 57.5, rate: 195, orderedAmt: 11212.5, receivedQty: 57.5 }],
+      13231,
+      [{ grnId: 1688, materialId: 1969, qty: 57.5, cost: 13230.75, no: null, on: null, challanNo: null }],
+    )
+    expect(g.pct).toBe(18)
+    expect(g.gst).toBe(true)
+  })
+
+  it('leaves a receipt valued at PO basic alone, whatever the order value says', () => {
+    const g = grossUpPoLines(order, 4283, [{ grnId: 1, materialId: 793, qty: 12, cost: 1785, no: null, on: null, challanNo: null }])
+    expect(g.pct).toBeNull()
+    expect(g.lines[0].orderedAmt).toBe(1785)
+  })
+
+  it('refuses when the receipt lines disagree with each other', () => {
+    const g = grossUpPoLines(order, 0, [
+      { grnId: 1, materialId: 793,  qty: 12, cost: 2106.3,  no: null, on: null, challanNo: null },  // 18%
+      { grnId: 1, materialId: 3182, qty: 5,  cost: 1080.8,  no: null, on: null, challanNo: null },  // 12%
+    ])
+    expect(g.pct).toBeNull()
+  })
+})

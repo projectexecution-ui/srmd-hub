@@ -230,7 +230,7 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
         />
       )}
       {calc?.grn && (
-        <GrnSheetPanel s={calc.grn} orderNo={bill.order_no as string} vendor={vendor} billLabel={raLabel} />
+        <GrnSheetPanel s={calc.grn} orderNo={bill.order_no as string} vendor={vendor} billLabel={raLabel} claimed={claimed} />
       )}
       {calc && <Calculation calc={calc} />}
     </>
