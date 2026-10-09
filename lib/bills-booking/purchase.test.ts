@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { buildGrnSheet, advancePosition, poScope, grossUpPoLines, type PayLine, type GrnItem, type PoLine } from './purchase'
+import { buildGrnSheet, advancePosition, poScope, grossUpPoLines, linesFromGrn, type PayLine, type GrnItem, type PoLine } from './purchase'
 import type { LadderBill } from './abstract'
+import { priceAbstract } from './maker'
 
 /** Certificate 784 on PO/SRET/RU/2025-26/… as the live mirror holds it: one
  *  GRN, a handful of CPVC lines, the pay line's landed cost equal to the GRN
@@ -401,5 +402,37 @@ describe('grossUpPoLines — the lift read off the receipt itself', () => {
       { grnId: 1, materialId: 3182, qty: 5,  cost: 1080.8,  no: null, on: null, challanNo: null },  // 12%
     ])
     expect(g.pct).toBeNull()
+  })
+})
+
+describe('linesFromGrn — the receipt in the Abstract Sheet format, at PO basic rates', () => {
+  const order2 = [
+    { materialId: 793,  material: 'Files', uom: 'Nos', orderedQty: 12, rate: 148.75, orderedAmt: 1785, receivedQty: 12 },
+    { materialId: 3182, material: 'Stationery - A4 Printing Paper.', uom: 'Pkt.', orderedQty: 5, rate: 193, orderedAmt: 965, receivedQty: 5 },
+  ]
+  const receipts2 = [
+    { grnId: 1682, materialId: 793,  qty: 12, cost: 2296.02, no: 'GRN/SRASSK/NGH/2026-27/1', on: '2026-10-06', challanNo: '26-27/A/203' },
+    { grnId: 1682, materialId: 3182, qty: 5,  cost: 1241.26, no: 'GRN/SRASSK/NGH/2026-27/1', on: '2026-10-06', challanNo: '26-27/A/203' },
+  ]
+  const unbilled = receipts2.map(g => ({ grnId: g.grnId, materialId: g.materialId, landed: g.cost, certified: g.cost }))
+
+  it('undoes the receipt lift so the lines read at PO rates and sum to what the invoice prices the goods at', () => {
+    const lifted = grossUpPoLines(order2, 4283, receipts2)
+    const s = buildGrnSheet(unbilled, receipts2, lifted.lines, 3537.28, false)!
+    const lines = linesFromGrn(s.rows, lifted.pct)
+    const files = lines.find(l => l.itemId === 793)!
+    expect(files.rate).toBe(148.75)
+    expect(files.orderedAmt).toBe(1785)
+    expect(files.thisQty).toBe(12)
+    const priced = priceAbstract(lines, { gstPct: 18, retentionPct: 0 })
+    expect(priced.basicThisBill).toBe(2750)        // 1,785 + 965, as the invoice's taxable goods
+    expect(priced.grossThisBill).toBe(3245)        // + 18%
+  })
+
+  it('keeps the sheet unchanged when nothing was lifted', () => {
+    const s = buildGrnSheet(unbilled, receipts2, order2, 3537.28, false)!
+    const lines = linesFromGrn(s.rows, null)
+    expect(lines.map(l => l.sr)).toEqual([1, 2])
+    expect(lines[0].orderedAmt + lines[1].orderedAmt).toBe(2750)
   })
 })

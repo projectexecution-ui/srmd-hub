@@ -13,10 +13,10 @@ import { Documents, type DocRow, type RequiredDoc } from './Documents'
 import { PhoneSummary, type PhoneLine } from './PhoneSummary'
 import { AbstractNo } from './AbstractNo'
 import { Calculation } from './Calculation'
-import { GrnSheetPanel } from './GrnSheet'
-import { loadBillCalc, loadMakerSeed } from '@/lib/bills-booking/load-calc'
+import { loadBillCalc, loadMakerSeed, loadPoRates } from '@/lib/bills-booking/load-calc'
 import { AbstractMaker } from './AbstractMaker'
 import { linesFromSheet, type Deduction } from '@/lib/bills-booking/maker'
+import { linesFromGrn } from '@/lib/bills-booking/purchase'
 import { buildTimeline, type RawEvent } from '@/lib/bills-booking/timeline'
 import { formatDate, formatDateTime, formatINR } from '@/lib/utils'
 
@@ -138,6 +138,15 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
     : null
   const in4Seed = calc?.sheet ? linesFromSheet(calc.sheet.rows) : null
   const fromIn4 = !!in4Seed && !maker?.ownSheet
+  // A purchase order's goods receipt feeds the SAME sheet (Aksha, 9 Oct 2026:
+  // "dont make new formats"): lines at PO rates, the same totals ladder, the
+  // deductions block at the Disc Head and CT Head desks.
+  const poSeed = bill.order_type === 'PO' && calc?.grn ? linesFromGrn(calc.grn.rows, calc.grn.orderedTaxPct) : null
+  const poRates = poSeed ? await loadPoRates(supabase, bill.order_no as string).catch(() => null) : null
+  const grnNote = calc?.grn
+    ? [...calc.grn.grns.map(g => [g.no, g.on ? formatDate(g.on) : null, g.challan ? `challan ${g.challan}` : null].filter(Boolean).join(' · ')),
+       calc.grn.billed ? 'certified in IN4' : 'no supplier certificate yet'].filter(Boolean).join(' · ')
+    : null
   const in4Note = calc?.sheet
     ? [calc.sheet.abstractNo, calc.sheet.on ? formatDate(calc.sheet.on) : null,
        calc.sheet.certified == null ? 'not yet certified' : 'certified in IN4']
@@ -229,8 +238,30 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
           sourceNote={fromIn4 ? in4Note : null}
         />
       )}
-      {calc?.grn && (
-        <GrnSheetPanel s={calc.grn} orderNo={bill.order_no as string} vendor={vendor} billLabel={raLabel} claimed={claimed} />
+      {poSeed && calc?.grn && poRates && (
+        <AbstractMaker
+          billId={bill.id as string}
+          woNo={bill.order_no as string}
+          kind="PO"
+          vendor={vendor}
+          work={bill.work as string | null}
+          seed={poSeed}
+          gst={bill.gst_pct != null ? { ...poRates.gst, pct: bill.gst_pct as number } : poRates.gst}
+          retention={bill.retention_pct != null ? { ...poRates.retention, pct: bill.retention_pct as number } : poRates.retention}
+          canEdit={false}
+          canEditDeductions={canAct && (stage === 'disc_head' || stage === 'ct_head')}
+          retentionAmt={(bill.retention_amt as number | null) ?? null}
+          deductions={Array.isArray(bill.deductions) ? (bill.deductions as Deduction[]) : []}
+          in4Net={calc.grn.billed ? (calc.mine?.netPayable ?? null) : null}
+          invoiceTotal={calc.grn.billed ? null : claimed}
+          in4ReceiptValue={calc.grn.thisBill}
+          raLabel={raLabel}
+          ownSheet={false}
+          in4Total={null}
+          source="in4"
+          earlierBills={calc.grn.earlierBills}
+          sourceNote={grnNote}
+        />
       )}
       {calc && <Calculation calc={calc} />}
     </>

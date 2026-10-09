@@ -508,6 +508,33 @@ export async function loadAbstractSheet(
  *
  *  Any quantities already saved on THIS bill come back in, so the sheet
  *  reopens where it was left. */
+/** GST and retention as this purchase order's supplier bills actually carried
+ *  them — per bill, never blended (see pickRate). Suppliers rarely carry
+ *  retention, so its fallback is 0; GST falls back to 18. */
+export async function loadPoRates(
+  sb: SupabaseClient, poNo: string,
+): Promise<{ gst: RatePick; retention: RatePick }> {
+  const { data: po } = await sb.from('in4_purchase_orders').select('po_id').eq('po_no', poNo).maybeSingle()
+  const { data: certs } = po
+    ? await sb.from('in4_supplier_certificates')
+        .select('kind, certified_amt, landed_cost, retention, certificate_date, status')
+        .eq('po_id', po.po_id as number)
+    : { data: [] as Record<string, unknown>[] }
+  const live = ((certs ?? []) as Record<string, unknown>[]).filter(c =>
+    (c.kind as string | null) !== 'advance' && Number(c.certified_amt ?? 0) > 0)
+  const gst = pickRate(live.map(c => ({
+    on: (c.certificate_date as string | null) ?? null,
+    part: Number(c.landed_cost ?? 0) - Number(c.certified_amt ?? 0),
+    whole: Number(c.certified_amt ?? 0),
+  })), 18)
+  const retention = pickRate(live.map(c => ({
+    on: (c.certificate_date as string | null) ?? null,
+    part: Number(c.retention ?? 0),
+    whole: Number(c.certified_amt ?? 0),
+  })), 0)
+  return { gst, retention }
+}
+
 export async function loadMakerSeed(
   sb: SupabaseClient,
   opts: { billId: string; woNo: string },

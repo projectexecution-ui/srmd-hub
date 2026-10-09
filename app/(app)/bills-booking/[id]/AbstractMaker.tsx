@@ -24,9 +24,19 @@ import type { EarlierBill } from '@/lib/bills-booking/abstract'
  *  balance, GST, retention and the green Net Payable line. The rate is never
  *  editable — it is what the work order ordered, and a rate somebody can
  *  retype is a rate that ends up wrong. */
-export function AbstractMaker({ billId, woNo, vendor, work, seed, gst: gstPick, retention: retPick, canEdit, canEditDeductions = false, retentionAmt = null, deductions: dedSeed = [], in4Net = null, raLabel, ownSheet, in4Total, source = 'ct', sourceNote, earlierBills = [] }: {
+export function AbstractMaker({ billId, woNo, vendor, work, seed, gst: gstPick, retention: retPick, canEdit, canEditDeductions = false, retentionAmt = null, deductions: dedSeed = [], in4Net = null, raLabel, ownSheet, in4Total, source = 'ct', sourceNote, earlierBills = [], kind = 'WO', invoiceTotal = null, in4ReceiptValue = null }: {
   billId: string
   woNo: string
+  /** Work order or purchase order — only the labels change. Aksha, 9 Oct
+   *  2026: "dont make new formats": a supplier bill's goods receipt renders
+   *  in this same sheet, lines at PO rates, same totals ladder. */
+  kind?: 'WO' | 'PO'
+  /** The supplier's invoice as entered on the bill (a receipt not yet
+   *  certified). Compared with the sheet's Net Payable in one line. */
+  invoiceTotal?: number | null
+  /** What IN4 values the receipt at (tax and order charges spread across the
+   *  lines) — named in that line so the reader knows where each figure is from. */
+  in4ReceiptValue?: number | null
   vendor: string
   work: string | null
   seed: MakerLine[]
@@ -211,10 +221,10 @@ export function AbstractMaker({ billId, woNo, vendor, work, seed, gst: gstPick, 
       <div className="flex flex-wrap items-center gap-3 bg-slate-800 px-4 py-3 text-white">
         <Ruler className="h-4 w-4 shrink-0 text-amber-300" />
         <div>
-          <h2 className="text-[15px] font-bold leading-tight">Abstract Sheet — RA Bill</h2>
+          <h2 className="text-[15px] font-bold leading-tight">{kind === 'PO' ? 'Abstract Sheet — Supplier Bill' : 'Abstract Sheet — RA Bill'}</h2>
           <p className="text-[11px] text-slate-300">
             {source === 'in4'
-              ? 'Measured in IN4 by the Site Head — read back here'
+              ? (kind === 'PO' ? 'Goods received in IN4 at the gate — read back here at PO rates' : 'Measured in IN4 by the Site Head — read back here')
               : ownSheet ? 'Measured in CT Hub'
                 : canEdit ? 'Not measured yet — type This Qty against each line' : 'Not measured yet'}
           </p>
@@ -273,7 +283,7 @@ export function AbstractMaker({ billId, woNo, vendor, work, seed, gst: gstPick, 
 
       <dl className="grid grid-cols-1 gap-x-6 gap-y-1 border-b border-gray-200 px-4 py-3 text-[13px] sm:grid-cols-2">
         <div><dt className="inline w-16 font-semibold text-gray-500">Vendor </dt><dd className="inline">{vendor}</dd></div>
-        <div><dt className="inline w-16 font-semibold text-gray-500">WO No </dt><dd className="inline font-mono text-xs">{woNo}</dd></div>
+        <div><dt className="inline w-16 font-semibold text-gray-500">{kind} No </dt><dd className="inline font-mono text-xs">{woNo}</dd></div>
         {work && <div className="sm:col-span-2"><dt className="inline w-16 font-semibold text-gray-500">Work </dt><dd className="inline">{work}</dd></div>}
       </dl>
 
@@ -284,7 +294,7 @@ export function AbstractMaker({ billId, woNo, vendor, work, seed, gst: gstPick, 
           <thead>
             <tr>
               <Th l>#</Th><Th l>Particular</Th><Th>Qty</Th><Th>Unit</Th><Th>Rate</Th>
-              <Th g="wo">WO Amt</Th>
+              <Th g="wo">{kind} Amt</Th>
               {rolled > 0 && (
                 <Th g="prev">
                   <button type="button" onClick={() => setView('all')}
@@ -471,6 +481,18 @@ export function AbstractMaker({ billId, woNo, vendor, work, seed, gst: gstPick, 
         )}
       </div>
 
+      {invoiceTotal != null && invoiceTotal > 0 && Math.abs(invoiceTotal - sheet.netThisBill) > 2 && (
+        <p className="border-t border-amber-200 bg-amber-50 px-4 py-2 text-[11.5px] text-amber-900">
+          <b>Invoice as entered {formatINR(invoiceTotal)} · this sheet&apos;s net {formatINR(sheet.netThisBill)} · {formatINR(Math.abs(invoiceTotal - sheet.netThisBill))} {invoiceTotal > sheet.netThisBill ? 'more on the invoice' : 'less on the invoice'}.</b>{' '}
+          The goods above are at PO rates; the difference is tax at another rate, or a charge on the invoice that is not a line here (freight, courier, packing).
+          {in4ReceiptValue != null && <> IN4 values the receipt at {formatINR(in4ReceiptValue)}, with the order&apos;s tax and other charges spread across the lines.</>}
+        </p>
+      )}
+      {invoiceTotal != null && invoiceTotal > 0 && Math.abs(invoiceTotal - sheet.netThisBill) <= 2 && (
+        <p className="border-t border-emerald-200 bg-emerald-50 px-4 py-2 text-[11.5px] text-emerald-800">
+          Invoice as entered agrees with this sheet&apos;s net, to the rupee.
+        </p>
+      )}
       {in4Net != null && Math.abs(in4Net - sheet.netThisBill) > 2 && (
         <p className="border-t border-amber-200 bg-amber-50 px-4 py-2 text-[11.5px] text-amber-900">
           <b>IN4&apos;s certificate pays {formatINR(in4Net)} on this bill; this sheet&apos;s net is {formatINR(sheet.netThisBill)}</b> —

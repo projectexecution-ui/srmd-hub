@@ -40,6 +40,7 @@
  *  Pure: the page fetches, this decides. */
 
 import type { EarlierBill, LadderBill } from './abstract'
+import type { MakerLine } from './maker'
 
 const r2 = (n: number) => Math.round(n * 100) / 100
 const q3 = (n: number) => Math.round(n * 1000) / 1000
@@ -190,6 +191,47 @@ export interface GrnSheet {
  *  reported, so the screen can say "incl. GST @ 18%". Anything outside that
  *  band is not a tax — an amendment, a freight line, a bad mirror — and the
  *  lines are left exactly as IN4 holds them, with no claim made. */
+/** The goods receipt as Abstract Sheet lines — ONE format for every bill.
+ *
+ *  Aksha, 9 Oct 2026: "Make the Abstract sheet as entered - dont make new
+ *  formats - keep the Lines with all sub totals". A purchase order's receipt
+ *  had its own panel with its own chips; it now feeds the same sheet the work
+ *  order uses, so the reader gets the lines at PO rates, then Sub Total → GST
+ *  → Total → Retention → deductions → Net Payable, in the columns they know.
+ *
+ *  Amounts are at the PO's BASIC rate (qty × rate before tax), exactly as a
+ *  work order's BOQ lines are, with GST added in the ladder. Where the rows
+ *  were lifted to IN4's receipt basis (orderedTaxPct), the lift is undone
+ *  here so the sheet's Sub Total is what the supplier's invoice prices the
+ *  goods at — Arihant 26-27/A/203: ₹3,279.71 on both. */
+export function linesFromGrn(rows: GrnRow[], liftPct: number | null): MakerLine[] {
+  const f = liftPct != null ? 1 + liftPct / 100 : 1
+  const basic = (v: number) => r2(v / f)
+  return rows.map((r, i) => {
+    const rate = r2(r.rate / f)
+    // A receipt quantity IN4 states is certain; where it is not stated the
+    // money is, so the line is carried by amount with the quantity left blank.
+    const thisQty = r.thisQty ?? r.receiptQty ?? 0
+    const history = (r.history ?? []).map(h => h ?? 0)
+    const priorQty = q3(history.reduce((a, b) => a + b, 0))
+    return {
+      itemId: r.materialId,
+      sr: i + 1,
+      particular: r.material,
+      uom: r.uom,
+      orderedQty: r.orderedQty,
+      rate,
+      // Money from quantity × basic rate, so a line received in full lands on the
+      // PO amount to the paise instead of carrying rounding from the lift.
+      orderedAmt: r2(r.orderedQty * rate),
+      priorQty,
+      priorAmt: priorQty > 0 ? r2(priorQty * rate) : basic(r.priorAmt),
+      history,
+      thisQty,
+    }
+  })
+}
+
 const GST_SLABS = [5, 12, 18, 28]
 
 export function grossUpPoLines(
