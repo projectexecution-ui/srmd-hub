@@ -176,7 +176,7 @@ export default async function WorkingSheetEditorPage(
   const canDeleteDraft = ws.status === 'draft' && !isEstimateSheet && !isArchived
     && (user?.id === ws.engineer_id || isAdmin)
   const ctx = frozen
-    ? { ...rawCtx, canSubmit: false, nextSignOff: null, canRelease: false, canReturn: false }
+    ? { ...rawCtx, canSubmit: false, nextSignOff: null, canRelease: false, canReturn: false, ie: null }
     : rawCtx
 
   // Names for "archived by X" — this sheet + any archived version-mates.
@@ -455,6 +455,7 @@ export default async function WorkingSheetEditorPage(
   )
   const reviewPanel = reviewer && isPendingApproval && ws.project_id ? (
     <BudgetPositionPanel
+      wsId={ws.id}
       projectId={ws.project_id}
       disciplineId={ws.discipline_id}
       subSkillId={ws.sub_skill_id}

@@ -5,10 +5,11 @@ import { after } from 'next/server'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { getMyUser, getMyProfile, getMyPermissions, can } from '@/lib/auth'
-import { personName } from '@/lib/utils'
+import { personName, formatINR } from '@/lib/utils'
 import { generateSmartWSCode } from './ws-code-action'
 import { dispatchCardsForSheet } from '@/lib/telegram/cc-approval-dispatch'
 import { notifyInternalEstimateAccepted } from '@/lib/cost-control/ie-notify'
+import { parseIePosition, type IePosition } from '@/lib/cost-control/ie-cover'
 
 // ---------- shared authorization helpers ----------
 
@@ -86,10 +87,25 @@ export interface WSApprovalContext {
   canRelease: boolean
   /** Viewer may return the sheet for revision now. */
   canReturn: boolean
+  /** Where the request stands against the sub-category's Internal Estimate —
+   *  only for the person who may sign off now (management-only figure). When
+   *  `shortfall` > 0 the sign-off is blocked until it is covered (Aksha,
+   *  9 Oct 2026). null when the viewer cannot sign off, or the check could not
+   *  be read (the database gate still holds). */
+  ie: IePosition | null
+}
+
+/** Read the Internal Estimate position for a request. Management-only in the
+ *  database (cc_ie_position refuses anyone else); null on any failure. */
+async function readIePosition(wsId: string): Promise<IePosition | null> {
+  const supabase = await createClient()
+  const { data, error } = await supabase.rpc('cc_ie_position', { p_ws: wsId })
+  if (error) return null
+  return parseIePosition(data)
 }
 
 export async function getWSApprovalContext(wsId: string): Promise<WSApprovalContext> {
-  const none: WSApprovalContext = { canSubmit: false, nextSignOff: null, canRelease: false, canReturn: false }
+  const none: WSApprovalContext = { canSubmit: false, nextSignOff: null, canRelease: false, canReturn: false, ie: null }
   const me = await whoAmI()
   if (!me.user) return none
   const supabase = await createClient()
@@ -143,7 +159,52 @@ export async function getWSApprovalContext(wsId: string): Promise<WSApprovalCont
     canReturn = await callCanApprove(status, 'returned', total)
   }
 
-  return { canSubmit, nextSignOff, canRelease, canReturn }
+  // Only the person signing off now needs the Internal Estimate check.
+  const ie = nextSignOff ? await readIePosition(wsId) : null
+
+  return { canSubmit, nextSignOff, canRelease, canReturn, ie }
+}
+
+/** Cover an Internal Estimate gap before signing off: take spare estimate from
+ *  other sub-categories of the SAME category and/or add new estimate. Takes
+ *  effect at once — no Trustee approval for the estimate change (Aksha,
+ *  9 Oct 2026). Every move is logged (cc_ie_moves, management-only). Who may
+ *  do it, the same-category rule and the spare limit are all re-checked inside
+ *  cc_ie_cover. */
+const coverSchema = z.object({
+  moves: z.array(z.object({
+    sub_skill_id: z.string().uuid(),
+    amount: z.number().finite().nonnegative(),
+  })).max(50),
+  addNew: z.number().finite().nonnegative(),
+  note: z.string().trim().min(3, 'Add a short reason for the Internal Estimate change').max(1000),
+})
+
+export async function coverInternalEstimate(
+  wsId: string,
+  input: { moves: { sub_skill_id: string; amount: number }[]; addNew: number; note: string },
+): Promise<{ ok: boolean; error?: string; position?: IePosition | null }> {
+  const me = await whoAmI()
+  if (!me.user) return { ok: false, error: 'Not signed in' }
+  const parsed = coverSchema.safeParse(input)
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? 'Check the amounts' }
+  const moves = parsed.data.moves
+    .map(m => ({ sub_skill_id: m.sub_skill_id, amount: Math.round(m.amount) }))
+    .filter(m => m.amount > 0)
+  const addNew = Math.round(parsed.data.addNew)
+  if (moves.length === 0 && addNew <= 0) return { ok: false, error: 'Enter an amount to take or to add' }
+
+  const supabase = await createClient()
+  const { data, error } = await supabase.rpc('cc_ie_cover', {
+    p_ws: wsId, p_moves: moves, p_new: addNew, p_note: parsed.data.note,
+  })
+  if (error) return { ok: false, error: error.message }
+
+  const { data: ws } = await supabase.from('cc_working_sheets').select('project_id').eq('id', wsId).maybeSingle()
+  revalidatePath(`/cost-control/working-sheets/${wsId}`)
+  revalidatePath('/cost-control/approvals')
+  if (ws?.project_id) revalidatePath(`/cost-control/projects/${ws.project_id}`)
+  return { ok: true, position: parseIePosition(data) }
 }
 
 /** Whether the viewer is Cost Control "management" — i.e. their effective
@@ -692,6 +753,17 @@ export async function signOffWorkingSheet(
   }
   if (otherDept && !otherDept.note.trim()) {
     return { ok: false, error: 'Add the note \u2014 who approved it, and how much is being drawn' }
+  }
+
+  // Internal Estimate must cover the request before it goes ahead (Aksha,
+  // 9 Oct 2026). The database gate (trg_cc_ws_ie_gate) enforces the same rule
+  // on every path; this only turns it into a clear message up front.
+  const iePos = await readIePosition(wsId)
+  if (iePos?.applies && (iePos.shortfall ?? 0) >= 1) {
+    return {
+      ok: false,
+      error: `Internal Estimate is short by ${formatINR(iePos.shortfall ?? 0)} on this sub-category. Cover it under Budget position \u2014 take it from the same category or add new \u2014 then sign off.`,
+    }
   }
 
   const now = new Date().toISOString()

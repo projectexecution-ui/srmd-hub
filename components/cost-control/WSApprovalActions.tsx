@@ -27,6 +27,7 @@ import {
 import { addWsComment } from '@/components/cost-control/comment-actions'
 import { ApproveTrancheButton } from '@/components/cost-control/ApproveTrancheButton'
 import { MoneyInput } from '@/components/ui/money-input'
+import { IeCoverPanel } from '@/components/cost-control/IeCoverPanel'
 
 /** Per-stage checked amounts + display labels (labels come from Cost
  *  Control settings so Aksha can rename the fields anytime). Shown ONLY
@@ -177,6 +178,10 @@ export function WSApprovalActions({
     ctx.nextSignOff === 'ph_approved' ? 'Sign off as Project Head'
     : ctx.nextSignOff === 'atm_approved' ? 'Sign off as Atm Head'
     : null
+  // Internal Estimate must cover the request before it goes ahead (Aksha,
+  // 9 Oct 2026). The sign-off stays shut — with the reason in words — until
+  // the gap is covered in the box above it.
+  const ieShort = !!signOffLabel && !!ctx.ie?.applies && (ctx.ie?.shortfall ?? 0) >= 1
 
   return (
     <div className="space-y-3">
@@ -234,6 +239,8 @@ export function WSApprovalActions({
         </div>
       )}
 
+      {ieShort && ctx.ie && <IeCoverPanel wsId={wsId} pos={ctx.ie} />}
+
       {/* ── Actions ── */}
       <div className="flex flex-wrap items-center gap-2">
         {ctx.canSubmit && (
@@ -252,7 +259,8 @@ export function WSApprovalActions({
               if (!signOffOpen) setCheckedRaw(String(Math.round(signOffPrefill)))
               setSignOffOpen(o => !o); setErr(null)
             }}
-            disabled={busy}
+            disabled={busy || ieShort}
+            title={ieShort ? 'Cover the Internal Estimate first' : undefined}
             size="lg"
             variant="success"
             className="w-full sm:w-auto font-semibold"
@@ -272,6 +280,12 @@ export function WSApprovalActions({
           </Button>
         )}
       </div>
+
+      {ieShort && (
+        <p className="text-[12px] text-rose-700">
+          {signOffLabel} opens once the Internal Estimate covers this request — use the box above.
+        </p>
+      )}
 
       {/* Sign-off panel — pre-filled with the amount to approve (the grand
           total incl. GST) so approval is one click; the approver can still

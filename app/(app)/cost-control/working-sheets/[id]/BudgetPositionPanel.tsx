@@ -12,19 +12,28 @@
 // is left after this, red when the ask goes past it. When no estimate is set
 // there is no yellow box any more: one quiet sentence says so.
 //
+// Aksha, 9 Oct 2026: the Internal Estimate figure now comes from the database
+// (cc_ie_position) — the same figure the sign-off gate and the cover box use —
+// and "left after this" also counts other requests still waiting on the
+// sub-category. When it goes short, the Project Head / Atm Head covers it at
+// sign-off; the moves made are listed under the rows.
+//
 // Reviewer-gated by the caller (page.tsx: `reviewer && isPendingApproval`);
 // the Internal Estimate must never reach an engineer.
 
 import { createClient } from '@/lib/supabase/server'
 import { computeMoneyRollup, type RollupWSRow, type RollupVersionRow } from '@/lib/cost-control/project-rollup'
 import { formatINR } from '@/lib/utils'
+import { parseIePosition } from '@/lib/cost-control/ie-cover'
 
 interface SheetRow extends RollupWSRow, RollupVersionRow {}
 
 export async function BudgetPositionPanel({
-  projectId, disciplineId, subSkillId, totalAmount, approvedForErp,
+  wsId, projectId, disciplineId, subSkillId, totalAmount, approvedForErp,
   subLabel, discLabel, projLabel, projIsSub,
 }: {
+  /** The request itself — its Internal Estimate position is read for it. */
+  wsId: string
   projectId: string
   disciplineId: string | null
   subSkillId: string | null
@@ -51,18 +60,14 @@ export async function BudgetPositionPanel({
     budgetLines: [], subSkills: [], disciplines: [],
   })
 
-  // Internal Estimate for THIS sub-category: the imported [IB…] baseline, or a
-  // Trustee-accepted figure where one has been set (that always wins).
-  const ieFromImport = roll.wsAgg.get(`${disciplineId}::${subSkillId}`)?.planTotal ?? 0
-  const { data: blRows } = await supabase
-    .from('cc_budget_lines')
-    .select('internal_estimate_amt')
-    .eq('project_id', projectId)
-    .eq('discipline_id', disciplineId ?? '')
-    .eq('sub_skill_id', subSkillId ?? '')
-  const ieAccepted = (blRows ?? []).reduce(
-    (a, b) => a + (b.internal_estimate_amt == null ? 0 : Number(b.internal_estimate_amt)), 0)
-  const internalEstimate = ieAccepted > 0 ? ieAccepted : ieFromImport
+  // Internal Estimate for THIS sub-category — the database's figure: a figure
+  // set on the budget line wins, else the imported [IB…] baseline.
+  const { data: ieRaw } = await supabase.rpc('cc_ie_position', { p_ws: wsId })
+  const ie = parseIePosition(ieRaw)
+  const internalEstimate = ie?.applies ? (ie.ie ?? 0) : 0
+  // Requests still waiting on this sub-category, other than this one.
+  const otherWaiting = ie?.applies ? Math.max((ie.pending ?? 0) - (ie.ask ?? 0), 0) : 0
+  const moves = ie?.applies ? (ie.moves ?? []) : []
 
   // Already-approved so far, at each level. wsAgg is keyed `${disc}::${sub}`.
   let projApproved = 0, discApproved = 0, subApproved = 0
@@ -77,7 +82,7 @@ export async function BudgetPositionPanel({
   const inc = Math.max(0, Number(totalAmount ?? 0) - Number(approvedForErp ?? 0))
   const subAfter = subApproved + inc
   const hasIE = internalEstimate > 0
-  const left = hasIE ? Math.round(internalEstimate) - Math.round(subAfter) : null
+  const left = hasIE ? Math.round(internalEstimate) - Math.round(subAfter) - Math.round(otherWaiting) : null
   const firstOnProject = projApproved === 0
 
   // Same three levels, same names as the header chips, top-down.
@@ -88,7 +93,7 @@ export async function BudgetPositionPanel({
   ]
 
   const why = hasIE
-    ? `Internal Estimate for this sub-category ${formatINR(internalEstimate)}; the figure on its row is what is left after this request.`
+    ? `Internal Estimate for this sub-category ${formatINR(internalEstimate)}; the figure on its row is what is left after this request${otherWaiting > 0 ? ` and the other requests waiting on it (${formatINR(otherWaiting)})` : ''}.`
     : `No Internal Estimate is set for this sub-category, so there is nothing to hold ${formatINR(subAfter)} against.${firstOnProject ? ' Nothing else is approved on this project yet, so the three lines match.' : ''}`
 
   return (
@@ -117,8 +122,8 @@ export async function BudgetPositionPanel({
               {r.lead && hasIE && left != null && (
                 <span className={`block text-[11px] mt-0.5 ${left < 0 ? 'font-bold text-rose-700' : 'text-gray-500'}`}>
                   {left < 0
-                    ? `${formatINR(-left)} above the Internal Estimate of ${formatINR(internalEstimate)}`
-                    : `Internal Estimate ${formatINR(internalEstimate)} · ${formatINR(left)} left after this`}
+                    ? `${formatINR(-left)} above the Internal Estimate of ${formatINR(internalEstimate)}${otherWaiting > 0 ? ` · other requests waiting ${formatINR(otherWaiting)}` : ''}`
+                    : `Internal Estimate ${formatINR(internalEstimate)} · ${formatINR(left)} left after this${otherWaiting > 0 ? ' and the requests waiting' : ''}`}
                 </span>
               )}
             </div>
@@ -127,6 +132,22 @@ export async function BudgetPositionPanel({
       </div>
       {!hasIE && (
         <p className="mt-1.5 text-[11.5px] text-gray-400">No Internal Estimate for this sub-category yet.</p>
+      )}
+      {moves.length > 0 && (
+        <div className="mt-2 border-t border-gray-100 pt-2 space-y-1">
+          <p className="text-[10.5px] font-bold uppercase tracking-[.07em] text-gray-500">Internal Estimate changed at sign-off</p>
+          {moves.map((m, i) => (
+            <p key={i} className="text-[12px] text-gray-700 break-words">
+              <b className="tabular-nums">{formatINR(m.amount)}</b>{' '}
+              {m.from ? <>taken from {m.from}</> : <>added as new</>}
+              <span className="text-gray-500">
+                {' '}· {m.actor ?? 'approver'} ({m.stage === 'project_head' ? 'Project Head' : m.stage === 'atm_head' ? 'Atm Head' : 'Admin'}),{' '}
+                {new Date(m.at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+              </span>
+              {m.note ? <span className="block text-[11.5px] text-gray-500">{m.note}</span> : null}
+            </p>
+          ))}
+        </div>
       )}
     </div>
   )
