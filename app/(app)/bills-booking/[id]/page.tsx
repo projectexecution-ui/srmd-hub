@@ -150,12 +150,13 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
     grnId: (bill.in4_grn_id as number | null) ?? null,
   }).catch(() => null)
 
-  const openStages = ['submitted', 'site_head', 'disc_head', 'ct_head']
   const maker = bill.order_no && bill.order_type === 'WO'
     ? await loadMakerSeed(supabase, { billId: bill.id as string, woNo: bill.order_no as string }).catch(() => null)
     : null
   const in4Seed = calc?.sheet ? linesFromSheet(calc.sheet.rows) : null
-  const fromIn4 = !!in4Seed && !maker?.ownSheet
+  // The measurement is IN4's (10 Oct 2026): a picked abstract always wins over
+  // lines typed here; lines typed here are only shown when nothing was picked.
+  const fromIn4 = !!in4Seed && (hasMeasurement || !maker?.ownSheet)
   // A purchase order's goods receipt feeds the SAME sheet (Aksha, 9 Oct 2026:
   // "dont make new formats"): lines at PO rates, the same totals ladder, the
   // deductions block at the Disc Head and CT Head desks.
@@ -234,9 +235,11 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
 
   // At Entered there is nothing to measure yet: the sheet appears once the
   // bill is with the Site Head (Aksha, 10 Oct 2026).
-  const sheetPanels = stage === 'submitted' ? (
+  const sheetPanels = stage === 'submitted' || (stage === 'site_head' && !hasMeasurement) ? (
     <Card className="p-4 text-sm text-gray-600">
-      The abstract or goods receipt sheet appears once the bill is with the Site Head, who makes it in IN4 and picks it here.
+      {stage === 'submitted'
+        ? 'The abstract or goods receipt sheet appears once the bill is with the Site Head, who makes it in IN4 and picks it here.'
+        : `Make the ${bill.order_type === 'PO' ? 'goods receipt' : 'abstract'} in IN4 and get it approved there, then pick it in the facts above. The sheet reads back from IN4 — nothing is measured in CT Hub.`}
     </Card>
   ) : (
     <>
@@ -249,7 +252,7 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
           seed={fromIn4 && in4Seed ? in4Seed : maker.lines}
           gst={bill.gst_pct != null ? { ...maker.gst, pct: bill.gst_pct as number } : maker.gst}
           retention={bill.retention_pct != null ? { ...maker.retention, pct: bill.retention_pct as number } : maker.retention}
-          canEdit={!fromIn4 && canAct && openStages.includes(stage)}
+          canEdit={false}
           canEditDeductions={canAct && (stage === 'disc_head' || stage === 'ct_head')}
           retentionAmt={(bill.retention_amt as number | null) ?? null}
           deductions={Array.isArray(bill.deductions) ? (bill.deductions as Deduction[]) : []}

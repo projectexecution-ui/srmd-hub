@@ -398,7 +398,11 @@ begin
   select order_type, order_no, bill_no, abstract_no_in4, in4_grn_id into v_type, v_order, v_billno, v_abs, v_grn
     from public.bb_bills where id = p_bill;
 
-  select sum(this_amt) into v_basic from public.bb_bill_lines where bill_id = p_bill;
+  -- Lines typed in CT Hub count only when nothing was picked from IN4: the
+  -- measurement is IN4's (10 Oct 2026).
+  if v_abs is null and v_grn is null then
+    select sum(this_amt) into v_basic from public.bb_bill_lines where bill_id = p_bill;
+  end if;
 
   if v_basic is null and v_type = 'WO' then
     select sum(a.executed_amt) into v_basic
