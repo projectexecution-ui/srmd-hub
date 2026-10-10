@@ -407,6 +407,17 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
                   {done ? '✓' : i + 1}
                 </div>
                 <div className={`mt-1.5 text-[10.5px] font-semibold leading-tight ${cur ? 'text-indigo-700' : 'text-gray-500'}`}>{s.label}</div>
+                {/* What happened at the two money steps, under their dots:
+                    the CT Head's sanction, and the Atm Head's approval in IN4
+                    with its verdict (Aksha, 10 Oct 2026). */}
+                {s.key === 'ct_head' && bill.sanctioned_net != null && (
+                  <div className="mt-0.5 text-[10px] text-gray-500">approved {formatINR(Number(bill.sanctioned_net))}</div>
+                )}
+                {s.key === 'atm_in4' && (bill.in4_approved_at
+                  ? <div className={`mt-0.5 text-[10px] font-semibold ${bill.verdict === 'matched' ? 'text-emerald-700' : 'text-amber-700'}`}>
+                      approved {formatDate(bill.in4_approved_at as string)} · {bill.verdict === 'matched' ? 'matches' : 'differs'}
+                    </div>
+                  : cur ? <div className="mt-0.5 text-[10px] text-amber-700">waiting in IN4</div> : null)}
               </div>
             )
           })}

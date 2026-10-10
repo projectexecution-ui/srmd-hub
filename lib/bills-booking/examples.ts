@@ -69,6 +69,15 @@ export interface ExamplePlan {
   /** Certified below the claim, so the CT Head's cut is visible. */
   netFromClaim?: boolean
   amendment?: boolean
+  /** Where the bill stands with IN4 after the CT Head (10 Oct 2026):
+   *    waiting  Billing raised the certificate; the Atm Head has not yet
+   *             approved it in IN4 — the sanctioned net is on the bill.
+   *    matched  approved in IN4 at exactly the sanctioned net.
+   *    differs  approved in IN4 at a figure other than the sanctioned net.
+   *  The seeder reads the real certificate and trail off the mirror and
+   *  writes the sanction, the verdict and who approved it, with the same
+   *  words the live tracker uses. */
+  in4?: 'waiting' | 'matched' | 'differs'
 }
 
 export const EXAMPLE_PLANS: ExamplePlan[] = [
@@ -114,14 +123,14 @@ export const EXAMPLE_PLANS: ExamplePlan[] = [
     title: 'With the Atm Head — certified, and the advance bites',
     check: 'A real certificate exists for this one, so the full ladder shows: ₹98.07 L basic, ₹1.16 Cr gross, ₹4.76 L retention held and ₹9.52 L of advance recovered. Fifteen measured items that add up to the certified figure to the rupee. It also appears in My Approvals.',
     order: 'WO/SRASSK/NGH/2024-25/271', billNo: 'SRASSK-GHA/10',
-    stage: 'atm_in4', daysAtDesk: 4, billType: 'Running', claimed: 1_15_72_438,
+    stage: 'atm_in4', daysAtDesk: 4, billType: 'Running', claimed: 1_15_72_438, in4: 'waiting',
   },
   {
     n: 7, kind: 'WO', complexity: 'complex',
     title: 'On a building CT Hub has no project for',
     check: 'Common Facility Block has no CT Hub project, and the bill still books — against its IN4 sub-project, shown as "Books under: Bills Approval project". This is the case covering most of the money: 887 of the 1,228 numbered work orders are on buildings with no CT Hub project at all.',
     order: 'WO/SRET/RU/2025-26/271', billNo: '53',
-    stage: 'atm_in4', daysAtDesk: 6, billType: 'Running', claimed: 8_86_542,
+    stage: 'atm_in4', daysAtDesk: 6, billType: 'Running', claimed: 8_86_542, in4: 'waiting',
   },
   {
     n: 8, kind: 'WO', complexity: 'complex',
@@ -142,7 +151,14 @@ export const EXAMPLE_PLANS: ExamplePlan[] = [
     title: 'Certified down, now with the Trust',
     check: 'Net payable is under the claim — the CT Head cut it, and both figures are shown. Days at the Trust are counted but never coloured red: the bill has left CT and nobody here can move it. IN4 has it as Partially Paid with ₹87,861 still outstanding.',
     order: 'WO/SRASSK/NGH/2024-25/270', billNo: 'SRASSK-GHB/11',
-    stage: 'trust', daysAtDesk: 12, billType: 'Full & Final', claimed: 51_83_822, netFromClaim: true,
+    stage: 'trust', daysAtDesk: 12, billType: 'Full & Final', claimed: 51_83_822, netFromClaim: true, in4: 'matched',
+  },
+  {
+    n: 21, kind: 'WO', complexity: 'complex',
+    title: 'Approved in IN4 at a different figure — the hub says so',
+    check: 'KAMDAR CRAFTS, certificate ENP/SRJT/SRAH/2026-27/110, approved in IN4 by Amit Gala on 9 Oct. CT Hub had sanctioned ₹4,500 more than IN4 paid. The amber banner names both figures and the gap; the Atm Head and Billing were told the moment the hub read the approval. This is the "inform us" step of the flow.',
+    order: 'WO/SRJT/SRAH/2026-27/24', billNo: 'KC/BHI/033/26-27',
+    stage: 'trust', daysAtDesk: 1, billType: 'Running', claimed: 19_84_524, in4: 'differs',
   },
 
   /* ── Purchase orders ─────────────────────────────────────────────────── */
@@ -172,7 +188,7 @@ export const EXAMPLE_PLANS: ExamplePlan[] = [
     title: 'PO with the Atm Head — 70 billed lines, one GRN',
     check: 'A certified supplier bill: 70 pay lines folded into one row per material, all from a single goods receipt, adding up to ₹4.70 L — which is what IN4 bills, to the rupee. Supplier bills reconcile on 1,376 of 1,376 certificates, better than the contractor side manages.',
     order: 'PO/SRET/RU/2025-26/300', billNo: '2951',
-    stage: 'atm_in4', daysAtDesk: 3, billType: 'Running', claimed: 4_70_446,
+    stage: 'atm_in4', daysAtDesk: 3, billType: 'Running', claimed: 4_70_446, in4: 'waiting',
   },
   {
     n: 15, kind: 'PO', complexity: 'complex',
@@ -214,7 +230,7 @@ export const EXAMPLE_PLANS: ExamplePlan[] = [
     title: 'PO paid, sitting with the Trust',
     check: 'Certificate 1315, ₹3.42 L, paid in full in IN4. The days at the Trust are counted and never called late. This is the end state the whole chain is aiming at, and the figure came straight from IN4 rather than being typed here.',
     order: 'PO/SRASSK/NGH/2026-27/20', billNo: '605',
-    stage: 'trust', daysAtDesk: 14, billType: 'Running', claimed: 3_42_776,
+    stage: 'trust', daysAtDesk: 14, billType: 'Running', claimed: 3_42_776, in4: 'matched',
   },
 ]
 
@@ -241,6 +257,8 @@ export interface ExamplePayload extends Record<string, unknown> {
   stage: string
   days_at_desk: number
   note: string
+  /** See ExamplePlan.in4. */
+  in4_state: 'waiting' | 'matched' | 'differs' | null
 }
 
 /** Turn the plans plus the orders they name into rows to insert.
@@ -299,6 +317,7 @@ export function buildExamples(
       stage: p.stage,
       days_at_desk: p.daysAtDesk,
       note: `Example ${p.n}: ${p.title}`,
+      in4_state: p.in4 ?? null,
     })
   }
   return out

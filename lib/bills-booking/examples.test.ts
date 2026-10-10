@@ -24,10 +24,19 @@ const resolve = () => ({ projectId: 'p-1', subprojectId: 12, discipline: 'Finish
 
 describe('the twenty walkthrough bills', () => {
   it('is ten work-order bills and ten purchase-order bills', () => {
-    expect(EXAMPLE_PLANS).toHaveLength(20)
-    expect(EXAMPLE_PLANS.filter(p => p.kind === 'WO')).toHaveLength(10)
+    // 21 since 10 Oct 2026: one more work order showing an IN4 approval that
+    // differs from the sanctioned net.
+    expect(EXAMPLE_PLANS).toHaveLength(21)
+    expect(EXAMPLE_PLANS.filter(p => p.kind === 'WO')).toHaveLength(11)
     expect(EXAMPLE_PLANS.filter(p => p.kind === 'PO')).toHaveLength(10)
-    expect(EXAMPLE_PLANS.map(p => p.n)).toEqual(Array.from({ length: 20 }, (_, i) => i + 1))
+    expect(EXAMPLE_PLANS.map(p => p.n).sort((a, b) => a - b)).toEqual(Array.from({ length: 21 }, (_, i) => i + 1))
+  })
+
+  it('shows the Atm Head step in IN4 in all three states — waiting, matched, differs', () => {
+    const states = new Set(EXAMPLE_PLANS.map(p => p.in4).filter(Boolean))
+    expect([...states].sort()).toEqual(['differs', 'matched', 'waiting'])
+    for (const p of EXAMPLE_PLANS.filter(p => p.in4 === 'waiting')) expect(p.stage).toBe('atm_in4')
+    for (const p of EXAMPLE_PLANS.filter(p => p.in4 && p.in4 !== 'waiting')) expect(p.stage).toBe('trust')
   })
 
   // The point of the whole set. Without the real number the example would
@@ -83,7 +92,7 @@ describe('turning a plan into a row', () => {
     const rows = buildExamples(EXAMPLE_PLANS, allOrders, resolve, TODAY)
     const wo = rows.filter(r => r.order_type === 'WO')
     const po = rows.filter(r => r.order_type === 'PO')
-    expect(wo.length).toBe(10)
+    expect(wo.length).toBe(11)   // 21 plans since 10 Oct 2026
     expect(po.length).toBe(10)
     for (const r of wo) expect(r.ra_no).toBe('RA-4')
     for (const r of po) expect(r.ra_no).toBeNull()
