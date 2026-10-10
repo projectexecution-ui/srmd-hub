@@ -76,10 +76,12 @@ export const REVAMP_PRIMARY: RevampNavItem[] = [
   { href: '/old-indent-to-po', label: 'OLD INDENT TO PO', icon: ClipboardList, slug: null, built: true },
   // Bills Approval — every contractor and vendor bill across every project,
   // from entry to Approved. It was parked when it held 2 records; it now sits
-  // over the live IN4 certificate ledger and is the section Aksha asked for in
-  // the pane (13 Sep 2026: "make the Whole Section in Left Pane for Admin
-  // only"). Admin-only, matching requireBillsAccess() on every page inside it.
-  { href: '/bills-booking',  label: 'Bills Approval', icon: ReceiptText, slug: 'bills-booking',  built: true, adminOnly: true },
+  // over the live IN4 certificate ledger. Admin-only from 13 Sep 2026; since
+  // the desks went live (16 Sep) requireBillsAccess() lets in matrix view OR
+  // any desk seat, and on 10 Oct 2026 Parimal, seated on the ERP entry desk,
+  // could not find the section at all. So the lane follows the same rule:
+  // view on the matrix, or a seat (opts.canSeeBills, resolved on the server).
+  { href: '/bills-booking',  label: 'Bills Approval', icon: ReceiptText, slug: 'bills-booking',  built: true },
   // Labour Report — the daily manpower count per agency (Aksha, 23 Sep 2026).
   // A lane because the site engineer opens it every evening and nothing else;
   // gated on plain view, and the admin's module switch hides it like any other.
@@ -141,11 +143,15 @@ export function buildRevampNav(
   opts: {
     canSeeAdmin: boolean; canSeeAccounts?: boolean; canSeeStores?: boolean
     canSeeOldIndent?: boolean
+    /** Seated on any Bills Approval desk — the section opens for them even
+     *  without view on the matrix (requireBillsAccess). */
+    canSeeBills?: boolean
   },
 ): { primary: RevampNavItem[]; groups: RevampNavGroup[] } {
   const allowed = (it: RevampNavItem) => {
     if (it.slug === null) return true
     if (disabledSlugs.has(it.slug)) return false
+    if (it.slug === 'bills-booking' && opts.canSeeBills) return true
     // `view` on the matrix is not enough for an admin-only lane: four roles
     // carry view on bills-booking today and every page inside it calls
     // requirePermission(..., 'admin'). Gating the lane the same way keeps the

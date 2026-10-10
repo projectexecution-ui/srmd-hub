@@ -37,6 +37,8 @@ interface NavBarProps {
   /** Whether this person is on the Accounts list. Resolved on the server —
    *  it is a named list in settings, not something a role implies. */
   canSeeAccounts?: boolean
+  /** Seated on a Bills Approval desk (resolved on the server). */
+  canSeeBills?: boolean
   /** OLD INDENT TO PO is a named list resolved on the server — see
    *  lib/old-indent-to-po.ts. A role cannot draw this line. */
   canSeeOldIndent?: boolean
@@ -66,7 +68,7 @@ const GROUPS_OPEN_KEY = 'srmd_nav_groups_open'
 
 type NavItem = { href: string; label: string; icon: typeof LayoutDashboard; slug: string | null }
 
-export default function NavBar({ profile, permissions, disabledSlugs = [], isPortalOwner = false, moduleLabels = {}, sidebarGroups = [], projects = [], approvals = {}, verify = {}, canSeeAccounts = false, canSeeOldIndent = false, initialCollapsed, revampOn = isRevampNow() }: NavBarProps) {
+export default function NavBar({ profile, permissions, disabledSlugs = [], isPortalOwner = false, moduleLabels = {}, sidebarGroups = [], projects = [], approvals = {}, verify = {}, canSeeAccounts = false, canSeeBills = false, canSeeOldIndent = false, initialCollapsed, revampOn = isRevampNow() }: NavBarProps) {
   const disabled = new Set(disabledSlugs)
   const pathname = usePathname()
   const router = useRouter()
@@ -142,7 +144,7 @@ export default function NavBar({ profile, permissions, disabledSlugs = [], isPor
   // well as the trial (lib/revamp/live.ts); with the "CT Hub V1" toggle on,
   // the old sidebar below is what renders.
   const revamp = revampOn
-    ? buildRevampNav(permissions, disabled, { canSeeAdmin, canSeeAccounts, canSeeStores: showStores, canSeeOldIndent })
+    ? buildRevampNav(permissions, disabled, { canSeeAdmin, canSeeAccounts, canSeeStores: showStores, canSeeOldIndent, canSeeBills })
     : null
 
   // Fold the module links into admin-defined groups. When no groups exist,

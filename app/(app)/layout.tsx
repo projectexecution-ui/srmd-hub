@@ -9,6 +9,7 @@ import { AccessPendingScreen } from '@/components/AccessPendingScreen'
 import { DemoBanner } from '@/components/DemoBanner'
 import { getMyProfile, getMyPermissions, getDisabledModuleSlugs, isPortalOwner } from '@/lib/auth'
 import { getModuleLabels } from '@/lib/module-labels'
+import { billsMe } from '@/lib/bills-booking/access'
 import { getSidebarGroups } from '@/lib/sidebar-groups.server'
 import { getShell } from '@/lib/shell'
 import { getRevampOn } from '@/lib/revamp/shell-switch'
@@ -42,6 +43,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // The Accounts lane is a named list, not a role — resolved here because
   // the NavBar is a client component and cannot read app_settings.
   const canSeeAccounts = await canOpenAccounts()
+  // A Bills Approval desk seat opens that section regardless of the matrix
+  // (lib/bills-booking/access.ts) — so the lane must show for the same people.
+  const canSeeBills = await billsMe().then(m => m.onAnyDesk).catch(() => false)
   // A named list, not a role — Ambrish is one of three engineers.
   const canSeeOldIndent = await canOpenOldIndentToPo()
 
@@ -87,6 +91,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             shell?.projects ?? [],
           )}
           canSeeAccounts={canSeeAccounts}
+          canSeeBills={canSeeBills}
           canSeeOldIndent={canSeeOldIndent}
           initialCollapsed={navCollapsed}
           revampOn={revampOn}
