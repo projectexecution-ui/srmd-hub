@@ -10,6 +10,7 @@ import { MoneyInput } from '@/components/ui/money-input'
 import { Loader2, Send } from 'lucide-react'
 import { OrderPicker, type OrderKind } from './OrderPicker'
 import { DeskPanel } from './DeskPanel'
+import { OwnerPicker, type OwnerPerson, type SiteHeadSeat } from './OwnerPicker'
 import type { PickableOrder } from '@/lib/bills-booking/orders'
 import { resolveBooking, bookingGaps, type BookingMaps, type Booking } from '@/lib/bills-booking/booking'
 import { formatINR } from '@/lib/utils'
@@ -51,11 +52,15 @@ const hydrate = (s: BookingSeed): BookingMaps => ({
   disciplines: new Map(s.disciplines),
 })
 
-export function BillForm({ projects, categories, in4Wos, in4Pos, in4Projects, seed, canAdmin }: {
+export function BillForm({ projects, categories, in4Wos, in4Pos, in4Projects, seed, owners, seats, canAdmin }: {
   projects: Opt[]; categories: Category[]
   in4Wos: PickableOrder[]; in4Pos: PickableOrder[]
   in4Projects: Array<{ id: number; name: string }>
   seed: BookingSeed
+  /** Who can be named the Site Head, with roles, and the Site Head seats
+   *  already set on the desks screen. */
+  owners: OwnerPerson[]
+  seats: SiteHeadSeat[]
   canAdmin: boolean
 }) {
   const router = useRouter()
@@ -86,9 +91,6 @@ export function BillForm({ projects, categories, in4Wos, in4Pos, in4Projects, se
   // Aksha, 10 Oct 2026: Billing names the Site Head who will process the
   // bill; that person is told, and the bill lands on their desk at once.
   const [ownerId, setOwnerId] = useState('')
-  const people = useMemo(
-    () => seed.people.map(([, p]) => p).sort((a, b) => a.name.localeCompare(b.name)),
-    [seed.people])
 
   const [maps, setMaps] = useState<BookingMaps>(() => hydrate(seed))
 
@@ -155,7 +157,7 @@ export function BillForm({ projects, categories, in4Wos, in4Pos, in4Projects, se
     }
     if (!contractor) { setErr(`Name the ${party}`); return }
     if (!(thisBill > 0)) { setErr('Enter what this bill is for'); return }
-    if (!ownerId) { setErr('Name the Site Head who will process this bill'); return }
+    if (!effectiveOwner) { setErr('Name the Site Head who will process this bill'); return }
     setBusy(true); setErr(null)
     const { data, error } = await supabase.rpc('bb_rpc_create_bill', {
       p: {
@@ -171,7 +173,7 @@ export function BillForm({ projects, categories, in4Wos, in4Pos, in4Projects, se
         bill_date: billDate || null, claimed_amount: thisBill, trust: trust || null,
         wo_value: woValue, paid_till_date: paidTill,
         in4_subproject_id: booking.subprojectId,
-        owner_id: ownerId,
+        owner_id: effectiveOwner,
       },
     })
     if (error) { setBusy(false); setErr(error.message); return }
@@ -180,6 +182,19 @@ export function BillForm({ projects, categories, in4Wos, in4Pos, in4Projects, se
   }
 
   const sel = 'h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm mt-1'
+
+  // The Site Head seat set for this building (or project) is the default
+  // until Billing taps somebody else — so on most bills nothing is chosen.
+  const ownerProjectId = finalProjectId ?? null
+  const ownerSubprojectId = booking.subprojectId ?? null
+  const seatDefault = (() => {
+    const bySub = ownerSubprojectId != null ? seats.filter(s => s.subprojectId === ownerSubprojectId) : []
+    const byProj = ownerProjectId ? seats.filter(s => s.subprojectId == null && s.projectId === ownerProjectId) : []
+    const global = seats.filter(s => s.subprojectId == null && s.projectId == null)
+    const pick = bySub.length ? bySub : byProj.length ? byProj : global
+    return pick.length === 1 ? pick[0].userId : ''
+  })()
+  const effectiveOwner = ownerId || seatDefault
 
   return (
     <Card className="p-5 space-y-5">
@@ -271,15 +286,13 @@ export function BillForm({ projects, categories, in4Wos, in4Pos, in4Projects, se
           </div>
         </div>
 
-        <div className="mt-3">
-          <Label htmlFor="owner">Site Head who will process it *</Label>
-          <select id="owner" value={ownerId} onChange={e => setOwnerId(e.target.value)} className={sel}>
-            <option value="">— select —</option>
-            {people.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
-          <p className="mt-1 text-[11px] text-gray-500">
+        <div className="mt-4">
+          <Label>Site Head who will process it *</Label>
+          <p className="mb-2 text-[11px] text-gray-500">
             The bill goes to this person&apos;s desk now and they are told. They make the abstract or goods receipt in IN4, pick it on the bill, and send it to the CT Disc Head.
           </p>
+          <OwnerPicker people={owners} seats={seats} projectId={ownerProjectId} subprojectId={ownerSubprojectId}
+                       value={effectiveOwner} onChange={setOwnerId} />
         </div>
 
         {raNo && (
