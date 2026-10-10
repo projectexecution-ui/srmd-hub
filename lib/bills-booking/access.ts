@@ -40,6 +40,9 @@ interface MyDesksRpc {
   desks?: Array<{ desk: string; project_id: string | null; in4_subproject_id: number | null }>
   atm_projects?: string[]
   atm_subprojects?: number[]
+  /** Live bills this person owns as Site Head — an owner with no seat and no
+   *  matrix row must still get in (10 Oct 2026). */
+  owned_bills?: number
 }
 
 const whoAmI = cache(async (): Promise<BillsMe> => {
@@ -55,7 +58,7 @@ const whoAmI = cache(async (): Promise<BillsMe> => {
     isAdmin: can(perms, 'bills-booking', 'admin'),
     canEdit: can(perms, 'bills-booking', 'edit'),
     desks, atmProjects, atmSubprojects,
-    onAnyDesk: desks.length > 0 || atmProjects.length > 0 || atmSubprojects.length > 0,
+    onAnyDesk: desks.length > 0 || atmProjects.length > 0 || atmSubprojects.length > 0 || (r.owned_bills ?? 0) > 0,
   }
 })
 
