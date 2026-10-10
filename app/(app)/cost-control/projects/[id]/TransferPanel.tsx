@@ -15,6 +15,7 @@ import {
   type ProjectTransfer,
 } from '@/lib/cost-control/transfers'
 import { WithdrawTransferButton } from './WithdrawTransferButton'
+import { TransferDecideActions } from '@/components/cost-control/TransferDecideActions'
 
 function Chip({ t }: { t: ProjectTransfer }) {
   return (
@@ -27,10 +28,12 @@ function Chip({ t }: { t: ProjectTransfer }) {
   )
 }
 
-function Row({ t, projectId, canWithdraw }: {
+function Row({ t, projectId, canWithdraw, decideAs }: {
   t: ProjectTransfer
   projectId: string
   canWithdraw: boolean
+  /** "Atm Head" / "Trustee" when THIS viewer must decide it now, else null. */
+  decideAs: string | null
 }) {
   const mismatch = isMismatched(t)
   return (
@@ -72,6 +75,22 @@ function Row({ t, projectId, canWithdraw }: {
           {t.closed_reason && (
             <p className="mt-1 text-[11.5px] text-gray-600">{t.closed_reason}</p>
           )}
+
+          {/* The Atm Head / Trustee decides right here — not only on My
+              Approvals (Aksha, 10 Oct 2026: the Atm Head saw the request on the
+              project but had no way to approve it). Same buttons, same rules. */}
+          {decideAs && (
+            <div className="mt-2.5">
+              <TransferDecideActions
+                id={t.id}
+                projectId={projectId}
+                amount={t.amount}
+                stage={decideAs}
+                fromLabel={t.from_label}
+                toLabel={t.to_label}
+              />
+            </div>
+          )}
         </div>
 
         <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
@@ -90,10 +109,13 @@ function Row({ t, projectId, canWithdraw }: {
 }
 
 export function TransferPanel({
-  transfers, projectId,
+  transfers, projectId, decideStage = {},
 }: {
   transfers: ProjectTransfer[]
   projectId: string
+  /** Transfer id → "Atm Head" / "Trustee" for the ones this viewer may decide
+   *  now (from cc_transfer_inbox, the same rule the approve call enforces). */
+  decideStage?: Record<string, string>
 }) {
   if (transfers.length === 0) return null
 
@@ -117,7 +139,7 @@ export function TransferPanel({
       {open.length > 0 && (
         <div className="divide-y divide-indigo-200 bg-white/60">
           {open.map(t => (
-            <Row key={t.id} t={t} projectId={projectId} canWithdraw={t.raised_by_me} />
+            <Row key={t.id} t={t} projectId={projectId} canWithdraw={t.raised_by_me} decideAs={decideStage[t.id] ?? null} />
           ))}
         </div>
       )}
@@ -131,7 +153,7 @@ export function TransferPanel({
           </summary>
           <div className="divide-y divide-indigo-200 bg-white/60 border-t border-indigo-200">
             {settled.map(t => (
-              <Row key={t.id} t={t} projectId={projectId} canWithdraw={false} />
+              <Row key={t.id} t={t} projectId={projectId} canWithdraw={false} decideAs={null} />
             ))}
           </div>
         </details>

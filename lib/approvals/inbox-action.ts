@@ -19,6 +19,9 @@ const NEXT_STAGE_ACTION: Record<string, string> = {
   returned: 'Send back',
   submitted: 'Submit',
   deadline_set: 'Set deadline',
+  // Budget shifting requests (cross-category transfers) on the home
+  transfer_approve: 'Approve shift',
+  transfer_in4: 'Move in IN4',
   verify: 'Verify',
   // Common across modules
   rejected: 'Reject',

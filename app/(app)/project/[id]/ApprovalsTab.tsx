@@ -24,6 +24,8 @@ import { getCcSettings } from '@/lib/cost-control/settings'
 import { getReturnedToEngineer } from '@/lib/cost-control/returned-to-engineer'
 import { ReturnedToEngineer } from '@/components/dashboard/ReturnedToEngineer'
 import { TransferInboxSection, type TransferInboxRow } from '@/components/cost-control/TransferInboxSection'
+import { TransferTrackerSection } from '@/components/cost-control/TransferTrackerSection'
+import { loadTransferTracker } from '@/lib/cost-control/transfer-tracker-load'
 import { QueryError } from '@/components/ui/query-error'
 import { ApprovalProjectCard } from '@/components/cost-control/ApprovalCards'
 import { loadApprovalsInbox, pendingValue, pickFirst } from '@/lib/cost-control/approvals-inbox'
@@ -167,16 +169,22 @@ async function TransfersPanel({ projectId }: { projectId: string }) {
   if (error) return <QueryError message={error.message} what="budget transfers" />
 
   const rows = ((data ?? []) as TransferInboxRow[]).filter(t => t.project_id === projectId)
+  // Where every other open request on this project is, and who has it.
+  const tracker = await loadTransferTracker({ projectId })
+  const trackerRows = tracker.rows.filter(r => !(r.mine && (r.status === 'pending_atm' || r.status === 'pending_trustee')))
 
   return (
     <div className="space-y-3 max-w-4xl">
-      {rows.length === 0 ? (
+      {rows.length === 0 && trackerRows.length === 0 && !tracker.error ? (
         <EmptyPanel
           title="No transfers waiting on you here"
           detail="Budget moved between categories on this project appears here while it needs your decision."
         />
       ) : (
-        <TransferInboxSection rows={rows} />
+        <>
+          <TransferInboxSection rows={rows} />
+          {tracker.allowed && <TransferTrackerSection rows={trackerRows} error={tracker.error} title="Budget shifting on this project — where each is" />}
+        </>
       )}
     </div>
   )

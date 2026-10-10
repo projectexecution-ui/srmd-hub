@@ -7,6 +7,8 @@ import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { QueryError } from '@/components/ui/query-error'
 import { TransferInboxSection, type TransferInboxRow } from '@/components/cost-control/TransferInboxSection'
+import { TransferTrackerSection } from '@/components/cost-control/TransferTrackerSection'
+import { loadTransferTracker } from '@/lib/cost-control/transfer-tracker-load'
 import { getCcSettings } from '@/lib/cost-control/settings'
 import { formatINR } from '@/lib/utils'
 import { getReturnedToEngineer } from '@/lib/cost-control/returned-to-engineer'
@@ -84,6 +86,13 @@ export default async function ApprovalsInboxPage({
   const transfers = (transferRows ?? []) as TransferInboxRow[]
   const transferValue = transfers.reduce((sum, t) => sum + Number(t.amount ?? 0), 0)
 
+  // Every open budget shifting request, where it is and who has it — for the
+  // Coordinator and the Atm Heads to see what is stuck (Aksha, 10 Oct 2026).
+  // The ones waiting on THIS person to approve are already above, with their
+  // buttons, so they are not listed twice.
+  const tracker = await loadTransferTracker()
+  const trackerRows = tracker.rows.filter(r => !(r.mine && (r.status === 'pending_atm' || r.status === 'pending_trustee')))
+
   return (
     <div className="p-4 md:p-6 max-w-4xl mx-auto space-y-4">
       <PageHeader
@@ -118,6 +127,13 @@ export default async function ApprovalsInboxPage({
       {/* Budget being moved between work categories. Renders nothing when
           none are waiting on this person. */}
       <TransferInboxSection rows={transfers} />
+      {tracker.allowed && (
+        <TransferTrackerSection
+          rows={trackerRows}
+          error={tracker.error}
+          title={transfers.length > 0 ? 'Other budget shifting requests — where each is' : 'Budget shifting — where each request is'}
+        />
+      )}
 
       {hasThumbruleMine && (
         <Link

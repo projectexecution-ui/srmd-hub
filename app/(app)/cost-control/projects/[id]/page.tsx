@@ -576,12 +576,19 @@ export default async function CostControlProjectDetailPage(
   // the table so a Coordinator with no project membership still sees them,
   // and so the two line labels come back already formatted the same way
   // everywhere else names them.
-  const [transfersRes, canRaiseRes] = await Promise.all([
+  const [transfersRes, canRaiseRes, transferInboxRes] = await Promise.all([
     supabase.rpc('cc_project_transfers', { p_project: project.id }),
     supabase.rpc('cc_can_i_raise_transfer'),
+    // Which of them THIS viewer decides now — so the buttons sit on the
+    // project, not only on My Approvals.
+    supabase.rpc('cc_transfer_inbox'),
   ])
   const transfers = (transfersRes.data ?? []) as ProjectTransfer[]
   const canRaiseTransfer = canRaiseRes.data === true
+  const transferDecideStage: Record<string, string> = {}
+  for (const r of ((transferInboxRes.data ?? []) as { id: string; project_id: string; stage: string }[])) {
+    if (r.project_id === project.id) transferDecideStage[r.id] = r.stage
+  }
   // Lines already carrying an open request, so the row can say so instead
   // of inviting a second one on top of it.
   const transferReqBySub = new Map<string, ProjectTransfer[]>()
@@ -1155,6 +1162,7 @@ export default async function CostControlProjectDetailPage(
       <TransferPanel
         transfers={transfers}
         projectId={project.id}
+        decideStage={transferDecideStage}
       />
       <PhoneViewProvider>
       {/* overflow-hidden only from lg: below it, an overflow-hidden ancestor

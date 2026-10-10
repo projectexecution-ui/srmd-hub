@@ -15,6 +15,7 @@ import { getMyProfile, getMyPermissions, getDisabledModuleSlugs } from '@/lib/au
 import { getModuleLabels } from '@/lib/module-labels'
 import { NeedsYouNow, type InboxItem } from '@/components/dashboard/NeedsYouNow'
 import { getHomeBudgetGroups } from '@/lib/cost-control/my-budget-approvals'
+import { loadTransferInboxItems } from '@/lib/cost-control/transfer-inbox-items'
 import { CostControlSnapshot } from '@/components/dashboard/CostControlSnapshot'
 import { ReturnedToEngineer } from '@/components/dashboard/ReturnedToEngineer'
 import { getReturnedToEngineer } from '@/lib/cost-control/returned-to-engineer'
@@ -54,7 +55,12 @@ export default async function DashboardPage() {
   const groupedIds = new Set(budgetProjects.flatMap(p => p.disciplines.flatMap(d => d.items.map(it => it.id))))
   // Anything not folded into a project group (non-CC, or a CC item whose sheet
   // couldn't be read) stays in the module list so nothing silently disappears.
-  const otherInbox = inbox.filter(i => !(i.doc_id && groupedIds.has(i.doc_id)))
+  // Budget shifting requests waiting on this person (Atm Head / Trustee to
+  // approve, Billing / Coordinator to move in IN4). my_approval_inbox never
+  // carried them, so the home said "all caught up" while one waited (Aksha,
+  // 10 Oct 2026). Added after the budget grouping — they are not sheets.
+  const transferItems = showCC ? await loadTransferInboxItems(supabase) : []
+  const otherInbox = [...inbox.filter(i => !(i.doc_id && groupedIds.has(i.doc_id))), ...transferItems]
 
   // What is sitting at Verify in IN4 — for the Atm Head of those projects
   // ONLY. The `head` chair on cc_project_approvers is the Atm Head (the same
@@ -94,11 +100,11 @@ export default async function DashboardPage() {
   // Admin housekeeping (delete requests, IN4 feed health) is not on the home
   // page at all any more (Aksha, 27 Sep 2026: "clean up with only limited
   // required tabs and sections") — the Admin console carries both.
-  const badges = tileBadges(inbox)
+  const badges = tileBadges([...inbox, ...transferItems])
 
   const firstName = profile.name || profile.full_name?.split(' ')[0] || 'there'
   const today = new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata' })
-  const waitingTotal = inbox.length
+  const waitingTotal = inbox.length + transferItems.length
 
   return (
     <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6">
@@ -122,7 +128,7 @@ export default async function DashboardPage() {
       <NeedsYouNow
         budgetProjects={budgetProjects}
         otherItems={otherInbox}
-        totalCount={inbox.length}
+        totalCount={waitingTotal}
         moduleLabels={moduleLabels}
         error={!!inboxError}
         approvalsOn={approvalsOn}
