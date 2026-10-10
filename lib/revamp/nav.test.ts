@@ -79,25 +79,27 @@ describe('revamped left pane', () => {
 
   // Stores joined on 13 Sep 2026 — Material In & Out. Bills Approval joined on
   // 14 Sep 2026, out of REVAMP_PARKED: it stopped being a two-record module and
-  // became the section over IN4's live certificate ledger. Both are admin-only,
-  // so most people still see five.
+  // became the section over IN4's live certificate ledger. Stores is admin-only;
+  // Bills Approval shows on view or a desk seat (10 Oct 2026).
   it('is nine lanes — Dashboard, Projects, Bills, Accounts, Stores, OLD INDENT TO PO, Bills Approval, Labour, Admin', () => {
     // Masters left for Admin › Data on 23 Sep 2026. Labour joined the same day.
     expect(REVAMP_PRIMARY.map(i => i.label)).toEqual(['Dashboard', 'Projects', 'Bills', 'Accounts', 'Stores', 'OLD INDENT TO PO', 'Bills Approval', 'Labour', 'Admin'])
     expect(REVAMP_OLD_SCREENS.length).toBeGreaterThan(0)
   })
 
-  // The pages inside Bills Approval all call requirePermission(…, 'admin'),
-  // and four roles hold plain `view` on the slug today. A lane gated on view
-  // would be a door that refuses whoever opens it.
-  it('shows Bills Approval on can_admin only, never on can_view', () => {
-    const labels = (perm: Record<string, { view?: boolean; admin?: boolean }>) =>
-      buildRevampNav(perm, new Set(), ADMIN).primary.map(i => i.label)
+  // Since the desks went live (16 Sep 2026) every page inside Bills Approval
+  // lets in matrix view OR a desk seat (requireBillsAccess). The lane follows
+  // the same rule — 10 Oct 2026, Parimal on the ERP entry desk with no matrix
+  // row could not find the section at all.
+  it('shows Bills Approval on can_view, or on a desk seat, never on nothing', () => {
+    const labels = (perm: Record<string, { view?: boolean; admin?: boolean }>, canSeeBills = false) =>
+      buildRevampNav(perm, new Set(), { ...ADMIN, canSeeBills }).primary.map(i => i.label)
     expect(labels({ 'bills-booking': { view: true, admin: true } })).toContain('Bills Approval')
-    expect(labels({ 'bills-booking': { view: true } })).not.toContain('Bills Approval')
+    expect(labels({ 'bills-booking': { view: true } })).toContain('Bills Approval')
     expect(labels({})).not.toContain('Bills Approval')
-    // …and the module switch still wins over the permission.
-    expect(buildRevampNav({ 'bills-booking': { view: true, admin: true } }, new Set(['bills-booking']), ADMIN)
+    expect(labels({}, true)).toContain('Bills Approval')
+    // …and the module switch still wins over both.
+    expect(buildRevampNav({ 'bills-booking': { view: true, admin: true } }, new Set(['bills-booking']), { ...ADMIN, canSeeBills: true })
       .primary.map(i => i.label)).not.toContain('Bills Approval')
   })
 
