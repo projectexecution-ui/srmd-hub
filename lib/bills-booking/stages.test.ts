@@ -12,16 +12,21 @@ describe('the stage spine', () => {
   // click is the approval of record and CT Billing keys IN4 afterwards. The
   // ladder went on showing "Atm (IN4)" as step 7 of 9 for a day.
   it('no longer walks through Atm (IN4)', () => {
-    expect(PIPELINE.map(s => s.key)).not.toContain('atm_in4')
-    expect(nextStage('ct_billing')).toBe('trust')
-    expect(prevStage('trust')).toBe('ct_billing')
+    // 10 Oct 2026: the Atm Head approves in IN4 only; the hub tracks it.
+    expect(PIPELINE.map(s => s.key)).not.toContain('atm_approval')
+    expect(PIPELINE.map(s => s.key)).toContain('atm_in4')
+    expect(nextStage('ct_head')).toBe('ct_billing')
+    expect(nextStage('ct_billing')).toBe('atm_in4')
+    expect(nextStage('atm_in4')).toBe('trust')
+    expect(prevStage('trust')).toBe('atm_in4')
+    expect(stageDef('atm_in4').tracking).toBe(true)
   })
 
   it('still renders a bill parked at the retired stage instead of blanking', () => {
-    expect(LEGACY.map(s => s.key)).toContain('atm_in4')
-    expect(stageDef('atm_in4' as BbStage).label).toMatch(/retired/i)
+    expect(LEGACY.map(s => s.key)).toContain('atm_approval')
+    expect(stageDef('atm_approval' as BbStage).label).toMatch(/retired/i)
     // Off the ladder, so it has no position on it.
-    expect(stageIndex('atm_in4' as BbStage)).toBe(-1)
+    expect(stageIndex('atm_approval' as BbStage)).toBe(-1)
   })
 
   it('is eight steps, ending at Paid', () => {

@@ -36,6 +36,9 @@ export async function checkIn4Now(): Promise<{
   if (raised.error) return { ok: false, error: raised.error.message }
   const advanced = await sb.rpc('bb_rpc_advance_measured')
   if (advanced.error) return { ok: false, error: advanced.error.message }
+  // And the IN4 side after the CT Head — certificate raised, approved, paid.
+  const tracked = await sb.rpc('bb_rpc_track_in4')
+  if (tracked.error) return { ok: false, error: tracked.error.message }
 
   const r = (raised.data ?? {}) as { raised?: number; note?: string }
   const a = (advanced.data ?? {}) as { checked?: number; moved?: number }

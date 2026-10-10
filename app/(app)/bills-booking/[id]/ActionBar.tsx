@@ -31,11 +31,14 @@ import { formatINR } from '@/lib/utils'
  *  them, and both are recorded either way. Reject is the only step in the flow
  *  that ends a bill, and it was one click from a desk holding lakhs. */
 export function ActionBar({ billId, stage, netAmount, certified, claimed, preHoldStage, measured, orderType,
-  hasStampedBill, navCollapsed, undoUntil, undoWhat, reconciles }: {
+  hasStampedBill, hasMeasurement = false, navCollapsed, undoUntil, undoWhat, reconciles }: {
   billId: string; stage: BbStage
   netAmount: number | null; certified: number | null; claimed: number
   preHoldStage: BbStage | null
   measured: boolean | null
+  /** The Site Head has picked the approved abstract / goods receipt from IN4
+   *  (10 Oct 2026) — the bill cannot leave the Site Head desk without it. */
+  hasMeasurement?: boolean
   orderType: string | null
   hasStampedBill: boolean
   navCollapsed: boolean
@@ -63,11 +66,16 @@ export function ActionBar({ billId, stage, netAmount, certified, claimed, preHol
 
   const fwd = nextStage(stage)
   const back = prevStage(stage)
-  const waitsOnIn4 = stage === 'site_head' && measured !== null
   const thing = orderType === 'PO' ? 'goods receipt' : 'abstract'
   const showAmount = stage === 'ct_head'
   const resumeTo = preHoldStage ?? 'site_head'
   const needsDoc = stage === 'disc_head' && !hasStampedBill
+  const needsPick = stage === 'site_head' && !hasMeasurement
+  const blocked = needsDoc || needsPick
+  const blockedWhy = needsDoc ? 'Attach the stamped bill first' : needsPick ? `Pick the approved ${thing} from IN4 first` : undefined
+  // Aksha, 10 Oct 2026: at the CT Head, "reject" means send it back to the CT
+  // Disc Head. The real reject (a wrong or duplicate bill) stays on the earlier desks.
+  const canReject = stage !== 'ct_head'
   const canUndo = !!undoUntil && new Date(undoUntil).getTime() > now
   const figure = netAmount ?? certified ?? claimed
   const figureLabel = netAmount != null ? 'Net payable' : certified != null ? 'Certified' : 'Claimed'
@@ -175,15 +183,17 @@ export function ActionBar({ billId, stage, netAmount, certified, claimed, preHol
                     {busy === 'undo' ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />} Undo
                   </Button>
                 )}
-                <Button variant="outline" onClick={() => open('reject')} disabled={busy !== null}
-                        className="min-h-[44px] border-rose-200 text-rose-700 hover:bg-rose-50"
-                        title="Ends the bill — for one raised in error. To have it corrected, send it back.">
-                  <Ban className="h-4 w-4" /> Reject
-                </Button>
+                {canReject && (
+                  <Button variant="outline" onClick={() => open('reject')} disabled={busy !== null}
+                          className="min-h-[44px] border-rose-200 text-rose-700 hover:bg-rose-50"
+                          title="Ends the bill — for one raised in error. To have it corrected, send it back.">
+                    <Ban className="h-4 w-4" /> Reject
+                  </Button>
+                )}
                 {back && (
                   <Button variant="outline" onClick={() => open('send_back')} disabled={busy !== null}
                           className="min-h-[44px] border-amber-200 text-amber-700 hover:bg-amber-50">
-                    <Undo2 className="h-4 w-4" /> Send back
+                    <Undo2 className="h-4 w-4" /> Send back{stage === 'ct_head' ? ' to CT Disc Head' : ''}
                   </Button>
                 )}
                 {/* The Forward button is never hidden. Aksha, 9 Oct 2026: "i am
@@ -192,17 +202,22 @@ export function ActionBar({ billId, stage, netAmount, certified, claimed, preHol
                     always push the bill on; the note beside it says what IN4 has. */}
                 {fwd && (
                   <span className="inline-flex flex-col items-end">
-                    <Button onClick={forward} disabled={busy !== null || needsDoc}
+                    <Button onClick={forward} disabled={busy !== null || blocked}
                             className="min-h-[44px] bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60"
-                            title={needsDoc ? 'Attach the stamped bill first' : undefined}>
-                      {busy === 'fwd' ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />} Forward to {stageDef(fwd).label}
+                            title={blockedWhy}>
+                      {busy === 'fwd' ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
+                      {stage === 'ct_head' ? 'Approve — to CT Billing' : `Forward to ${stageDef(fwd).label}`}
                     </Button>
-                    {needsDoc && <span className="mt-0.5 text-[11px] font-medium text-rose-700">Attach the stamped bill first</span>}
+                    {blockedWhy && <span className="mt-0.5 text-[11px] font-medium text-rose-700">{blockedWhy}</span>}
                   </span>
                 )}
-                {waitsOnIn4 && (
-                  <span className={`order-first mr-auto rounded-lg border px-3 py-2 text-[12px] ${measured ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : 'border-blue-200 bg-blue-50 text-blue-900'}`}>
-                    {measured ? <>IN4 has approved the {thing} — forward it now, or it moves on at the next check</> : <>IN4 has not approved the {thing} yet — you can still forward</>}
+                {stage === 'site_head' && (
+                  <span className={`order-first mr-auto rounded-lg border px-3 py-2 text-[12px] ${hasMeasurement ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : measured ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-blue-200 bg-blue-50 text-blue-900'}`}>
+                    {hasMeasurement
+                      ? <>The {thing} is recorded from IN4 — send it on; the CT Disc Head is picked by the bill&apos;s category</>
+                      : measured
+                        ? <>IN4 has an approved {thing} on this order — pick it in the facts above, then forward</>
+                        : <>Make the {thing} in IN4 and get it approved; then pick it here and forward</>}
                   </span>
                 )}
               </>

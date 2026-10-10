@@ -114,14 +114,14 @@ export const EXAMPLE_PLANS: ExamplePlan[] = [
     title: 'With the Atm Head — certified, and the advance bites',
     check: 'A real certificate exists for this one, so the full ladder shows: ₹98.07 L basic, ₹1.16 Cr gross, ₹4.76 L retention held and ₹9.52 L of advance recovered. Fifteen measured items that add up to the certified figure to the rupee. It also appears in My Approvals.',
     order: 'WO/SRASSK/NGH/2024-25/271', billNo: 'SRASSK-GHA/10',
-    stage: 'atm_approval', daysAtDesk: 4, billType: 'Running', claimed: 1_15_72_438,
+    stage: 'atm_in4', daysAtDesk: 4, billType: 'Running', claimed: 1_15_72_438,
   },
   {
     n: 7, kind: 'WO', complexity: 'complex',
     title: 'On a building CT Hub has no project for',
     check: 'Common Facility Block has no CT Hub project, and the bill still books — against its IN4 sub-project, shown as "Books under: Bills Approval project". This is the case covering most of the money: 887 of the 1,228 numbered work orders are on buildings with no CT Hub project at all.',
     order: 'WO/SRET/RU/2025-26/271', billNo: '53',
-    stage: 'atm_approval', daysAtDesk: 6, billType: 'Running', claimed: 8_86_542,
+    stage: 'atm_in4', daysAtDesk: 6, billType: 'Running', claimed: 8_86_542,
   },
   {
     n: 8, kind: 'WO', complexity: 'complex',
@@ -172,14 +172,14 @@ export const EXAMPLE_PLANS: ExamplePlan[] = [
     title: 'PO with the Atm Head — 70 billed lines, one GRN',
     check: 'A certified supplier bill: 70 pay lines folded into one row per material, all from a single goods receipt, adding up to ₹4.70 L — which is what IN4 bills, to the rupee. Supplier bills reconcile on 1,376 of 1,376 certificates, better than the contractor side manages.',
     order: 'PO/SRET/RU/2025-26/300', billNo: '2951',
-    stage: 'atm_approval', daysAtDesk: 3, billType: 'Running', claimed: 4_70_446,
+    stage: 'atm_in4', daysAtDesk: 3, billType: 'Running', claimed: 4_70_446,
   },
   {
     n: 15, kind: 'PO', complexity: 'complex',
     title: 'The advance takes the whole bill',
     check: 'Gross ₹2,99,666 and payable ZERO — every rupee recovered against the advance. The Advance panel shows ₹17.59 L taken on this order, what has come back and what is still to recover. Without that panel a bill worth nothing looks like a mistake instead of a recovery.',
     order: 'PO/SRASSK/NGH/2026-27/9', billNo: 'SI26-27260502128',
-    stage: 'atm_approval', daysAtDesk: 5, billType: 'Running', claimed: 2_99_666,
+    stage: 'atm_in4', daysAtDesk: 5, billType: 'Running', claimed: 2_99_666,
   },
   {
     n: 16, kind: 'PO', complexity: 'complex',

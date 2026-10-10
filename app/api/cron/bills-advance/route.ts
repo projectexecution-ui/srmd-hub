@@ -41,14 +41,21 @@ export async function GET(req: Request) {
   if (raised.error) return NextResponse.json({ ok: false, error: `raise: ${raised.error.message}` }, { status: 500 })
   const advanced = await sb.rpc('bb_rpc_advance_measured')
   if (advanced.error) return NextResponse.json({ ok: false, error: `advance: ${advanced.error.message}` }, { status: 500 })
+  // 3. TRACK (10 Oct 2026). After the CT Head: the certificate appearing in
+  //    IN4, the Atm Head's approval there (compared with the sanctioned net and
+  //    told to the Atm Head and Billing), and payment.
+  const tracked = await sb.rpc('bb_rpc_track_in4')
+  if (tracked.error) return NextResponse.json({ ok: false, error: `track: ${tracked.error.message}` }, { status: 500 })
 
   const r = (raised.data ?? {}) as { checked?: number; raised?: number; note?: string }
   const a = (advanced.data ?? {}) as { checked?: number; moved?: number }
+  const t = (tracked.data ?? {}) as { checked?: number; certified?: number; approved?: number; paid?: number }
   return NextResponse.json({
     ok: true,
     raised: r.raised ?? 0,
     moved: a.moved ?? 0,
     checked: a.checked ?? 0,
-    summary: `${r.raised ?? 0} raised from IN4${r.note ? ` (${r.note})` : ''} · ${a.moved ?? 0} of ${a.checked ?? 0} at the Site Head moved on`,
+    tracked: t,
+    summary: `${r.raised ?? 0} raised from IN4${r.note ? ` (${r.note})` : ''} · ${a.moved ?? 0} of ${a.checked ?? 0} at the Site Head moved on · after CT Head: ${t.certified ?? 0} certified, ${t.approved ?? 0} approved in IN4, ${t.paid ?? 0} paid`,
   })
 }

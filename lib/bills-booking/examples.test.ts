@@ -57,7 +57,7 @@ describe('the twenty walkthrough bills', () => {
 
   it('spreads across the desks so every part of the flow has something to show', () => {
     const stages = new Set(EXAMPLE_PLANS.map(p => p.stage))
-    for (const s of ['submitted', 'site_head', 'disc_head', 'ct_head', 'atm_approval', 'ct_billing', 'trust']) {
+    for (const s of ['submitted', 'site_head', 'disc_head', 'ct_head', 'atm_in4', 'ct_billing', 'trust']) {
       expect(stages.has(s as never), s).toBe(true)
     }
   })

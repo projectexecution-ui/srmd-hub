@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import type { MeasurementOption } from '@/app/(app)/bills-booking/[id]/MeasurementPicker'
 import { billLadder, woHistory, earlierBillsOn, type CertMoney, type BillLadder, type WoHistory } from './calc'
 import { buildAbstractSheet, type AbstractSheet, type AbstractLine, type BoqLine, type LadderBill } from './abstract'
 import { seedLines, pickRate, type MakerLine, type RatePick } from './maker'
@@ -82,12 +83,72 @@ function ratesFrom(certs: CertMoney[]): { gst: number; retention: number } | nul
   }
 }
 
+/** The approved measurements IN4 holds on one order — what the Site Head
+ *  picks from (10 Oct 2026). Newest first. */
+export async function loadMeasurementOptions(
+  sb: SupabaseClient, orderType: string | null, orderNo: string | null,
+): Promise<MeasurementOption[]> {
+  const no = orderNo?.trim()
+  if (!no) return []
+  if (orderType === 'WO') {
+    const { data: wo } = await sb.from('in4_work_orders').select('wo_id').eq('display_no', no).maybeSingle()
+    if (!wo) return []
+    const [{ data: lines }, { data: certs }] = await Promise.all([
+      sb.from('in4_wo_abstract_items').select('display_no, bill_no, abstract_dt, executed_amt, status').eq('wo_id', wo.wo_id as number),
+      sb.from('in4_wo_certificates').select('invoice_no').eq('wo_id', wo.wo_id as number),
+    ])
+    const certified = new Set((certs ?? []).map(c => ((c.invoice_no as string | null) ?? '').trim().toLowerCase()).filter(Boolean))
+    const by = new Map<string, MeasurementOption>()
+    for (const l of lines ?? []) {
+      if ((l.status as string | null) !== 'Approved') continue
+      const key = (l.display_no as string | null) ?? ''
+      if (!key) continue
+      const cur = by.get(key)
+      const ref = ((l.bill_no as string | null) ?? '').trim() || null
+      const on = (l.abstract_dt as string | null) ?? null
+      if (cur) { cur.amount += Number(l.executed_amt ?? 0); if (on && (!cur.on || on < cur.on)) cur.on = on }
+      else by.set(key, { key, label: key, on, ref, amount: Number(l.executed_amt ?? 0), billed: !!ref && certified.has(ref.toLowerCase()) })
+    }
+    return [...by.values()].map(o => ({ ...o, amount: Math.round(o.amount * 100) / 100 }))
+      .sort((a, b) => (b.on ?? '').localeCompare(a.on ?? ''))
+  }
+  if (orderType === 'PO') {
+    const { data: po } = await sb.from('in4_purchase_orders').select('po_id').eq('po_no', no).maybeSingle()
+    if (!po) return []
+    const poId = po.po_id as number
+    const [{ data: grns }, { data: items }, { data: pay }] = await Promise.all([
+      sb.from('in4_grn_items').select('grn_id, grn_no, grn_dt, delivery_challan_no, material_id, received_qty, status').eq('po_id', poId),
+      sb.from('in4_po_items').select('material_id, net_rate').eq('po_id', poId),
+      sb.from('in4_supplier_pay_lines').select('grn_id').eq('po_id', poId),
+    ])
+    const rate = new Map((items ?? []).map(i => [i.material_id as number, Number(i.net_rate ?? 0)]))
+    const billed = new Set((pay ?? []).map(p => p.grn_id as number | null).filter((v): v is number => v != null))
+    const by = new Map<number, MeasurementOption>()
+    for (const g of grns ?? []) {
+      if ((g.status as string | null) !== 'Approved' || typeof g.grn_id !== 'number') continue
+      const amt = Number(g.received_qty ?? 0) * (rate.get(g.material_id as number) ?? 0)
+      const cur = by.get(g.grn_id)
+      if (cur) cur.amount += amt
+      else by.set(g.grn_id, {
+        key: String(g.grn_id), label: (g.grn_no as string | null) ?? `GRN ${g.grn_id}`,
+        on: (g.grn_dt as string | null) ?? null, ref: (g.delivery_challan_no as string | null) ?? null,
+        amount: amt, billed: billed.has(g.grn_id),
+      })
+    }
+    return [...by.values()].map(o => ({ ...o, amount: Math.round(o.amount * 100) / 100 }))
+      .sort((a, b) => (b.on ?? '').localeCompare(a.on ?? ''))
+  }
+  return []
+}
+
 export async function loadBillCalc(
   sb: SupabaseClient,
   bill: {
     orderType: string | null
     orderNo: string | null; billNo: string | null; raNo: string | null
     claimed: number; abstractNo: string | null
+    /** The goods receipt the Site Head picked (PO bills). */
+    grnId?: number | null
   },
 ): Promise<BillCalc | null> {
   const woNo = bill.orderNo?.trim()
@@ -154,9 +215,9 @@ export async function loadBillCalc(
   //
   const ladder = earlierBillsOn(history, mineCert?.certificateId ?? null)
 
-  const sheet = sheetKey
+  const sheet = sheetKey || bill.abstractNo
     ? await loadAbstractSheet(sb, {
-        woNo, invoiceNo: sheetKey,
+        woNo, invoiceNo: sheetKey ?? null, abstractNo: bill.abstractNo,
         // No certificate yet means no figure to reconcile against, and the
         // sheet must say so rather than implying a match.
         certified: mineCert?.certified ?? null,
@@ -199,7 +260,7 @@ export async function loadBillCalc(
  *  certificate against. See purchase.ts. */
 async function loadPoCalc(
   sb: SupabaseClient,
-  bill: { orderNo: string; billNo: string | null; claimed: number; abstractNo: string | null },
+  bill: { orderNo: string; billNo: string | null; claimed: number; abstractNo: string | null; grnId?: number | null },
 ): Promise<BillCalc | null> {
   const { data: poRow } = await sb.from('in4_purchase_orders')
     .select('po_id, po_value').eq('po_no', bill.orderNo).maybeSingle()
@@ -313,7 +374,7 @@ async function loadPoCalc(
         earlier: earlierLines,
         ladder,
       }).catch(() => null)
-    : await loadUnbilledGrn(sb, { poId, poValue: ordered, billedGrns, earlier: earlierLines, ladder }).catch(() => null)
+    : await loadUnbilledGrn(sb, { poId, poValue: ordered, billedGrns, grnId: bill.grnId ?? null, earlier: earlierLines, ladder }).catch(() => null)
 
   return {
     orderNo: bill.orderNo,
@@ -443,10 +504,11 @@ async function loadGrnSheet(
  *  for rather than showing an empty panel. */
 export async function loadAbstractSheet(
   sb: SupabaseClient,
-  opts: { woNo: string; invoiceNo: string | null; certified: number | null; ladder?: LadderBill[] },
+  opts: { woNo: string; invoiceNo: string | null; certified: number | null; ladder?: LadderBill[]; abstractNo?: string | null },
 ): Promise<AbstractSheet | null> {
   const key = opts.invoiceNo?.trim()
-  if (!key) return null
+  const picked = opts.abstractNo?.trim()
+  if (!key && !picked) return null
 
   const { data: wo } = await sb.from('in4_work_orders')
     .select('wo_id').eq('display_no', opts.woNo).maybeSingle()
@@ -470,7 +532,10 @@ export async function loadAbstractSheet(
   }))
 
   const same = (a: string | null, b: string) => (a ?? '').trim().toLowerCase() === b.toLowerCase()
-  const mine = rows.filter(r => same(r.billNo, key))
+  // The abstract the Site Head picked wins; the bill-number match is the
+  // fallback for bills raised before the picker existed.
+  const byPick = picked ? rows.filter(r => same(r.abstractNo, picked)) : []
+  const mine = byPick.length ? byPick : (key ? rows.filter(r => same(r.billNo, key)) : [])
   if (!mine.length) return null
 
   // Everything measured on this order BEFORE this abstract — that is what makes
@@ -623,6 +688,8 @@ async function loadUnbilledGrn(
   sb: SupabaseClient,
   opts: {
     poId: number; billedGrns: Set<number>; poValue?: number
+    /** Only this receipt, when the Site Head picked one. */
+    grnId?: number | null
     earlier?: Record<string, unknown>[]; ladder?: LadderBill[]
   },
 ): Promise<GrnSheet | null> {
@@ -631,7 +698,7 @@ async function loadUnbilledGrn(
     .eq('po_id', opts.poId)
 
   const open = ((grnData ?? []) as Record<string, unknown>[])
-    .filter(g => typeof g.grn_id === 'number' && !opts.billedGrns.has(g.grn_id))
+    .filter(g => typeof g.grn_id === 'number' && (opts.grnId != null ? g.grn_id === opts.grnId : !opts.billedGrns.has(g.grn_id)))
   if (!open.length) return null
 
   return loadGrnSheet(sb, {

@@ -33,6 +33,24 @@ export const NOTIFICATION_EVENTS: NotificationEventDef[] = [
     audience: 'Eligible approvers',
   },
   {
+    type: 'bb_bill_assigned',
+    label: 'Bills — a bill was assigned to you (Site Head)',
+    description: 'Billing entered a bill and named you as its Site Head. Make the abstract or goods receipt in IN4, pick it on the bill, and send it to the CT Disc Head.',
+    audience: 'The Site Head named at entry',
+  },
+  {
+    type: 'bb_bill_arrived',
+    label: 'Bills — a bill is on your desk',
+    description: 'A bill was forwarded to a desk you sit on, with the vendor, bill number, figure and who sent it. Also tells the Atm Head when Billing has raised the certificate in IN4.',
+    audience: 'The desk the bill moved to',
+  },
+  {
+    type: 'bb_in4_verdict',
+    label: 'Bills — IN4 approval checked against CT Hub',
+    description: 'The Atm Head approved the certificate in IN4. CT Hub compared IN4’s payable with the CT Head’s net and says whether they match, and by how much if not.',
+    audience: 'Atm Heads and CT Billing',
+  },
+  {
     type: 'bb_bill_sent_back',
     label: 'Bills — a bill was sent back to you',
     description: 'A desk further along returned a bill with a reason, which is compulsory to give. The people on the desk it went back to are told, with that reason, so a returned bill is not left resting until somebody thinks to look.',

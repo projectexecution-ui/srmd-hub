@@ -35,15 +35,22 @@ export interface StageDef {
  *    sometimes by them and sometimes by CT. They stay on the ladder because
  *    the money is still followed — but they are not our desks, so the days
  *    there are counted and never coloured as late. */
+/** Aksha, 10 Oct 2026: "Approve in IN4 only - it will match with CT Hub
+ *  working and inform us." The Atm Head no longer clicks here. After the CT
+ *  Head, Billing makes the certificate in IN4, the Atm Head approves it IN
+ *  IN4, and CT Hub reads that approval, compares IN4's payable with the CT
+ *  Head's net and tells the Atm Head and Billing whether they agree. So
+ *  `atm_approval` (a hub click) retires and `atm_in4` (a tracked step) is
+ *  back on the ladder, moved by the IN4 sweep, never by a button. */
 export const PIPELINE: StageDef[] = [
-  { key: 'submitted',    label: 'Entered',          desk: 'ERP entry team',           next: 'site_head',    tone: 'slate' },
-  { key: 'site_head',    label: 'Site Head',        desk: 'Site Head check',          next: 'disc_head',    tone: 'blue' },
-  { key: 'disc_head',    label: 'CT Disc Head',     desk: 'Civil / MEP discipline',   next: 'ct_head',      tone: 'indigo' },
-  { key: 'ct_head',      label: 'CT Head',          desk: 'CT Head verification',     next: 'atm_approval', tone: 'violet' },
-  { key: 'atm_approval', label: 'Atm approval',     desk: 'Atm Head',                 next: 'ct_billing',   tone: 'amber' },
-  { key: 'ct_billing',   label: 'CT Billing',       desk: 'Payment certificate (IN4)', next: 'trust',       tone: 'teal' },
-  { key: 'trust',        label: 'At Trust A/c',     desk: 'Entity Trust Accounts',    next: 'paid',         tone: 'blue', tracking: true },
-  { key: 'paid',         label: 'Paid',             desk: 'Done',                     tone: 'green',        tracking: true },
+  { key: 'submitted',    label: 'Entered',          desk: 'ERP entry team',            next: 'site_head',    tone: 'slate' },
+  { key: 'site_head',    label: 'Site Head',        desk: 'Site Head (owner)',         next: 'disc_head',    tone: 'blue' },
+  { key: 'disc_head',    label: 'CT Disc Head',     desk: 'Civil / MEP discipline',    next: 'ct_head',      tone: 'indigo' },
+  { key: 'ct_head',      label: 'CT Head',          desk: 'CT Head approval',          next: 'ct_billing',   tone: 'violet' },
+  { key: 'ct_billing',   label: 'CT Billing',       desk: 'Certificate in IN4',        next: 'atm_in4',      tone: 'teal' },
+  { key: 'atm_in4',      label: 'Atm approval (IN4)', desk: 'Atm Head, in IN4',        next: 'trust',        tone: 'amber', tracking: true },
+  { key: 'trust',        label: 'At Trust A/c',     desk: 'Entity Trust Accounts',     next: 'paid',         tone: 'blue', tracking: true },
+  { key: 'paid',         label: 'Paid',             desk: 'Done',                      tone: 'green',        tracking: true },
 ]
 
 export const OFF_PIPELINE: StageDef[] = [
@@ -55,7 +62,7 @@ export const OFF_PIPELINE: StageDef[] = [
  *  still resolvable, because a bill parked at one before the change must not
  *  render as a blank label. */
 export const LEGACY: StageDef[] = [
-  { key: 'atm_in4', label: 'Atm (IN4) — retired', desk: 'no longer used', tone: 'gray' },
+  { key: 'atm_approval', label: 'Atm approval (hub) — retired', desk: 'no longer used', tone: 'gray' },
 ]
 
 const ALL: Record<BbStage, StageDef> = Object.fromEntries(

@@ -83,6 +83,12 @@ export function BillForm({ projects, categories, in4Wos, in4Pos, in4Projects, se
   const [billDate, setBillDate] = useState('')
   const [claimed, setClaimed] = useState('')
   const [orderNoManual, setOrderNoManual] = useState('')
+  // Aksha, 10 Oct 2026: Billing names the Site Head who will process the
+  // bill; that person is told, and the bill lands on their desk at once.
+  const [ownerId, setOwnerId] = useState('')
+  const people = useMemo(
+    () => seed.people.map(([, p]) => p).sort((a, b) => a.name.localeCompare(b.name)),
+    [seed.people])
 
   const [maps, setMaps] = useState<BookingMaps>(() => hydrate(seed))
 
@@ -149,6 +155,7 @@ export function BillForm({ projects, categories, in4Wos, in4Pos, in4Projects, se
     }
     if (!contractor) { setErr(`Name the ${party}`); return }
     if (!(thisBill > 0)) { setErr('Enter what this bill is for'); return }
+    if (!ownerId) { setErr('Name the Site Head who will process this bill'); return }
     setBusy(true); setErr(null)
     const { data, error } = await supabase.rpc('bb_rpc_create_bill', {
       p: {
@@ -164,6 +171,7 @@ export function BillForm({ projects, categories, in4Wos, in4Pos, in4Projects, se
         bill_date: billDate || null, claimed_amount: thisBill, trust: trust || null,
         wo_value: woValue, paid_till_date: paidTill,
         in4_subproject_id: booking.subprojectId,
+        owner_id: ownerId,
       },
     })
     if (error) { setBusy(false); setErr(error.message); return }
@@ -263,6 +271,17 @@ export function BillForm({ projects, categories, in4Wos, in4Pos, in4Projects, se
           </div>
         </div>
 
+        <div className="mt-3">
+          <Label htmlFor="owner">Site Head who will process it *</Label>
+          <select id="owner" value={ownerId} onChange={e => setOwnerId(e.target.value)} className={sel}>
+            <option value="">— select —</option>
+            {people.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+          <p className="mt-1 text-[11px] text-gray-500">
+            The bill goes to this person&apos;s desk now and they are told. They make the abstract or goods receipt in IN4, pick it on the bill, and send it to the CT Disc Head.
+          </p>
+        </div>
+
         {raNo && (
           <p className="mt-2 text-xs text-gray-500">
             This will be <b className="font-mono text-gray-800">{raNo}</b> on that work order
@@ -352,8 +371,7 @@ export function BillForm({ projects, categories, in4Wos, in4Pos, in4Projects, se
             and waits. Saying so is the fix. Forwarding on create would skip a
             step the flow is meant to have. */}
         <p className="mt-2 text-xs text-gray-500">
-          It lands at <b>Entered</b>, your own desk, with the trail starting from this moment.
-          Open it and forward to the Site Head once the measurement sheet is attached.
+          It lands with the <b>Site Head</b> you named, who is told now. The trail starts from this moment.
         </p>
       </div>
     </Card>

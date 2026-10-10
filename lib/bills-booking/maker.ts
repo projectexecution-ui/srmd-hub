@@ -81,11 +81,13 @@ export interface TotalRow {
  *
  *  A percentage is always of the Sub Total (basic value) of THIS bill — the
  *  same base IN4 uses for retention. An amount is taken as typed. */
-export type DeductionKind = 'advance' | 'recovery' | 'debit'
+export type DeductionKind = 'advance' | 'recovery' | 'debit' | 'hold'
 export const DEDUCTION_LABELS: Record<DeductionKind, string> = {
   advance: 'Advance recovery',
   recovery: 'Other recovery',
   debit: 'Debit / deduction',
+  /** Aksha, 10 Oct 2026: an amount withheld from this bill, to be released later. */
+  hold: 'Hold',
 }
 export interface Deduction {
   kind: DeductionKind

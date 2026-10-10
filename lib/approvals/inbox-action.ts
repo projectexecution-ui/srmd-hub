@@ -39,6 +39,7 @@ const BILL_STAGE_ACTION: Record<string, string> = {
   disc_head:    'Check & forward',
   ct_head:      'Verify & forward',
   atm_approval: 'Approve',
+  atm_in4:      'Approve in IN4',
   ct_billing:   'Make the certificate',
   trust:        'With the Trust',
 }

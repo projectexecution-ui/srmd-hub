@@ -11,9 +11,9 @@ import { ActionBar } from './ActionBar'
 import { StatusTimeline } from './StatusTimeline'
 import { Documents, type DocRow, type RequiredDoc } from './Documents'
 import { PhoneSummary, type PhoneLine } from './PhoneSummary'
-import { AbstractNo } from './AbstractNo'
+import { MeasurementPicker } from './MeasurementPicker'
 import { Calculation } from './Calculation'
-import { loadBillCalc, loadMakerSeed, loadPoRates } from '@/lib/bills-booking/load-calc'
+import { loadBillCalc, loadMakerSeed, loadPoRates, loadMeasurementOptions } from '@/lib/bills-booking/load-calc'
 import { AbstractMaker } from './AbstractMaker'
 import { linesFromSheet, type Deduction } from '@/lib/bills-booking/maker'
 import { linesFromGrn } from '@/lib/bills-booking/purchase'
@@ -84,6 +84,7 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
   // sub-project, the same call the move gate and the notifier make.
   const { data: memberIds } = await supabase.rpc('bb_stage_members', {
     p_stage: stage, p_project: bill.project_id, p_disc: bill.discipline, p_subproject: bill.in4_subproject_id,
+    p_bill: bill.id,
   })
   const ids = (memberIds ?? []) as string[]
   let ownerNames: string[] = []
@@ -96,6 +97,22 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
   // decides the same way; this only decides what to draw.
   const canAct = meOnDesk || me.isAdmin || me.canEdit
   const canAttach = canAct
+
+  // The Site Head named at entry, and IN4's approved measurements to pick
+  // from (10 Oct 2026: picked from IN4's own list, never typed).
+  let ownerName: string | null = null
+  if (bill.owner_id) {
+    const { data: op } = await supabase.from('profiles').select('full_name, email').eq('id', bill.owner_id as string).maybeSingle()
+    ownerName = ((op?.full_name || op?.email) as string | undefined) ?? null
+  }
+  const pickStage = stage === 'site_head' || stage === 'disc_head'
+  const measureOptions = pickStage && (bill.order_type === 'WO' || bill.order_type === 'PO')
+    ? await loadMeasurementOptions(supabase, bill.order_type as string, bill.order_no as string | null).catch(() => [])
+    : []
+  const hasMeasurement = !!bill.abstract_no_in4 || bill.in4_grn_id != null
+  const measureCurrent = bill.order_type === 'PO'
+    ? (bill.in4_grn_id != null ? String(bill.in4_grn_id) : null)
+    : ((bill.abstract_no_in4 as string | null) ?? null)
 
   // Timeline (events ascending) + who moved each, and what they said.
   const asc: RawEvent[] = [...evs].reverse().map(e => {
@@ -130,6 +147,7 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
     raNo: bill.ra_no as string | null,
     claimed: Number(bill.claimed_amount ?? 0),
     abstractNo: bill.abstract_no_in4 as string | null,
+    grnId: (bill.in4_grn_id as number | null) ?? null,
   }).catch(() => null)
 
   const openStages = ['submitted', 'site_head', 'disc_head', 'ct_head']
@@ -214,7 +232,13 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
     ? segs.map(s => `${stageDef(s.stage).label} ${s.current ? (meOnDesk ? '· you' : '· here') : `${Math.round(s.days)}d${s.leftAction === 'send_back' ? ' · sent back' : ''}`}`).join(' → ')
     : null
 
-  const sheetPanels = (
+  // At Entered there is nothing to measure yet: the sheet appears once the
+  // bill is with the Site Head (Aksha, 10 Oct 2026).
+  const sheetPanels = stage === 'submitted' ? (
+    <Card className="p-4 text-sm text-gray-600">
+      The abstract or goods receipt sheet appears once the bill is with the Site Head, who makes it in IN4 and picks it here.
+    </Card>
+  ) : (
     <>
       {maker && (
         <AbstractMaker
@@ -302,6 +326,14 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
         </div>
       )}
 
+      {bill.verdict && (
+        <div className={`rounded-xl border px-4 py-3 text-sm ${bill.verdict === 'matched' ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : 'border-amber-200 bg-amber-50 text-amber-900'}`}>
+          <b>{bill.verdict === 'matched' ? 'IN4 approval matches CT Hub.' : 'IN4 approval differs from CT Hub.'}</b>{' '}
+          IN4 payable {formatINR(Number(bill.in4_payable ?? 0))} · CT Hub net {formatINR(Number(bill.sanctioned_net ?? bill.net_amount ?? 0))}
+          {bill.in4_approved_by ? ` · approved in IN4 by ${bill.in4_approved_by}` : ''}{bill.in4_approved_at ? ` on ${formatDate(bill.in4_approved_at as string)}` : ''}.
+        </div>
+      )}
+
       {/* The phone leads with the figure. */}
       <PhoneSummary
         figure={figure} figureLabel={figureLabel} claimed={claimed}
@@ -329,9 +361,11 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
           <Fact k="This bill" v={money(bill.claimed_amount)} />
           <Fact k="Certified" v={money(bill.certified_amount)} />
           <Fact k="Net payable" v={money(bill.net_amount)} strong={bill.net_amount != null} />
-          {canAct
-            ? <AbstractNo billId={bill.id as string} value={(bill.abstract_no_in4 as string | null) ?? null} stage={stage} />
-            : <Fact k="Abstract no (IN4)" v={(bill.abstract_no_in4 as string | null) || '—'} />}
+          <Fact k="Site Head (owner)" v={ownerName ?? '—'} />
+          {pickStage && (bill.order_type === 'WO' || bill.order_type === 'PO')
+            ? <MeasurementPicker billId={bill.id as string} kind={bill.order_type as 'WO' | 'PO'} options={measureOptions}
+                                 current={measureCurrent} canPick={canAct} billNo={(bill.bill_no as string | null) ?? null} />
+            : <Fact k={bill.order_type === 'PO' ? 'Goods receipt (IN4)' : 'Abstract no (IN4)'} v={(bill.abstract_no_in4 as string | null) || '—'} />}
           <Fact k="Trust" v={bill.trust || '—'} />
           <Fact k="Bill date" v={bill.bill_date ? formatDate(bill.bill_date as string) : '—'} />
           <Fact k="Project" v={project ? `${project.code} — ${project.name}` : (subprojectName ?? 'not in CT Hub')} />
@@ -419,7 +453,7 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
           netAmount={net} certified={certified} claimed={claimed}
           preHoldStage={(bill.pre_hold_stage as BbStage | null) ?? null}
           measured={measured} orderType={bill.order_type as string | null}
-          hasStampedBill={hasStampedBill} navCollapsed={navCollapsed}
+          hasStampedBill={hasStampedBill} hasMeasurement={hasMeasurement} navCollapsed={navCollapsed}
           undoUntil={undoUntil} undoWhat={undoWhat}
           reconciles={calc?.sheet?.reconciles ?? calc?.grn?.reconciles ?? null} />
       )}
