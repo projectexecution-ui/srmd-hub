@@ -40,7 +40,7 @@ export async function loadTransferTracker(opts: { projectId?: string } = {}): Pr
 
   let q = svc
     .from('cc_budget_transfers')
-    .select('id, project_id, status, amount, reason, from_discipline_id, from_sub_skill_id, to_discipline_id, to_sub_skill_id, raised_by, raised_at, ph_by, ph_at, atm_by, atm_at, trustee_by, trustee_at, in4_at, settle_note')
+    .select('id, project_id, status, amount, asked_amount, reason, from_discipline_id, from_sub_skill_id, to_discipline_id, to_sub_skill_id, raised_by, raised_at, ph_by, ph_at, atm_by, atm_at, trustee_by, trustee_at, in4_at, settle_note')
     .in('status', [...OPEN_TRANSFER_STATUSES])
   if (opts.projectId) q = q.eq('project_id', opts.projectId)
   const { data: transfers, error } = await q

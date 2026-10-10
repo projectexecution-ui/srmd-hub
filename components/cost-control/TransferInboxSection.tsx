@@ -13,6 +13,7 @@ import Link from 'next/link'
 import { ArrowLeftRight } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { formatINR, formatDate } from '@/lib/utils'
+import { amountChanged } from '@/lib/cost-control/transfers'
 import { TransferDecideActions } from './TransferDecideActions'
 
 export interface TransferInboxRow {
@@ -33,6 +34,10 @@ export interface TransferInboxRow {
   /** The CT Head's sign-off, shown to the Atm Head and the Trustee. */
   ph_by_name?: string | null
   ph_comment?: string | null
+  /** What the raiser asked for — differs once the CT Head changes it. */
+  asked_amount?: number | null
+  /** The most the CT Head may set; only on his step. */
+  max_amount?: number | null
 }
 
 export function TransferInboxSection({ rows }: { rows: TransferInboxRow[] }) {
@@ -67,6 +72,11 @@ export function TransferInboxSection({ rows }: { rows: TransferInboxRow[] }) {
                 {formatINR(Number(r.amount ?? 0))}
               </span>
             </div>
+            {amountChanged({ amount: Number(r.amount ?? 0), asked_amount: r.asked_amount }) && (
+              <p className="text-[11.5px] text-gray-600 tabular-nums">
+                Asked {formatINR(Number(r.asked_amount))} → CT Head set {formatINR(Number(r.amount ?? 0))}
+              </p>
+            )}
 
             {/* The movement, in the same naming the project screen uses. */}
             <p className="mt-1.5 text-[12.5px] text-gray-900">
@@ -100,6 +110,7 @@ export function TransferInboxSection({ rows }: { rows: TransferInboxRow[] }) {
                 projectId={r.project_id}
                 amount={Number(r.amount ?? 0)}
                 stage={r.stage}
+                maxAmount={r.max_amount ?? null}
                 fromLabel={r.from_label}
                 toLabel={r.to_label}
               />

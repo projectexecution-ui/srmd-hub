@@ -11,7 +11,7 @@
 import { ArrowLeftRight, TriangleAlert } from 'lucide-react'
 import { formatINR, formatDate } from '@/lib/utils'
 import {
-  isOpen, isMismatched, shortLabel, explain, chipClasses,
+  isOpen, isMismatched, shortLabel, explain, chipClasses, amountChanged,
   type ProjectTransfer,
 } from '@/lib/cost-control/transfers'
 import { WithdrawTransferButton } from './WithdrawTransferButton'
@@ -28,10 +28,12 @@ function Chip({ t }: { t: ProjectTransfer }) {
   )
 }
 
-function Row({ t, projectId, canWithdraw, decideAs }: {
+function Row({ t, projectId, canWithdraw, decideAs, decideMax = null }: {
   t: ProjectTransfer
   projectId: string
   canWithdraw: boolean
+  /** The most the CT Head may set, when he is the one deciding. */
+  decideMax?: number | null
   /** "CT Head" / "Atm Head" / "Trustee" when THIS viewer must decide it now, else null. */
   decideAs: string | null
 }) {
@@ -93,6 +95,7 @@ function Row({ t, projectId, canWithdraw, decideAs }: {
                 stage={decideAs}
                 fromLabel={t.from_label}
                 toLabel={t.to_label}
+                maxAmount={decideMax}
               />
             </div>
           )}
@@ -100,6 +103,9 @@ function Row({ t, projectId, canWithdraw, decideAs }: {
 
         <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
           <p className="text-[13px] font-bold tabular-nums text-gray-900">{formatINR(t.amount)}</p>
+          {amountChanged(t) && (
+            <p className="text-[10.5px] text-gray-500 tabular-nums">asked {formatINR(Number(t.asked_amount))}</p>
+          )}
           <Chip t={t} />
           {canWithdraw && (t.status === 'pending_ph' || t.status === 'pending_atm' || t.status === 'pending_trustee') && (
             <WithdrawTransferButton
@@ -114,13 +120,15 @@ function Row({ t, projectId, canWithdraw, decideAs }: {
 }
 
 export function TransferPanel({
-  transfers, projectId, decideStage = {},
+  transfers, projectId, decideStage = {}, decideMax = {},
 }: {
   transfers: ProjectTransfer[]
   projectId: string
   /** Transfer id → "CT Head" / "Atm Head" / "Trustee" for the ones this viewer may decide
    *  now (from cc_transfer_inbox, the same rule the approve call enforces). */
   decideStage?: Record<string, string>
+  /** Transfer id → the most the CT Head may set (his step only). */
+  decideMax?: Record<string, number>
 }) {
   if (transfers.length === 0) return null
 
@@ -144,7 +152,7 @@ export function TransferPanel({
       {open.length > 0 && (
         <div className="divide-y divide-indigo-200 bg-white/60">
           {open.map(t => (
-            <Row key={t.id} t={t} projectId={projectId} canWithdraw={t.raised_by_me} decideAs={decideStage[t.id] ?? null} />
+            <Row key={t.id} t={t} projectId={projectId} canWithdraw={t.raised_by_me} decideAs={decideStage[t.id] ?? null} decideMax={decideMax[t.id] ?? null} />
           ))}
         </div>
       )}

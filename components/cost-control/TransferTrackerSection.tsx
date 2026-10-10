@@ -50,6 +50,9 @@ export function TransferTrackerSection({
               </Link>
               <span className="text-[14px] font-bold tabular-nums text-gray-900">{formatINR(r.amount)}</span>
             </div>
+            {r.askedAmount != null && (
+              <p className="text-[11.5px] text-gray-600 tabular-nums">Asked {formatINR(r.askedAmount)} → CT Head set {formatINR(r.amount)}</p>
+            )}
 
             <p className="text-[12.5px] text-gray-900 break-words">
               <span className="text-gray-500">{r.fromLabel}</span>

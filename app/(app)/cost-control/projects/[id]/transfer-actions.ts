@@ -112,14 +112,21 @@ export async function approveTransfer(
   id: string,
   comment: string | null,
   projectId?: string,
+  /** The CT Head's figure, when he changes it. The database refuses it at any
+   *  other step, and above what is free to move on the line. */
+  amount?: number | null,
 ): Promise<Result> {
   await requirePermission('cost-control', 'view')
   if (!uuid.safeParse(id).success) return { ok: false, error: 'Invalid request' }
+  if (amount != null && !(Number.isFinite(amount) && amount > 0)) {
+    return { ok: false, error: 'Enter an amount to shift' }
+  }
 
   const supabase = await createClient()
   const { data, error } = await supabase.rpc('cc_transfer_approve', {
     p_id: id,
     p_comment: comment?.trim() || null,
+    p_amount: amount ?? null,
   })
   if (error) return { ok: false, error: speak(error, 'Could not approve it') }
 

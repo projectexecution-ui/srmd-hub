@@ -116,6 +116,15 @@ describe('buildTransferTracker', () => {
     expect(buildTransferTracker(input({ transfers: [base, other], viewer: { id: 'aksha', role: 'admin', isAdmin: true } }))).toHaveLength(2)
   })
 
+  it('shows what was asked when the CT Head set a different figure', () => {
+    const changed: TrackerTransfer = { ...base, status: 'pending_atm', amount: 18000, asked_amount: 21500 }
+    const [r] = buildTransferTracker(input({ transfers: [changed] }))
+    expect(r.amount).toBe(18000)
+    expect(r.askedAmount).toBe(21500)
+    const [same] = buildTransferTracker(input({ transfers: [{ ...base, asked_amount: 21500 }] }))
+    expect(same.askedAmount).toBeNull()
+  })
+
   it('puts the longest-waiting first', () => {
     const older: TrackerTransfer = { ...base, id: 'old', raised_at: new Date(T0 - 86_400_000).toISOString() }
     const rows = buildTransferTracker(input({ transfers: [base, older] }))

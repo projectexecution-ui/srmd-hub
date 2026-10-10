@@ -130,6 +130,7 @@ const INSTANT_RECIPIENTS: Record<string, RecipientSource> = {
   cc_transfer_rejected:  { kind: 'actor',     who: 'The person who requested the transfer' },
   cc_transfer_awaiting_in4: { kind: 'derived', who: 'The person with IN4 access' },
   cc_transfer_in4_done:  { kind: 'derived',   who: "The project's Atm Head" },
+  cc_transfer_amount_changed: { kind: 'actor', who: 'The person who requested the transfer' },
   cc_transfer_confirmed: { kind: 'actor',     who: 'The person who requested the transfer' },
   cc_transfer_mismatch:  { kind: 'derived',   who: 'The requester and the approver' },
   comment_mention:       { kind: 'actor',     who: 'The tagged person' },
@@ -144,7 +145,7 @@ const INSTANT_MODULE: Record<string, string> = {
   approval_pending: 'approvals', comment_mention: 'cost-control',
   sr_assigned: 'cost-control', sr_replied: 'cost-control', sr_closed: 'cost-control',
   cc_estimate_approved: 'cost-control', cc_ws_returned: 'cost-control', cc_budget_approved: 'cost-control', cc_budget_transfer: 'cost-control',
-  cc_transfer_pending: 'cost-control', cc_transfer_rejected: 'cost-control', cc_transfer_awaiting_in4: 'cost-control', cc_transfer_in4_done: 'cost-control', cc_transfer_confirmed: 'cost-control', cc_transfer_mismatch: 'cost-control',
+  cc_transfer_pending: 'cost-control', cc_transfer_rejected: 'cost-control', cc_transfer_awaiting_in4: 'cost-control', cc_transfer_in4_done: 'cost-control', cc_transfer_amount_changed: 'cost-control', cc_transfer_confirmed: 'cost-control', cc_transfer_mismatch: 'cost-control',
 }
 
 const COVERED_BY_SCHEDULE = new Set(SCHEDULED_MESSAGES.map(m => m.key))

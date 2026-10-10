@@ -325,7 +325,7 @@ export function RaiseTransferButton({
 
           <div className="px-4 sm:px-5 py-3 border-t border-gray-100 bg-gray-50/60 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3">
             <p className="text-[11.5px] text-gray-500">
-              Goes to the CT Head, then the Atm Head, then the Trustee, then IN4. No budget moves until it is
+              Goes to the CT Head (who can change the amount), then the Atm Head, then the Trustee, then IN4. No budget moves until it is
               approved and keyed in there.
             </p>
             <div className="flex flex-col-reverse sm:flex-row gap-2 sm:flex-shrink-0">

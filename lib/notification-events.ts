@@ -147,6 +147,13 @@ export const NOTIFICATION_EVENTS: NotificationEventDef[] = [
     audience: 'Billing & the Coordinator',
   },
   {
+    type: 'cc_transfer_amount_changed',
+    label: 'Budget shift amount changed by the CT Head',
+    description: 'The CT Head approved your budget shifting request at a different figure — up or down, within what '
+      + 'is free on the line — and said why. It carries on to the Atm Head at the new figure.',
+    audience: 'The person who raised it',
+  },
+  {
     type: 'cc_transfer_in4_done',
     label: 'Budget shifted in IN4',
     description: 'The Coordinator (or Billing) has made the approved shift in IN4 and pressed "Budget shifted in IN4". '

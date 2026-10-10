@@ -23,6 +23,7 @@ export interface TrackerTransfer {
   project_id: string
   status: string
   amount: number
+  asked_amount?: number | null
   reason: string | null
   from_discipline_id: string
   from_sub_skill_id: string
@@ -64,6 +65,8 @@ export interface TrackerRow {
   projectId: string
   projectLabel: string
   amount: number
+  /** What the raiser asked, when the CT Head set a different figure. */
+  askedAmount: number | null
   fromLabel: string
   toLabel: string
   reason: string | null
@@ -213,6 +216,7 @@ export function buildTransferTracker(input: TrackerInput): TrackerRow[] {
       projectId: t.project_id,
       projectLabel,
       amount: Number(t.amount) || 0,
+      askedAmount: t.asked_amount != null && Number(t.asked_amount) !== Number(t.amount) ? Number(t.asked_amount) : null,
       fromLabel: lineLabel(t.from_discipline_id, t.from_sub_skill_id, disc, sub),
       toLabel: lineLabel(t.to_discipline_id, t.to_sub_skill_id, disc, sub),
       reason: t.reason,

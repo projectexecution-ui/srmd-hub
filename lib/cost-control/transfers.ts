@@ -16,6 +16,8 @@ export interface ProjectTransfer {
   id: string
   status: TransferStatus
   amount: number
+  /** What the raiser asked for. Differs from amount when the CT Head changed it. */
+  asked_amount?: number | null
   reason: string
   from_discipline_id: string
   from_sub_skill_id: string
@@ -107,6 +109,11 @@ export function chipClasses(s: TransferStatus): string {
     case 'cancelled':
       return 'bg-gray-100 text-gray-600 border-gray-200'
   }
+}
+
+/** The CT Head set a different figure from the one asked for. */
+export function amountChanged(t: { amount: number; asked_amount?: number | null }): boolean {
+  return t.asked_amount != null && Number(t.asked_amount) !== Number(t.amount)
 }
 
 /** A transfer whose figures did not match IN4. It stays open on purpose, and

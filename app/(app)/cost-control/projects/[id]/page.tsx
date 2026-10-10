@@ -586,8 +586,11 @@ export default async function CostControlProjectDetailPage(
   const transfers = (transfersRes.data ?? []) as ProjectTransfer[]
   const canRaiseTransfer = canRaiseRes.data === true
   const transferDecideStage: Record<string, string> = {}
-  for (const r of ((transferInboxRes.data ?? []) as { id: string; project_id: string; stage: string }[])) {
-    if (r.project_id === project.id) transferDecideStage[r.id] = r.stage
+  const transferDecideMax: Record<string, number> = {}
+  for (const r of ((transferInboxRes.data ?? []) as { id: string; project_id: string; stage: string; max_amount?: number | null }[])) {
+    if (r.project_id !== project.id) continue
+    transferDecideStage[r.id] = r.stage
+    if (r.max_amount != null) transferDecideMax[r.id] = Number(r.max_amount)
   }
   // Lines already carrying an open request, so the row can say so instead
   // of inviting a second one on top of it.
@@ -1163,6 +1166,7 @@ export default async function CostControlProjectDetailPage(
         transfers={transfers}
         projectId={project.id}
         decideStage={transferDecideStage}
+        decideMax={transferDecideMax}
       />
       <PhoneViewProvider>
       {/* overflow-hidden only from lg: below it, an overflow-hidden ancestor
