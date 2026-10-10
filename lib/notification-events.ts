@@ -129,8 +129,8 @@ export const NOTIFICATION_EVENTS: NotificationEventDef[] = [
     label: 'Budget transfer waiting for your approval',
     description: 'Somebody has asked to move approved budget from one work category to another. '
       + 'It crosses two categories, so what each was approved to spend changes — which is why it '
-      + 'is signed rather than just done. Sent to whoever it is with now: the Atm Head first, then the Trustee.',
-    audience: 'The Atm Head, then the Trustee',
+      + 'is signed rather than just done. Sent to whoever it is with now: the CT Head first, then the Atm Head, then the Trustee.',
+    audience: 'The CT Head, then the Atm Head, then the Trustee',
   },
   {
     type: 'cc_transfer_rejected',
@@ -145,6 +145,13 @@ export const NOTIFICATION_EVENTS: NotificationEventDef[] = [
     description: 'Fully approved and now waiting on the ERP. CT Hub never writes a budget itself, so '
       + 'nothing changes until somebody makes the move in IN4 and ticks it in the billing queue.',
     audience: 'Billing & the Coordinator',
+  },
+  {
+    type: 'cc_transfer_in4_done',
+    label: 'Budget shifted in IN4',
+    description: 'The Coordinator (or Billing) has made the approved shift in IN4 and pressed "Budget shifted in IN4". '
+      + 'The Atm Head is told straight away; the next sync then checks both lines and closes the request.',
+    audience: 'The Atm Head who signed it, and the project’s named Atm Head',
   },
   {
     type: 'cc_transfer_confirmed',

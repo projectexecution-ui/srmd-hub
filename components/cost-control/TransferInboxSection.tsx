@@ -30,6 +30,9 @@ export interface TransferInboxRow {
   raised_by_name: string | null
   atm_by_name: string | null
   atm_comment: string | null
+  /** The CT Head's sign-off, shown to the Atm Head and the Trustee. */
+  ph_by_name?: string | null
+  ph_comment?: string | null
 }
 
 export function TransferInboxSection({ rows }: { rows: TransferInboxRow[] }) {
@@ -77,10 +80,18 @@ export function TransferInboxSection({ rows }: { rows: TransferInboxRow[] }) {
             <p className="mt-1.5 text-[11px] text-gray-500">
               Raised by {r.raised_by_name ?? '—'}
               {r.raised_at && <> · {formatDate(r.raised_at)}</>}
-              {r.atm_by_name && <> · Atm Head {r.atm_by_name} has signed it</>}
             </p>
-            {r.atm_comment && (
-              <p className="mt-1 text-[11.5px] text-gray-600 italic">{r.atm_comment}</p>
+            {/* What each one before you said — the comments are compulsory, so
+                the next person reads them before deciding. */}
+            {r.ph_by_name && (
+              <p className="mt-1 text-[11.5px] text-gray-700">
+                CT Head {r.ph_by_name}: <span className="italic text-gray-600">{r.ph_comment ?? '—'}</span>
+              </p>
+            )}
+            {r.atm_by_name && (
+              <p className="mt-1 text-[11.5px] text-gray-700">
+                Atm Head {r.atm_by_name}: <span className="italic text-gray-600">{r.atm_comment ?? '—'}</span>
+              </p>
             )}
 
             <div className="mt-2.5">

@@ -9,11 +9,13 @@
 // he signed. This tracker shows every open request, its step, who it is with
 // and how long it has waited.
 //
-// The four steps a request walks, from cc_transfer_* RPCs:
-//   pending_atm → pending_trustee → awaiting_in4 → awaiting_sync → confirmed
+// The five steps a request walks, from cc_transfer_* RPCs (CT Head added
+// first on 10 Oct 2026):
+//   pending_ph → pending_atm → pending_trustee → awaiting_in4 → awaiting_sync → confirmed
 // (rejected / cancelled close it.)
 
-export const OPEN_TRANSFER_STATUSES = ['pending_atm', 'pending_trustee', 'awaiting_in4', 'awaiting_sync'] as const
+export const OPEN_TRANSFER_STATUSES = ['pending_ph', 'pending_atm', 'pending_trustee', 'awaiting_in4', 'awaiting_sync'] as const
+export const TRANSFER_STEPS = OPEN_TRANSFER_STATUSES.length
 export type OpenTransferStatus = typeof OPEN_TRANSFER_STATUSES[number]
 
 export interface TrackerTransfer {
@@ -28,6 +30,8 @@ export interface TrackerTransfer {
   to_sub_skill_id: string
   raised_by: string | null
   raised_at: string | null
+  ph_by?: string | null
+  ph_at?: string | null
   atm_by: string | null
   atm_at: string | null
   trustee_by: string | null
@@ -41,7 +45,7 @@ export interface TrackerPerson { id: string; name: string; role: string | null; 
 export interface TrackerInput {
   transfers: TrackerTransfer[]
   projects: { id: string; code: string | null; name: string | null }[]
-  /** cc_project_approvers rows for these projects (role 'head' / 'founder'). */
+  /** cc_project_approvers rows for these projects (role 'project_head' / 'head' / 'founder'). */
   approvers: { project_id: string; user_id: string; role: string }[]
   /** Everyone, with their EFFECTIVE Cost Control role (override, else profile). */
   people: TrackerPerson[]
@@ -64,9 +68,9 @@ export interface TrackerRow {
   toLabel: string
   reason: string | null
   status: OpenTransferStatus
-  /** 1–4. */
+  /** 1–5. */
   step: number
-  /** "Atm Head", "Trustee", "Move in IN4", "IN4 sync check". */
+  /** "CT Head", "Atm Head", "Trustee", "Shift in IN4", "IN4 sync check". */
   stage: string
   /** Who has it now, in names — "Amit Gala", or "the next IN4 sync". */
   withWhom: string
@@ -90,14 +94,16 @@ export interface TrackerRow {
 }
 
 const STEP: Record<OpenTransferStatus, { n: number; stage: string }> = {
-  pending_atm:     { n: 1, stage: 'Atm Head' },
-  pending_trustee: { n: 2, stage: 'Trustee' },
-  awaiting_in4:    { n: 3, stage: 'Move in IN4' },
-  awaiting_sync:   { n: 4, stage: 'IN4 sync check' },
+  pending_ph:      { n: 1, stage: 'CT Head' },
+  pending_atm:     { n: 2, stage: 'Atm Head' },
+  pending_trustee: { n: 3, stage: 'Trustee' },
+  awaiting_in4:    { n: 4, stage: 'Shift in IN4' },
+  awaiting_sync:   { n: 5, stage: 'IN4 sync check' },
 }
 const STEPS_AFTER: Record<OpenTransferStatus, string[]> = {
-  pending_atm:     ['Trustee', 'move in IN4', 'IN4 sync check'],
-  pending_trustee: ['move in IN4', 'IN4 sync check'],
+  pending_ph:      ['Atm Head', 'Trustee', 'shift in IN4', 'IN4 sync check'],
+  pending_atm:     ['Trustee', 'shift in IN4', 'IN4 sync check'],
+  pending_trustee: ['shift in IN4', 'IN4 sync check'],
   awaiting_in4:    ['IN4 sync check'],
   awaiting_sync:   [],
 }
@@ -143,17 +149,19 @@ export function buildTransferTracker(input: TrackerInput): TrackerRow[] {
   const person = new Map(input.people.map(p => [p.id, p]))
   const active = input.people.filter(p => p.active)
 
+  const phsOf = new Map<string, TrackerPerson[]>()
   const headsOf = new Map<string, TrackerPerson[]>()
   const foundersOf = new Map<string, TrackerPerson[]>()
   for (const a of input.approvers) {
     const p = person.get(a.user_id)
     if (!p) continue
-    const map = a.role === 'head' ? headsOf : a.role === 'founder' ? foundersOf : null
+    const map = a.role === 'project_head' ? phsOf : a.role === 'head' ? headsOf : a.role === 'founder' ? foundersOf : null
     if (!map) continue
     map.set(a.project_id, [...(map.get(a.project_id) ?? []), p])
   }
   const headProjects = new Set(input.approvers.filter(a => a.role === 'head' && a.user_id === viewer.id).map(a => a.project_id))
   const projectsWithHead = new Set(input.approvers.filter(a => a.role === 'head').map(a => a.project_id))
+  const allPHs = active.filter(p => p.role === 'project_head')
   const allHeads = active.filter(p => p.role === 'head')
   const allFounders = active.filter(p => p.role === 'founder')
   const in4People = active.filter(p => p.role === 'billing' || p.role === 'coordinator')
@@ -167,12 +175,15 @@ export function buildTransferTracker(input: TrackerInput): TrackerRow[] {
 
     let withWhom: string
     let since: string | null
-    if (t.status === 'pending_atm') {
-      withWhom = names(headsOf.get(t.project_id) ?? allHeads) || 'the Atm Head'
+    if (t.status === 'pending_ph') {
+      withWhom = names(phsOf.get(t.project_id) ?? allPHs) || 'the CT Head'
       since = t.raised_at
+    } else if (t.status === 'pending_atm') {
+      withWhom = names(headsOf.get(t.project_id) ?? allHeads) || 'the Atm Head'
+      since = t.ph_at ?? t.raised_at
     } else if (t.status === 'pending_trustee') {
       withWhom = names(foundersOf.get(t.project_id) ?? allFounders) || 'the Trustee'
-      since = t.atm_at ?? t.raised_at
+      since = t.atm_at ?? t.ph_at ?? t.raised_at
     } else if (t.status === 'awaiting_in4') {
       withWhom = names(in4People) || 'Billing'
       since = t.trustee_at ?? t.atm_at ?? t.raised_at
@@ -186,7 +197,7 @@ export function buildTransferTracker(input: TrackerInput): TrackerRow[] {
     const waitedHours = Math.floor(waitedMs / 3_600_000)
     const waitedDays = Math.floor(waitedMs / 86_400_000)
 
-    const mine = (t.status === 'pending_atm' || t.status === 'pending_trustee')
+    const mine = (t.status === 'pending_ph' || t.status === 'pending_atm' || t.status === 'pending_trustee')
       ? input.myApprovalIds.has(t.id)
       : t.status === 'awaiting_in4' ? canKeyIn4 : false
     const actionHref = !mine ? null

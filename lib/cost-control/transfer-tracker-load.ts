@@ -40,7 +40,7 @@ export async function loadTransferTracker(opts: { projectId?: string } = {}): Pr
 
   let q = svc
     .from('cc_budget_transfers')
-    .select('id, project_id, status, amount, reason, from_discipline_id, from_sub_skill_id, to_discipline_id, to_sub_skill_id, raised_by, raised_at, atm_by, atm_at, trustee_by, trustee_at, in4_at, settle_note')
+    .select('id, project_id, status, amount, reason, from_discipline_id, from_sub_skill_id, to_discipline_id, to_sub_skill_id, raised_by, raised_at, ph_by, ph_at, atm_by, atm_at, trustee_by, trustee_at, in4_at, settle_note')
     .in('status', [...OPEN_TRANSFER_STATUSES])
   if (opts.projectId) q = q.eq('project_id', opts.projectId)
   const { data: transfers, error } = await q
@@ -54,7 +54,7 @@ export async function loadTransferTracker(opts: { projectId?: string } = {}): Pr
 
   const [projects, approvers, profiles, overrides, discs, subs, inbox] = await Promise.all([
     svc.from('projects').select('id, code, name').in('id', projIds),
-    svc.from('cc_project_approvers').select('project_id, user_id, role').in('project_id', projIds).in('role', ['head', 'founder']),
+    svc.from('cc_project_approvers').select('project_id, user_id, role').in('project_id', projIds).in('role', ['project_head', 'head', 'founder']),
     svc.from('profiles').select('id, full_name, name, email, role, is_active'),
     svc.from('user_module_roles').select('user_id, role').eq('module_slug', 'cost-control'),
     svc.from('cc_disciplines').select('id, code, name').in('id', discIds),

@@ -4,7 +4,7 @@
 // Trustee could have a transfer waiting and a home that said "all caught up"
 // (Aksha, 10 Oct 2026). Two sources, both already scoped to the viewer by the
 // database:
-//   • cc_transfer_inbox    — Atm Head / Trustee approvals (same rule as approve)
+//   • cc_transfer_inbox    — CT Head / Atm Head / Trustee approvals (same rule as approve)
 //   • cc_transfer_in4_queue — "move it in IN4", for Billing and the Coordinator
 //     (it refuses everyone else, which reads here as "nothing for you").
 
@@ -54,7 +54,7 @@ export function transferInboxItems(approvals: TransferApprovalRow[], in4: Transf
       module_slug: 'cost-control',
       doc_type: 'cc_budget_transfer',
       doc_id: r.id,
-      doc_no: 'Budget shift · approved, move it in IN4',
+      doc_no: 'Budget shift · approved, shift it in IN4',
       doc_url: '/cost-control/billing',
       next_stage: 'transfer_in4',
       project_code: r.project_code,

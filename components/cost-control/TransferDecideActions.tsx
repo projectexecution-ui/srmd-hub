@@ -1,9 +1,10 @@
 'use client'
 // Approving or turning down a budget transfer, from the one approvals inbox.
 //
-// Approve takes an optional note; turning it down REQUIRES a reason, because
-// the person who raised it has to learn what to change rather than watching a
-// request go quiet. Both are enforced again in the database.
+// The CT Head and the Atm Head must write a comment to approve (Aksha, 10 Oct
+// 2026); the Trustee's note is optional. Turning down always REQUIRES a
+// reason, because the person who raised it has to learn what to change rather
+// than watching a request go quiet. All of it is enforced again in the database.
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
@@ -20,7 +21,7 @@ export function TransferDecideActions({
   id: string
   projectId: string
   amount: number
-  /** "Atm Head" or "Trustee" — what signing as means at this point. */
+  /** "CT Head", "Atm Head" or "Trustee" — what signing as means at this point. */
   stage: string
   fromLabel: string
   toLabel: string
@@ -30,6 +31,8 @@ export function TransferDecideActions({
   const [text, setText] = useState('')
   const [err, setErr] = useState<string | null>(null)
   const [pending, start] = useTransition()
+  // Compulsory comment on approval at these two steps.
+  const noteRequired = stage === 'CT Head' || stage === 'Atm Head'
 
   const run = (kind: 'approve' | 'reject') => {
     start(async () => {
@@ -40,8 +43,10 @@ export function TransferDecideActions({
       if (!r.ok) { setErr(r.error); return }
       toast.success(kind === 'approve'
         ? (r.status === 'awaiting_in4'
-            ? `${formatINR(amount)} approved — now with Billing to key into IN4`
-            : `${formatINR(amount)} approved — now with the Trustee`)
+            ? `${formatINR(amount)} approved — now with the Coordinator to shift in IN4`
+            : r.status === 'pending_atm'
+              ? `${formatINR(amount)} approved — now with the Atm Head`
+              : `${formatINR(amount)} approved — now with the Trustee`)
         : 'Turned down, and the person who raised it has been told')
       setMode('idle'); setText('')
       router.refresh()
@@ -82,8 +87,13 @@ export function TransferDecideActions({
         autoFocus
         placeholder={rejecting
           ? 'Why is it not approved? (required)'
-          : 'Anything to note with your approval (optional)'}
+          : noteRequired
+            ? 'Your comment (required) — what you checked and why it is fine'
+            : 'Anything to note with your approval (optional)'}
       />
+      {!rejecting && noteRequired && !text.trim() && !err && (
+        <p className="text-[11.5px] text-amber-800">A comment is compulsory for the {stage} — write one to approve.</p>
+      )}
       {err && <p className="text-[12px] font-semibold text-rose-700">{err}</p>}
       <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
         <Button
@@ -96,7 +106,7 @@ export function TransferDecideActions({
         <Button
           variant={rejecting ? 'destructive' : 'default'}
           onClick={() => run(mode)}
-          disabled={pending || (rejecting && !text.trim())}
+          disabled={pending || ((rejecting || noteRequired) && !text.trim())}
           className="w-full sm:w-auto"
         >
           {pending

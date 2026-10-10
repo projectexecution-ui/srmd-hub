@@ -171,7 +171,7 @@ async function TransfersPanel({ projectId }: { projectId: string }) {
   const rows = ((data ?? []) as TransferInboxRow[]).filter(t => t.project_id === projectId)
   // Where every other open request on this project is, and who has it.
   const tracker = await loadTransferTracker({ projectId })
-  const trackerRows = tracker.rows.filter(r => !(r.mine && (r.status === 'pending_atm' || r.status === 'pending_trustee')))
+  const trackerRows = tracker.rows.filter(r => !(r.mine && (r.status === 'pending_ph' || r.status === 'pending_atm' || r.status === 'pending_trustee')))
 
   return (
     <div className="space-y-3 max-w-4xl">

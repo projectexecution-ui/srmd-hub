@@ -2,16 +2,18 @@ import { describe, it, expect } from 'vitest'
 import { buildTransferTracker, waitedLabel, type TrackerInput, type TrackerTransfer } from './transfer-tracker'
 
 // The real request of 10 Oct 2026: Parimal raised ₹21,500 on AB at 11:44 IST,
-// 702 Wiring → 803 Sewage Line, waiting on Amit Gala (AB's named Atm Head).
+// 702 Wiring → 803 Sewage Line. Since the CT Head step (same day) it waits
+// first on Mayank Adhvaryoo (AB's named Project Head = CT Head), then Amit Gala.
 const T0 = Date.parse('2026-10-10T06:14:31Z')
 const base: TrackerTransfer = {
-  id: 't1', project_id: 'pAB', status: 'pending_atm', amount: 21500, reason: 'Sewage line short',
+  id: 't1', project_id: 'pAB', status: 'pending_ph', amount: 21500, reason: 'Sewage line short',
   from_discipline_id: 'd07', from_sub_skill_id: 's702', to_discipline_id: 'd08', to_sub_skill_id: 's803',
   raised_by: 'parimal', raised_at: new Date(T0).toISOString(), atm_by: null, atm_at: null,
   trustee_by: null, trustee_at: null, in4_at: null, settle_note: null,
 }
 const people = [
   { id: 'parimal', name: 'Parimal Srmd', role: 'coordinator', active: true },
+  { id: 'mayank', name: 'Mayank Adhvaryoo', role: 'project_head', active: true },
   { id: 'amit', name: 'Amit Gala', role: 'head', active: true },
   { id: 'akshay', name: 'Akshay Atmarpit', role: 'head', active: true },
   { id: 'chirag', name: 'Chirag Shah', role: 'founder', active: true },
@@ -20,7 +22,7 @@ const people = [
 const input = (over: Partial<TrackerInput> = {}): TrackerInput => ({
   transfers: [base],
   projects: [{ id: 'pAB', code: 'AB', name: 'Admin Block Full Building' }, { id: 'pNGH', code: 'NGH C', name: 'NGH C' }],
-  approvers: [{ project_id: 'pAB', user_id: 'amit', role: 'head' }, { project_id: 'pNGH', user_id: 'akshay', role: 'head' }],
+  approvers: [{ project_id: 'pAB', user_id: 'mayank', role: 'project_head' }, { project_id: 'pAB', user_id: 'amit', role: 'head' }, { project_id: 'pNGH', user_id: 'akshay', role: 'head' }],
   people,
   disciplines: [{ id: 'd07', code: '07', name: 'Electrical Works' }, { id: 'd08', code: '08', name: 'Plumbing Works' }],
   subSkills: [{ id: 's702', code: '702', name: 'Electrical Conducting & Wiring Works' }, { id: 's803', code: '803', name: 'Sewage Line' }],
@@ -31,23 +33,39 @@ const input = (over: Partial<TrackerInput> = {}): TrackerInput => ({
 })
 
 describe('buildTransferTracker', () => {
-  it('shows Parimal his own request: step 1, with Amit Gala, 3 h', () => {
+  it('shows Parimal his own request: step 1 of 5, with the CT Head Mayank, 3 h', () => {
     const [r] = buildTransferTracker(input())
     expect(r.projectLabel).toBe('AB · Admin Block Full Building')
     expect(r.step).toBe(1)
-    expect(r.stage).toBe('Atm Head')
-    expect(r.withWhom).toBe('Amit Gala')
+    expect(r.stage).toBe('CT Head')
+    expect(r.withWhom).toBe('Mayank Adhvaryoo')
     expect(waitedLabel(r)).toBe('3 h')
     expect(r.stuck).toBe(false)
     expect(r.raisedBy).toBe('Parimal Srmd')
     expect(r.fromLabel).toBe('07 Electrical Works › 702 Electrical Conducting & Wiring Works')
     expect(r.toLabel).toBe('08 Plumbing Works › 803 Sewage Line')
-    expect(r.next).toEqual(['Trustee', 'move in IN4', 'IN4 sync check'])
+    expect(r.next).toEqual(['Atm Head', 'Trustee', 'shift in IN4', 'IN4 sync check'])
     expect(r.mine).toBe(false)
   })
 
+  it('after the CT Head signs: step 2, with Amit Gala, counted from the CT Head sign-off', () => {
+    const atAtm: TrackerTransfer = { ...base, status: 'pending_atm', ph_by: 'mayank', ph_at: new Date(T0 + 3_600_000).toISOString() }
+    const [r] = buildTransferTracker(input({ transfers: [atAtm] }))
+    expect(r.step).toBe(2)
+    expect(r.stage).toBe('Atm Head')
+    expect(r.withWhom).toBe('Amit Gala')
+    expect(r.since).toBe(atAtm.ph_at)
+    expect(waitedLabel(r)).toBe('2 h')
+  })
+
+  it('names every Project Head when the project has no named CT Head', () => {
+    const noPh: TrackerTransfer = { ...base, project_id: 'pNGH' }
+    const [r] = buildTransferTracker(input({ transfers: [noPh] }))
+    expect(r.withWhom).toBe('Mayank Adhvaryoo')
+  })
+
   it('marks it the Atm Head\'s own when he may approve it, and points him to the buttons', () => {
-    const [r] = buildTransferTracker(input({ viewer: { id: 'amit', role: 'head', isAdmin: false }, myApprovalIds: new Set(['t1']) }))
+    const [r] = buildTransferTracker(input({ transfers: [{ ...base, status: 'pending_atm' }], viewer: { id: 'amit', role: 'head', isAdmin: false }, myApprovalIds: new Set(['t1']) }))
     expect(r.mine).toBe(true)
     expect(r.actionHref).toBe('/cost-control/approvals')
   })
@@ -70,7 +88,8 @@ describe('buildTransferTracker', () => {
   it('names Billing / the Coordinator for the IN4 step and makes it Parimal\'s to do', () => {
     const atIn4: TrackerTransfer = { ...base, status: 'awaiting_in4', trustee_at: new Date(T0).toISOString() }
     const [r] = buildTransferTracker(input({ transfers: [atIn4], now: T0 + 3 * 86_400_000 }))
-    expect(r.stage).toBe('Move in IN4')
+    expect(r.stage).toBe('Shift in IN4')
+    expect(r.step).toBe(4)
     expect(r.withWhom).toBe('Parimal Srmd')
     expect(r.mine).toBe(true)
     expect(r.actionHref).toBe('/cost-control/billing')

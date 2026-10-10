@@ -29,11 +29,11 @@ export function MarkTransferMovedButton({
 
   const onClick = async () => {
     const ok = await confirm({
-      title: 'Moved in IN4?',
-      message: `Confirm you have moved ${formatINR(amount)} in IN4 — out of ${fromLabel} and into ${toLabel}.\n\n`
-        + 'The next sync checks both lines against this. If they do not match, the request '
-        + 'stays open and says what actually moved, so tick this only once the change is really in.',
-      confirmLabel: 'Moved in IN4',
+      title: 'Budget shifted in IN4?',
+      message: `Confirm you have shifted ${formatINR(amount)} in IN4 — out of ${fromLabel} and into ${toLabel}.\n\n`
+        + 'The Atm Head is told. The next sync checks both lines against this; if they do not match, '
+        + 'the request stays open and says what actually moved, so press this only once the change is really in.',
+      confirmLabel: 'Budget shifted in IN4',
     })
     if (!ok) return
     start(async () => {
@@ -42,7 +42,7 @@ export function MarkTransferMovedButton({
       if (!r.ok) { setErr(r.error); return }
       toast.success(r.status === 'confirmed'
         ? `${formatINR(amount)} confirmed — IN4 already shows both lines moved`
-        : `Recorded — the next sync will check IN4 and close it`)
+        : `Recorded and the Atm Head told — the next sync will check IN4 and close it`)
       router.refresh()
     })
   }
@@ -58,7 +58,7 @@ export function MarkTransferMovedButton({
           type="button" onClick={onClick} disabled={pending}
           className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11.5px] font-semibold border border-emerald-300 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 whitespace-nowrap"
         >
-          {label} Moved in IN4
+          {label} Budget shifted in IN4
         </button>
         {err && <span className="text-[10.5px] font-semibold text-rose-700 max-w-[200px] leading-tight text-right">{err}</span>}
       </span>
@@ -71,7 +71,7 @@ export function MarkTransferMovedButton({
         type="button" onClick={onClick} disabled={pending}
         className="flex w-full items-center justify-center gap-1.5 min-h-[44px] rounded-lg border border-emerald-300 bg-emerald-50 text-sm font-semibold text-emerald-800 disabled:opacity-50"
       >
-        {label} Moved in IN4
+        {label} Budget shifted in IN4
       </button>
       {err && <p className="mt-1.5 text-[11px] font-semibold text-rose-700">{err}</p>}
     </div>

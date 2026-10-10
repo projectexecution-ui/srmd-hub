@@ -87,7 +87,7 @@ export async function TransferQueue() {
         </p>
         <p className="text-xs text-gray-500 mt-0.5">
           {todo.length > 0
-            ? <>{todo.length} approved transfer{todo.length === 1 ? '' : 's'} · <b className="text-indigo-800">{formatINR(todoTotal)}</b> to move in IN4, then tick it here.</>
+            ? <>{todo.length} approved transfer{todo.length === 1 ? '' : 's'} · <b className="text-indigo-800">{formatINR(todoTotal)}</b> to shift in IN4, then press “Budget shifted in IN4”.</>
             : <>Nothing new to key in.</>}
           {waiting.length > 0 && <> {waiting.length} already ticked, waiting for a sync to match IN4.</>}
         </p>

@@ -32,7 +32,7 @@ function Row({ t, projectId, canWithdraw, decideAs }: {
   t: ProjectTransfer
   projectId: string
   canWithdraw: boolean
-  /** "Atm Head" / "Trustee" when THIS viewer must decide it now, else null. */
+  /** "CT Head" / "Atm Head" / "Trustee" when THIS viewer must decide it now, else null. */
   decideAs: string | null
 }) {
   const mismatch = isMismatched(t)
@@ -52,14 +52,19 @@ function Row({ t, projectId, canWithdraw, decideAs }: {
           <p className="mt-1.5 text-[11px] text-gray-500">
             Raised by {t.raised_by_name ?? '—'}
             {t.raised_at && <> · {formatDate(t.raised_at)}</>}
+            {t.ph_at && <> → CT Head {t.ph_by_name ?? ''} {formatDate(t.ph_at)}</>}
             {t.atm_at && <> → Atm Head {t.atm_by_name ?? ''} {formatDate(t.atm_at)}</>}
             {t.trustee_at && <> → Trustee {t.trustee_by_name ?? ''} {formatDate(t.trustee_at)}</>}
-            {t.in4_at && <> → IN4 {t.in4_by_name ?? ''} {formatDate(t.in4_at)}</>}
+            {t.in4_at && <> → Shifted in IN4 {t.in4_by_name ?? ''} {formatDate(t.in4_at)}</>}
           </p>
 
-          {(t.atm_comment || t.trustee_comment) && (
+          {(t.ph_comment || t.atm_comment || t.trustee_comment) && (
             <p className="mt-1 text-[11.5px] text-gray-600 italic">
-              {[t.atm_comment, t.trustee_comment].filter(Boolean).join(' · ')}
+              {[
+                t.ph_comment && `CT Head: ${t.ph_comment}`,
+                t.atm_comment && `Atm Head: ${t.atm_comment}`,
+                t.trustee_comment && `Trustee: ${t.trustee_comment}`,
+              ].filter(Boolean).join(' · ')}
             </p>
           )}
 
@@ -96,7 +101,7 @@ function Row({ t, projectId, canWithdraw, decideAs }: {
         <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
           <p className="text-[13px] font-bold tabular-nums text-gray-900">{formatINR(t.amount)}</p>
           <Chip t={t} />
-          {canWithdraw && (t.status === 'pending_atm' || t.status === 'pending_trustee') && (
+          {canWithdraw && (t.status === 'pending_ph' || t.status === 'pending_atm' || t.status === 'pending_trustee') && (
             <WithdrawTransferButton
               id={t.id} projectId={projectId}
               amount={t.amount} fromLabel={t.from_label}
@@ -113,7 +118,7 @@ export function TransferPanel({
 }: {
   transfers: ProjectTransfer[]
   projectId: string
-  /** Transfer id → "Atm Head" / "Trustee" for the ones this viewer may decide
+  /** Transfer id → "CT Head" / "Atm Head" / "Trustee" for the ones this viewer may decide
    *  now (from cc_transfer_inbox, the same rule the approve call enforces). */
   decideStage?: Record<string, string>
 }) {

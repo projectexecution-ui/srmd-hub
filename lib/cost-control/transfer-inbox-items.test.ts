@@ -24,7 +24,7 @@ describe('transferInboxItems', () => {
     ])
     expect(items.map(i => i.doc_id)).toEqual(['a'])
     expect(items[0].doc_url).toBe('/cost-control/billing')
-    expect(inboxActionLabel(items[0].next_stage)).toBe('Move in IN4')
+    expect(inboxActionLabel(items[0].next_stage)).toBe('Shift in IN4')
   })
 
   it('reads the sub-category out of a full line label', () => {

@@ -8,7 +8,7 @@ import Link from 'next/link'
 import { ArrowLeftRight, ArrowRight, TriangleAlert } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { formatINR, formatDateTime } from '@/lib/utils'
-import { waitedLabel, type TrackerRow } from '@/lib/cost-control/transfer-tracker'
+import { waitedLabel, TRANSFER_STEPS, type TrackerRow } from '@/lib/cost-control/transfer-tracker'
 
 export function TransferTrackerSection({
   rows, title = 'Budget shifting — where each request is', error,
@@ -59,7 +59,7 @@ export function TransferTrackerSection({
 
             {/* Where it is — the line this whole block exists for. */}
             <p className="text-[12.5px] text-gray-800">
-              <span className="text-gray-500">Step {r.step} of 4 · </span>
+              <span className="text-gray-500">Step {r.step} of {TRANSFER_STEPS} · </span>
               <b>With {r.stage === 'IN4 sync check' ? r.withWhom : `${r.stage}: ${r.withWhom}`}</b>
               <span className={r.stuck ? 'text-rose-700 font-semibold' : 'text-gray-500'}>
                 {' '}· {waitedLabel(r)}{r.since ? ` (since ${formatDateTime(r.since)})` : ''}
@@ -80,7 +80,7 @@ export function TransferTrackerSection({
 
             {r.mine && r.actionHref && (
               <Link href={r.actionHref} className="inline-flex items-center gap-1 text-[12px] font-semibold text-emerald-700 hover:underline min-h-[32px]">
-                Waiting on you — {r.status === 'awaiting_in4' ? 'record the IN4 move' : 'approve or turn down'} <ArrowRight className="h-3 w-3" />
+                Waiting on you — {r.status === 'awaiting_in4' ? 'record "Budget shifted in IN4"' : 'approve or turn down'} <ArrowRight className="h-3 w-3" />
               </Link>
             )}
           </div>

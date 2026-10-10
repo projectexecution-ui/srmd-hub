@@ -91,7 +91,7 @@ export default async function ApprovalsInboxPage({
   // The ones waiting on THIS person to approve are already above, with their
   // buttons, so they are not listed twice.
   const tracker = await loadTransferTracker()
-  const trackerRows = tracker.rows.filter(r => !(r.mine && (r.status === 'pending_atm' || r.status === 'pending_trustee')))
+  const trackerRows = tracker.rows.filter(r => !(r.mine && (r.status === 'pending_ph' || r.status === 'pending_atm' || r.status === 'pending_trustee')))
 
   return (
     <div className="p-4 md:p-6 max-w-4xl mx-auto space-y-4">

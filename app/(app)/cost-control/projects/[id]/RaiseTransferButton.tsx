@@ -313,7 +313,7 @@ export function RaiseTransferButton({
                     placeholder="e.g. Steel Works is over by 4,03,206 against the approved rate; High Side has spare uncommitted budget."
                   />
                   <p className="text-[11.5px] text-gray-500">
-                    This is what the Atm Head, the Trustee and anyone reading either line later
+                    This is what the CT Head, the Atm Head, the Trustee and anyone reading either line later
                     will see. Say what changed, not just that money is needed.
                   </p>
                 </div>
@@ -325,7 +325,7 @@ export function RaiseTransferButton({
 
           <div className="px-4 sm:px-5 py-3 border-t border-gray-100 bg-gray-50/60 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3">
             <p className="text-[11.5px] text-gray-500">
-              Goes to the Atm Head, then the Trustee, then IN4. No budget moves until it is
+              Goes to the CT Head, then the Atm Head, then the Trustee, then IN4. No budget moves until it is
               approved and keyed in there.
             </p>
             <div className="flex flex-col-reverse sm:flex-row gap-2 sm:flex-shrink-0">
