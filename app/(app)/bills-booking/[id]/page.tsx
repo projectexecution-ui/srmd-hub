@@ -225,10 +225,13 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
   const billedBefore = calc ? Math.max(0, calc.history.billedGross - thisGross) : (bill.paid_till_date as number | null) ?? null
   const leftAfter = woValue != null && billedBefore != null ? woValue - billedBefore - claimed : null
   const overrun = (calc?.sheet?.rows ?? []).filter(r => r.overrun).map(r => ({ item: r.item, cum: r.cumulativeQty, ordered: r.orderedQty, uom: r.uom }))
+  // The sheet now lists every line on the order (11 Oct 2026); the phone card
+  // is about THIS bill, so it counts only the lines this bill measured.
+  const thisBillRows = (calc?.sheet?.rows ?? []).filter(r => r.thisQty !== 0)
   const phoneLines: PhoneLine[] = calc?.sheet
-    ? calc.sheet.rows.slice(0, 4).map(r => ({ item: r.item, qty: r.thisQty, uom: r.uom, amt: r.thisAmt }))
+    ? thisBillRows.slice(0, 4).map(r => ({ item: r.item, qty: r.thisQty, uom: r.uom, amt: r.thisAmt }))
     : (calc?.grn?.rows ?? []).slice(0, 4).map(r => ({ item: r.material, qty: r.thisQty ?? r.receiptQty ?? 0, uom: r.uom, amt: r.thisAmt }))
-  const lineCount = calc?.sheet?.rows.length ?? calc?.grn?.rows.length ?? 0
+  const lineCount = calc?.sheet ? thisBillRows.length : calc?.grn?.rows.length ?? 0
   const flowLine = segs.length
     ? segs.map(s => `${stageDef(s.stage).label} ${s.current ? (meOnDesk ? '· you' : '· here') : `${Math.round(s.days)}d${s.leftAction === 'send_back' ? ' · sent back' : ''}`}`).join(' → ')
     : null

@@ -88,15 +88,17 @@ describe('the abstract sheet', () => {
 
   it('puts the biggest money on this bill first', () => {
     const s = buildAbstractSheet(SECOND, FIRST, BOQ, 284564)
-    expect(s.rows.map(r => r.thisAmt)).toEqual([199054, 85511])
+    // The terrace line was never measured; it still has its row, last.
+    expect(s.rows.map(r => r.thisAmt)).toEqual([199054, 85511, 0])
   })
 
   it('merges an item split across two lines of the same abstract', () => {
     const split = [line({ qty: 40, amt: 35840 }), line({ qty: 44.76, amt: 40103 })]
     const s = buildAbstractSheet(split, [], BOQ, 75943)
-    expect(s.rows).toHaveLength(1)
-    expect(s.rows[0].thisQty).toBe(84.76)
-    expect(s.rows[0].thisAmt).toBe(75943)
+    const membrane = s.rows.filter(r => r.itemId === 12221)
+    expect(membrane).toHaveLength(1)
+    expect(membrane[0].thisQty).toBe(84.76)
+    expect(membrane[0].thisAmt).toBe(75943)
   })
 
   it('still names an item the BOQ has no row for, rather than rendering blank', () => {
@@ -109,7 +111,7 @@ describe('the abstract sheet', () => {
   // tells them apart.
   it('prefers the description over the repeated heading', () => {
     expect(buildAbstractSheet(FIRST, [], BOQ, 160482).rows.map(r => r.item))
-      .toEqual(['Wet areas — screed', 'Wet areas — membrane'])
+      .toEqual(['Wet areas — screed', 'Wet areas — membrane', 'Terrace — membrane'])
   })
 })
 
@@ -261,3 +263,69 @@ describe('the earlier columns come from the bill register', () => {
 const THIRD_BILL: AbstractLine[] = [
   line({ abstractId: 2600, abstractNo: 'Abs/…/99', billNo: 'KP362SRA09', on: '2026-07-02', itemId: 12221, qty: 5, rate: 896, amt: 4480 }),
 ]
+
+/** Aksha, 11 Oct 2026: "there are 14 line items in our sheet, 7 line items are
+ *  being only captured". Desai Construction, WO/SRASSK/WCE/2026-27/90 —
+ *  RA-3 (SRASSK-MS-WC-03) measures only 7 of the order's 14 lines, and the
+ *  other 7 (Hitachi breaker, tractor, JCB breaker, …) dropped off the sheet
+ *  together with ₹10.56 L of what RA-1 and RA-2 had measured on them.
+ *  Real figures, read from the mirror on 11 Oct 2026. */
+describe("every line on the order, not only this bill's", () => {
+  const boq = (itemId: number, orderedQty: number, rate: number, orderedAmt: number): BoqLine =>
+    ({ itemId, name: 'Excavation Work', description: `Item ${itemId}`, uom: 'Nos', orderedQty, rate, orderedAmt })
+  const BOQ_WCE: BoqLine[] = [
+    boq(16686, 249, 3090, 769410), boq(16689, 424.438, 773, 328090.574), boq(16690, 312.688, 773, 241707.824),
+    boq(16684, 218.25, 927, 202317.75), boq(16687, 254.5, 515, 131067.5), boq(16685, 50, 2369, 118450),
+    boq(16683, 80, 1030, 82400), boq(16682, 93, 618, 57474), boq(17136, 19.25, 1185, 22811.25),
+    boq(16691, 18.125, 1185, 21478.125), boq(16693, 19.875, 773, 15363.375), boq(16688, 8, 1339, 10712),
+    boq(16692, 2, 1185, 2370), boq(17135, 0.75, 1545, 1158.75),
+  ]
+  const abs = (abstractId: number, billNo: string, on: string, rows: [number, number, number, number][]): AbstractLine[] =>
+    rows.map(([itemId, qty, rate, amt]) => ({ abstractId, itemId, abstractNo: `Abs ${abstractId}`, billNo, on, qty, rate, amt }))
+  const RA1 = abs(2783, 'SRASSK-MS-WC-01', '2026-08-05', [
+    [16682, 26, 618, 16068], [16683, 31, 1030, 31930], [16684, 144.5, 927, 133951.5], [16685, 50, 2369, 118450],
+    [16686, 185, 3090, 571650], [16687, 245.5, 515, 126432.5], [16688, 8, 1339, 10712], [16689, 124.875, 773, 96528.375],
+    [16690, 113.125, 773, 87445.625], [16691, 14.125, 1185, 16738.125], [16692, 1.25, 1185, 1481.25], [16693, 15.375, 773, 11884.875],
+  ])
+  const RA2 = abs(2862, 'SRASSK-MS-WC-02', '2026-09-02', [
+    [16682, 63, 618, 38934], [16683, 42, 1030, 43260], [16684, 45, 927, 41715], [16686, 64, 3090, 197760],
+    [16687, 9, 515, 4635], [16689, 158.875, 773, 122810.375], [16690, 114.875, 773, 88798.375], [16692, 0.75, 1185, 888.75],
+    [16693, 1.5, 773, 1159.5], [17135, 0.75, 1545, 1158.75], [17136, 19.25, 1185, 22811.25],
+  ])
+  const RA3 = abs(2966, 'SRASSK-MS-WC-03', '2026-10-10', [
+    [16682, 4, 618, 2472], [16683, 7, 1030, 7210], [16684, 28.75, 927, 26651.25], [16689, 140.688, 773, 108751.824],
+    [16690, 84.688, 773, 65463.824], [16691, 4, 1185, 4740], [16693, 3, 773, 2319],
+  ])
+  const s = buildAbstractSheet(RA3, [...RA1, ...RA2], BOQ_WCE, null)
+
+  it('shows all 14 lines, as the abstract sheet does', () => {
+    expect(s.rows).toHaveLength(14)
+  })
+
+  it('keeps this bill to the 7 lines it measured (₹2,17,608)', () => {
+    expect(s.rows.filter(r => r.thisQty > 0)).toHaveLength(7)
+    expect(Math.round(s.thisBill)).toBe(217608)
+  })
+
+  it('carries a line this bill did not touch, with its earlier bills', () => {
+    const hitachi = s.rows.find(r => r.itemId === 16686)!
+    expect(hitachi.thisQty).toBe(0)
+    expect(hitachi.thisAmt).toBe(0)
+    expect(hitachi.history).toEqual([185, 64])
+    expect(hitachi.cumulativeQty).toBe(249)
+    expect(hitachi.balanceQty).toBe(0)
+    expect(hitachi.rate).toBe(3090)
+  })
+
+  it('totals to the sheet: previous ₹17,87,203, cumulative ₹20,04,811, nothing left', () => {
+    expect(Math.round(s.cumulative - s.thisBill)).toBe(1787203)
+    expect(Math.round(s.cumulative)).toBe(2004811)
+    expect(Math.round(s.ordered)).toBe(2004811)
+    expect(s.balance).toBeCloseTo(0, 0)
+  })
+
+  it("lists this bill's lines first, then the rest by what they carry so far", () => {
+    expect(s.rows.slice(0, 7).every(r => r.thisQty > 0)).toBe(true)
+    expect(s.rows[7].itemId).toBe(16686)   // Hitachi breaker, ₹7.69 L so far
+  })
+})

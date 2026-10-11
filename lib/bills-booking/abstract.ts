@@ -315,7 +315,17 @@ export function buildAbstractSheet(
     else merged.set(l.itemId, { qty: l.qty, amt: l.amt, rate: l.rate })
   }
 
-  const rows: SheetRow[] = [...merged.entries()].map(([itemId, m]) => {
+  // EVERY line on the order, not only the ones this bill measured — the way
+  // the abstract sheet itself is laid out. Before 11 Oct 2026 a line with
+  // nothing on this bill dropped off, and with it everything earlier bills had
+  // measured on it: Desai's WO/SRASSK/WCE/2026-27/90 showed 7 of its 14 lines
+  // and a previous total ₹10.56 L short (Aksha). A line not on this bill reads
+  // 0 this time, with its earlier bills, cumulative and balance intact.
+  const none = { qty: 0, amt: 0, rate: 0 }
+  const itemIds = [...new Set([...merged.keys(), ...boq.map(b => b.itemId), ...priorQty.keys()])]
+
+  const rows: SheetRow[] = itemIds.map(itemId => {
+    const m = merged.get(itemId) ?? none
     const b = boqBy.get(itemId)
     const orderedQty = b?.orderedQty ?? 0
     const cumulativeQty = q3((priorQty.get(itemId) ?? 0) + m.qty)
@@ -344,8 +354,8 @@ export function buildAbstractSheet(
   })
 
   // Biggest money on this bill first — that is the order somebody checking
-  // would work in.
-  rows.sort((a, b) => b.thisAmt - a.thisAmt)
+  // would work in. Lines not on this bill follow, biggest so far first.
+  rows.sort((a, b) => b.thisAmt - a.thisAmt || b.cumulativeAmt - a.cumulativeAmt || b.orderedAmt - a.orderedAmt)
 
   const thisBill = r2(rows.reduce((s, r) => s + r.thisAmt, 0))
   // Nothing to compare against until Billing keys the certificate.
