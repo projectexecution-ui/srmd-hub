@@ -19,6 +19,10 @@ import { linesFromSheet, type Deduction } from '@/lib/bills-booking/maker'
 import { linesFromGrn } from '@/lib/bills-booking/purchase'
 import { buildTimeline, type RawEvent } from '@/lib/bills-booking/timeline'
 import { formatDate, formatDateTime, formatINR } from '@/lib/utils'
+import { loadDebitNotes } from '@/lib/bills-booking/debit-notes'
+import { loadBillRules } from '@/lib/bills-booking/rules'
+import { DebitNotes } from './DebitNotes'
+import { CorrectEntry } from './CorrectEntry'
 
 export const dynamic = 'force-dynamic'
 const one = <T,>(v: T | T[] | null): T | null => (Array.isArray(v) ? v[0] ?? null : v)
@@ -149,6 +153,18 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
     abstractNo: bill.abstract_no_in4 as string | null,
     grnId: (bill.in4_grn_id as number | null) ?? null,
   }).catch(() => null)
+
+  // IN4 debit notes on this work order (only drawn when there are any), and
+  // the bill rules that decide who may correct the entry (11 Oct 2026).
+  const [debitNotes, rules] = await Promise.all([
+    bill.order_type === 'WO' ? loadDebitNotes(supabase, bill.order_no as string | null).catch(() => null) : Promise.resolve(null),
+    loadBillRules(supabase),
+  ])
+  const cancelledInIn4 = bill.in4_cancelled_at != null
+  const isBilling = me.isAdmin || (!!me.userId && bill.created_by === me.userId)
+    || me.desks.some(d => d.desk === 'erp' || d.desk === 'ct_billing')
+  const canCorrect = rules.bb_rule_billing_correct && isBilling && !bill.is_example
+    && (['submitted', 'site_head', 'disc_head', 'ct_head', 'ct_billing'].includes(stage) || cancelledInIn4)
 
   const maker = bill.order_no && bill.order_type === 'WO'
     ? await loadMakerSeed(supabase, { billId: bill.id as string, woNo: bill.order_no as string }).catch(() => null)
@@ -340,6 +356,21 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
         </div>
       )}
 
+      {/* A bill that changed after the Disc Head approved it, or that IN4
+          cancelled — said at the top, in red, with old → new. */}
+      {bill.changed_note && (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+          <b>Changed after approval.</b> {String(bill.changed_note).replace(/^Changed after the CT Disc Head approved:\s*/, '')}
+          {bill.changed_at ? <> · {formatDateTime(bill.changed_at as string)}</> : null}
+          {' '}— back with the CT Disc Head to approve the new figure.
+        </div>
+      )}
+      {cancelledInIn4 && (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+          <b>Cancelled in IN4.</b> {bill.in4_cancelled_note as string | null}
+        </div>
+      )}
+
       {/* The phone leads with the figure. */}
       <PhoneSummary
         figure={figure} figureLabel={figureLabel} claimed={claimed}
@@ -378,6 +409,20 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
           {!project && subprojectName && <Fact k="Books under" v="Bills Approval project" />}
         </div>
       </Card>
+
+      {canCorrect && (
+        <CorrectEntry
+          billId={bill.id as string}
+          claimed={(bill.claimed_amount as number | null) ?? null}
+          billNo={(bill.bill_no as string | null) ?? null}
+          billDate={(bill.bill_date as string | null) ?? null}
+          onlyBillNo={cancelledInIn4 && !['submitted', 'site_head', 'disc_head', 'ct_head', 'ct_billing'].includes(stage)}
+        />
+      )}
+
+      {debitNotes && (
+        <DebitNotes data={debitNotes} warn={['site_head', 'disc_head', 'ct_head', 'ct_billing'].includes(stage)} />
+      )}
 
       {/* Documents — with what the flow asks for. */}
       <Documents billId={bill.id as string} docs={docs} canAttach={canAttach} required={required} />

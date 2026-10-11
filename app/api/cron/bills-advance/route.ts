@@ -46,6 +46,11 @@ export async function GET(req: Request) {
   //    told to the Atm Head and Billing), and payment.
   const tracked = await sb.rpc('bb_rpc_track_in4')
   if (tracked.error) return NextResponse.json({ ok: false, error: `track: ${tracked.error.message}` }, { status: 500 })
+  // 4. CHANGES (11 Oct 2026). A bill whose figure changed after the Disc Head
+  //    approved it goes back to the Disc Head; a certificate cancelled in IN4
+  //    is flagged and CT Billing told. Each is a switch in Bills settings.
+  const changes = await sb.rpc('bb_rpc_check_changes')
+  if (changes.error) return NextResponse.json({ ok: false, error: `changes: ${changes.error.message}` }, { status: 500 })
 
   const r = (raised.data ?? {}) as { checked?: number; raised?: number; note?: string }
   const a = (advanced.data ?? {}) as { checked?: number; moved?: number }
@@ -56,6 +61,7 @@ export async function GET(req: Request) {
     moved: a.moved ?? 0,
     checked: a.checked ?? 0,
     tracked: t,
+    changes: changes.data,
     summary: `${r.raised ?? 0} raised from IN4${r.note ? ` (${r.note})` : ''} · ${a.moved ?? 0} of ${a.checked ?? 0} at the Site Head moved on · after CT Head: ${t.certified ?? 0} certified, ${t.approved ?? 0} approved in IN4, ${t.paid ?? 0} paid`,
   })
 }

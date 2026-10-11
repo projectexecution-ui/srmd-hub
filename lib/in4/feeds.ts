@@ -17,7 +17,7 @@ import {
   extractIndentRows, extractContractorCerts, extractSupplierCerts,
   extractParties, extractMaterials, extractStores, extractCompanies, extractCompanyGstins, extractUoms,
   extractLastPoByMaterial, extractPurchaseOrders, extractPoItems, extractGrnItems, extractSupplierPayLines,
-  extractCertEvents,
+  extractCertEvents, extractWoDebitNotes, extractWoDebitNoteRecoveries,
 } from './extract-feeds'
 import { buildTracker, buildTrackerState, compareTracker, type TrackerStoredState } from './tracker'
 import { revalidateTrackerSoon } from '@/lib/procurement/tracker-cache'
@@ -338,12 +338,20 @@ async function runContractor(sb: SupabaseClient, now: string, mode: FeedMode, ac
   })), 'kind,certificate_id')
   await dropStale(sb, 'in4_wo_certificates', now)
 
+  // Contractor debit notes and which bill recovered them — read-only, shown
+  // on a bill only when its work order has one (Aksha, 11 Oct 2026).
+  const [notes, recoveries] = await Promise.all([extractWoDebitNotes(), extractWoDebitNoteRecoveries()])
+  await upsertAll(sb, 'in4_wo_debit_notes', notes.map(d => ({ ...d, synced_at: now })), 'id')
+  await dropStale(sb, 'in4_wo_debit_notes', now)
+  await upsertAll(sb, 'in4_wo_debit_note_recoveries', recoveries.map(r => ({ ...r, synced_at: now })), 'id')
+  await dropStale(sb, 'in4_wo_debit_note_recoveries', now)
+
   const { data: cur } = await sb.from('contractor_report_state').select('state').eq('id', 'global').maybeSingle()
   const hubDocs = ((cur?.state as { reports?: ContractorDoc[] } | null)?.reports ?? [])
   const comparison = compareContractor(hubDocs, docs)
   let wrote = false
   if (mode === 'live') { await writeReportState(sb, 'contractor_report_state', docs, now, actorId); wrote = true }
-  const summary = `${docs.length} projects · ${certs.length} certificates · vs upload: ${comparison.totals.exact} exact · ${comparison.totals.near} near · ${comparison.totals.off} off`
+  const summary = `${docs.length} projects · ${certs.length} certificates · ${notes.length} debit notes · vs upload: ${comparison.totals.exact} exact · ${comparison.totals.near} near · ${comparison.totals.off} off`
   return { rows: certs.length, comparison, wrote, summary }
 }
 

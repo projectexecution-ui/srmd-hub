@@ -57,6 +57,18 @@ export const NOTIFICATION_EVENTS: NotificationEventDef[] = [
     audience: 'The desk the bill was sent back to',
   },
   {
+    type: 'bb_bill_changed',
+    label: 'Bills — a bill changed after you approved it',
+    description: 'The abstract in IN4 or the bill amount changed after the CT Disc Head approved it, so the bill came back to the Disc Head with old → new, to approve the new figure. A switch in Bills settings.',
+    audience: 'The CT Disc Head desk',
+  },
+  {
+    type: 'bb_bill_in4_cancelled',
+    label: 'Bills — a bill was cancelled in IN4',
+    description: 'The certificate for a bill was cancelled in IN4 and no live one exists under the same bill no. Raise it again in IN4; if it gets a new bill no, type it on the same bill. A switch in Bills settings.',
+    audience: 'CT Billing',
+  },
+  {
     type: 'in4_indent_verify',
     label: 'IN4 — indent waiting for approval',
     description: 'An indent in IN4 reached Verify; the Atm Head of the linked project is asked to approve it in IN4.',

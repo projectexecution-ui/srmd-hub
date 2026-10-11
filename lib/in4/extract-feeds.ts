@@ -490,3 +490,46 @@ export async function extractCertEvents(): Promise<In4CertEvent[]> {
     actor_id: ni(r.actor_id), actor_name: sn(r.actor_name), remark: sn(r.remark),
   }))
 }
+
+// ── Debit notes ──────────────────────────────────────────────────────────────
+
+/** A contractor debit note: money taken back from a contractor on their work
+ *  order — material sold to them, free-supply deductions, poor work, a
+ *  settlement, the basic-rate difference on cement and steel. IN4 records the
+ *  order being debited in DEBIT_TO_WO_ID (DEBIT_FROM_* is never filled), and
+ *  each later bill that recovers part of it in
+ *  ENGG_WO_PAYMENT_DEBIT_NOTE_RECOVERY (Aksha, 11 Oct 2026). */
+export interface In4WoDebitNote {
+  id: number; display_no: string | null; wo_id: number | null; contractor_id: number | null
+  amount: number; status: number | null; status_name: string | null
+  note_type: string | null; reason: string | null; remarks: string | null
+  note_date: string | null; created_at: string | null
+}
+export async function extractWoDebitNotes(): Promise<In4WoDebitNote[]> {
+  const rows = await in4Query<Record<string, unknown>>(`
+    SELECT d.ID, d.DISPLAY_NO, d.DEBIT_TO_WO_ID, d.DEBIT_TO_CONTRACTOR_ID, d.DEBIT_AMOUNT, d.STATUS,
+           s.NAME STATUS_NAME, t.DESCRIPTION NOTE_TYPE, r.NAME REASON, d.REMARKS, d.DEBIT_NOTE_DATE, d.CREATION_DT
+      FROM ENGG_WO_DEBIT_NOTE d
+      LEFT JOIN COMMON_STATUS_LOOKUP s ON s.ID = d.STATUS
+      LEFT JOIN ENGG_WO_DEBIT_NOTE_TYPE_LOOKUP t ON t.ID = d.DEBIT_NOTE_TYPE
+      LEFT JOIN ENGG_DEBIT_NOTE_REASON_TYPE_LOOKUP r ON r.ID = d.REASON_TYPE_ID`)
+  return rows.map(r => ({
+    id: n(r.ID), display_no: sn(r.DISPLAY_NO), wo_id: ni(r.DEBIT_TO_WO_ID), contractor_id: ni(r.DEBIT_TO_CONTRACTOR_ID),
+    amount: num(r.DEBIT_AMOUNT) ?? 0, status: ni(r.STATUS), status_name: sn(r.STATUS_NAME),
+    note_type: sn(r.NOTE_TYPE), reason: sn(r.REASON), remarks: sn(r.REMARKS),
+    note_date: day(r.DEBIT_NOTE_DATE), created_at: r.CREATION_DT ? new Date(r.CREATION_DT as string).toISOString() : null,
+  }))
+}
+
+export interface In4WoDebitNoteRecovery {
+  id: number; debit_note_id: number; certificate_id: number | null; deducted_amt: number; created_at: string | null
+}
+export async function extractWoDebitNoteRecoveries(): Promise<In4WoDebitNoteRecovery[]> {
+  const rows = await in4Query<Record<string, unknown>>(`
+    SELECT ID, DEBIT_NOTE_ID, WO_PAYMENT_AUTH_ID, DEDUCTED_AMT, CREATION_DT FROM ENGG_WO_PAYMENT_DEBIT_NOTE_RECOVERY`)
+  return rows.map(r => ({
+    id: n(r.ID), debit_note_id: n(r.DEBIT_NOTE_ID), certificate_id: ni(r.WO_PAYMENT_AUTH_ID),
+    deducted_amt: num(r.DEDUCTED_AMT) ?? 0, created_at: r.CREATION_DT ? new Date(r.CREATION_DT as string).toISOString() : null,
+  }))
+}
+

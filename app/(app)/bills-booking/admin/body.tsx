@@ -4,6 +4,8 @@ import { DeskGrid, type GridRow } from './DeskGrid'
 import { Examples } from './Examples'
 import { DESKS } from '@/lib/bills-booking/desk-list'
 import { loadDeskCoverage } from '@/lib/bills-booking/desks'
+import { loadBillRules } from '@/lib/bills-booking/rules'
+import { BillRules } from './BillRules'
 
 /** Who sits at which desk — one grid. Rendered by /bills-booking/admin (from
  *  inside Bills Approval) and by Admin › Projects › Bills desks (D1); both
@@ -11,11 +13,12 @@ import { loadDeskCoverage } from '@/lib/bills-booking/desks'
 export async function BillsDesksBody() {
   const supabase = await createClient()
 
-  const [{ data: users }, { data: members }, coverage, { data: examples }] = await Promise.all([
+  const [{ data: users }, { data: members }, coverage, { data: examples }, rules] = await Promise.all([
     supabase.from('profiles').select('id, full_name, name, email').eq('is_active', true).order('full_name'),
     supabase.from('bb_desk_members').select('desk, project_id, in4_subproject_id, user_id'),
     loadDeskCoverage(supabase),
     supabase.from('bb_bills').select('id, bill_no, work').eq('is_example', true).order('bill_no'),
+    loadBillRules(supabase),
   ])
 
   const global: Record<string, string[]> = {}
@@ -50,6 +53,7 @@ export async function BillsDesksBody() {
 
   return (
     <div className="space-y-5">
+      <BillRules initial={rules} />
       <p className="text-[12.5px] text-gray-500">A blank cell is a desk nobody holds — the move gate and the notifier both read this table.</p>
       <DeskGrid
         rows={rows}

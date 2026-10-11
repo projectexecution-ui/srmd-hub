@@ -39,6 +39,9 @@ export async function checkIn4Now(): Promise<{
   // And the IN4 side after the CT Head — certificate raised, approved, paid.
   const tracked = await sb.rpc('bb_rpc_track_in4')
   if (tracked.error) return { ok: false, error: tracked.error.message }
+  // A bill changed after the Disc Head approved it, or cancelled in IN4 (11 Oct 2026).
+  const changes = await sb.rpc('bb_rpc_check_changes')
+  if (changes.error) return { ok: false, error: changes.error.message }
 
   const r = (raised.data ?? {}) as { raised?: number; note?: string }
   const a = (advanced.data ?? {}) as { checked?: number; moved?: number }

@@ -46,6 +46,8 @@ export interface CertMoney {
   retention: number
   advanceRecovery: number
   recoveries: number
+  /** The part of recoveries that was IN4 debit notes, when known (11 Oct 2026). */
+  debitNote?: number
   deductions: number
   paid: number
   outstanding: number
@@ -126,7 +128,14 @@ export function billLadder(c: CertMoney): BillLadder {
     steps.push({ label: 'Advance recovered', amount: c.advanceRecovery, deduct: true,
       note: 'Mobilisation or material advance being taken back' })
   }
-  if (c.recoveries > 0) steps.push({ label: 'Other recoveries', amount: c.recoveries, deduct: true })
+  // A debit note recovered on this bill is its own line, named; whatever else
+  // IN4 recovered stays "Other recoveries" (Aksha, 11 Oct 2026).
+  const dn = Math.min(Math.max(c.debitNote ?? 0, 0), c.recoveries)
+  if (dn > 0) {
+    steps.push({ label: 'Debit note recovered', amount: dn, deduct: true,
+      note: 'Taken back against an IN4 debit note on this work order' })
+  }
+  if (c.recoveries - dn > 0.005) steps.push({ label: 'Other recoveries', amount: Math.round((c.recoveries - dn) * 100) / 100, deduct: true })
   if (c.deductions > 0) steps.push({ label: 'Deductions', amount: c.deductions, deduct: true })
 
   // "the contractor" would be wrong on a purchase order, where the same ladder

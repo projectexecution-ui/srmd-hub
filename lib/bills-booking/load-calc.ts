@@ -4,6 +4,7 @@ import { billLadder, woHistory, earlierBillsOn, type CertMoney, type BillLadder,
 import { buildAbstractSheet, type AbstractSheet, type AbstractLine, type BoqLine, type LadderBill } from './abstract'
 import { seedLines, pickRate, type MakerLine, type RatePick } from './maker'
 import { buildGrnSheet, grossUpPoLines, advancePosition, type GrnSheet, type AdvancePosition } from './purchase'
+import { debitRecoveredOn } from './debit-notes'
 
 /** The live IN4 position behind one CT Hub bill.
  *
@@ -200,6 +201,9 @@ export async function loadBillCalc(
   const mineCert = certs.find(c =>
     (bill.abstractNo && key(c.displayNo) === key(bill.abstractNo)) ||
     (bill.billNo && key(c.invoiceNo) === key(bill.billNo))) ?? null
+  if (mineCert && mineCert.recoveries > 0) {
+    mineCert.debitNote = await debitRecoveredOn(sb, mineCert.certificateId).catch(() => 0)
+  }
 
   // The abstract sheet for this bill, matched on the contractor's bill number.
   //
