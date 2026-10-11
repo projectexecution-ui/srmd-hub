@@ -73,9 +73,11 @@ describe('the GRN behind a supplier bill', () => {
     expect(s.anyOverrun).toBe(true)
   })
 
-  it('puts the biggest line first, which is how a bill gets checked', () => {
+  // Aksha, 11 Oct 2026: "as it is in IN4 — no rearranging". The PO's own
+  // line order, never by money (CPVC solvent is the biggest, and stays 2nd).
+  it("keeps the PO's line order, whatever the money", () => {
     const s = buildGrnSheet(lines, receipts, order, LANDED)!
-    expect(s.rows.map(r => r.materialId)).toEqual([12, 11, 13])
+    expect(s.rows.map(r => r.materialId)).toEqual([11, 12, 13])
   })
 
   // Some pay lines name a GRN with no matching receipt line. The money is

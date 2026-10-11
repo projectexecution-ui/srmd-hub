@@ -77,10 +77,36 @@ function ratesFrom(certs: CertMoney[]): { gst: number; retention: number } | nul
   if (!live.length) return null
   const basic = live.reduce((s, c) => s + c.certified, 0)
   if (!(basic > 0)) return null
+  // To two places of a percent: IN4 rounds every bill's tax and retention to
+  // the rupee, so the rate read back drifts (5.00005% on Desai's order) and
+  // tips a figure a rupee off the vendor's sheet. The rate is still the one
+  // this order carried — only the rounding noise is taken off.
+  const pct = (v: number) => Math.round(v * 10000) / 10000
   return {
-    gst: live.reduce((s, c) => s + (c.gross - c.certified), 0) / basic,
-    retention: live.reduce((s, c) => s + c.retention, 0) / basic,
+    gst: pct(live.reduce((s, c) => s + (c.gross - c.certified), 0) / basic),
+    retention: pct(live.reduce((s, c) => s + c.retention, 0) / basic),
   }
+}
+
+/** What a bill with no IN4 certificate yet should come to, on the GST and
+ *  retention this order has actually carried. The measured basic (IN4's
+ *  abstract for this bill) is the start when there is one, and tax goes on
+ *  top; with no measurement the claim is read as gross and the basic backed
+ *  out of it. Null when the order has no live certificate to take rates from. */
+export function expectedLadder(certs: CertMoney[], measuredBasic: number | null, claimed: number): BillLadder | null {
+  if (measuredBasic == null && !(claimed > 0)) return null
+  const key = (v: string | null | undefined) => (v ?? '').trim().toLowerCase()
+  const rates = ratesFrom(certs.filter(c => !['cancelled', 'reversed'].includes(key(c.statusName))))
+  if (!rates) return null
+  const basic = Math.round(measuredBasic ?? claimed / (1 + rates.gst))
+  const gross = Math.round(basic * (1 + rates.gst))
+  const retention = Math.round(basic * rates.retention)
+  return billLadder({
+    certificateId: 0, displayNo: null, invoiceNo: null, createdOn: null, statusName: null,
+    certified: basic, gross, retention,
+    advanceRecovery: 0, recoveries: 0, deductions: 0, paid: 0,
+    outstanding: gross - retention,
+  })
 }
 
 /** The approved measurements IN4 holds on one order — what the Site Head
@@ -175,24 +201,6 @@ export async function loadBillCalc(
     (bill.abstractNo && key(c.displayNo) === key(bill.abstractNo)) ||
     (bill.billNo && key(c.invoiceNo) === key(bill.billNo))) ?? null
 
-  let expected: BillLadder | null = null
-  if (!mineCert && bill.claimed > 0) {
-    const rates = ratesFrom(certs.filter(c => !['cancelled', 'reversed'].includes(key(c.statusName))))
-    if (rates) {
-      // The claim is a gross figure — that is how Aksha works — so the basic
-      // value is backed out of it rather than the tax being added on top.
-      const basic = Math.round(bill.claimed / (1 + rates.gst))
-      const gross = Math.round(basic * (1 + rates.gst))
-      const retention = Math.round(basic * rates.retention)
-      expected = billLadder({
-        certificateId: 0, displayNo: null, invoiceNo: null, createdOn: null, statusName: null,
-        certified: basic, gross, retention,
-        advanceRecovery: 0, recoveries: 0, deductions: 0, paid: 0,
-        outstanding: gross - retention,
-      })
-    }
-  }
-
   // The abstract sheet for this bill, matched on the contractor's bill number.
   //
   // Aksha, 15 Sep 2026: "Site Head also does one entry in IN4 - and once
@@ -224,6 +232,18 @@ export async function loadBillCalc(
         ladder,
       }).catch(() => null)
     : null
+
+  // What the bill should come to, while IN4 has no certificate for it.
+  //
+  // When IN4 holds the measured abstract, ITS basic value is the start, and
+  // tax and retention go ON TOP — as on the abstract sheet itself. Before
+  // 11 Oct 2026 this always backed tax OUT of the claim, treating it as gross;
+  // on Desai RA-3 the claim WAS the measured basic (₹2,17,608), so the panel
+  // showed basic ₹1,84,413 and net ₹2,08,386 against the sheet's ₹2,17,608
+  // basic and ₹2,45,897 net (Aksha). Only with no measurement yet is the claim
+  // read as gross — that is how Billing enters it.
+  const expected = mineCert ? null
+    : expectedLadder(certs, sheet && sheet.thisBill > 0 ? sheet.thisBill : null, bill.claimed)
 
   return {
     orderNo: woNo,
@@ -413,7 +433,8 @@ async function loadGrnSheet(
 
   const [{ data: itemData }, { data: grnData }] = await Promise.all([
     sb.from('in4_po_items')
-      .select('material_id, uom_id, base_po_qty, grn_qty, net_rate, material_value').eq('po_id', opts.poId),
+      .select('material_id, uom_id, base_po_qty, grn_qty, net_rate, material_value').eq('po_id', opts.poId)
+      .order('item_id'),
     sb.from('in4_grn_items')
       .select('grn_id, material_id, received_qty, grn_material_cost, grn_no, grn_dt, delivery_challan_no').eq('po_id', opts.poId),
   ])
@@ -610,7 +631,7 @@ export async function loadMakerSeed(
   const woId = wo.wo_id as number
 
   const [{ data: boqData }, { data: in4Lines }, { data: mine }, { data: certData }] = await Promise.all([
-    sb.from('in4_wo_boq_items').select('item_id, boq_name, description, uom, quantity, rate, amt').eq('wo_id', woId),
+    sb.from('in4_wo_boq_items').select('item_id, boq_name, description, uom, quantity, rate, amt').eq('wo_id', woId).order('item_id'),
     sb.from('in4_wo_abstract_items').select('item_id, executed_quantity, executed_amt').eq('wo_id', woId),
     sb.from('bb_bill_lines').select('sr, item_id, this_qty').eq('bill_id', opts.billId),
     sb.from('in4_wo_certificates')

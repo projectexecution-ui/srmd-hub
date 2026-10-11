@@ -405,8 +405,12 @@ export function buildGrnSheet(
     })
   }
 
-  // Biggest first — how anybody checks a bill.
-  const rows = [...byMaterial.values()].sort((a, b) => b.thisAmt - a.thisAmt)
+  // IN4's own PO-line order, never rearranged (Aksha, 11 Oct 2026). A
+  // material received but not on the order comes last.
+  const lineNo = new Map<number, number>()
+  order.forEach((o, i) => { if (o.materialId != null && !lineNo.has(o.materialId)) lineNo.set(o.materialId, i) })
+  const at = (id: number | null) => (id != null ? lineNo.get(id) : undefined) ?? Number.MAX_SAFE_INTEGER
+  const rows = [...byMaterial.values()].sort((a, b) => at(a.materialId) - at(b.materialId))
   const thisBill = r2(rows.reduce((s, r) => s + r.thisAmt, 0))
   const outBy = r2(thisBill - landed)
 

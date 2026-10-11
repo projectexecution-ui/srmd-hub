@@ -353,9 +353,12 @@ export function buildAbstractSheet(
     }
   })
 
-  // Biggest money on this bill first — that is the order somebody checking
-  // would work in. Lines not on this bill follow, biggest so far first.
-  rows.sort((a, b) => b.thisAmt - a.thisAmt || b.cumulativeAmt - a.cumulativeAmt || b.orderedAmt - a.orderedAmt)
+  // IN4's own line order, never rearranged (Aksha, 11 Oct 2026: "I would
+  // like it to be as it is in IN4 — no rearranging"). IN4 leaves its line
+  // number (WO_ITEM_NO) empty; its order is the order the lines were entered
+  // on the work order — the item id — which its abstract lines follow too, and
+  // which is the vendor's own Sr No (lines added by amendment come last).
+  rows.sort((a, b) => a.itemId - b.itemId)
 
   const thisBill = r2(rows.reduce((s, r) => s + r.thisAmt, 0))
   // Nothing to compare against until Billing keys the certificate.

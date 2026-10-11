@@ -81,15 +81,17 @@ describe('the abstract sheet', () => {
   it('flags a line measured beyond what was ordered', () => {
     const over = [line({ itemId: 12221, qty: 200, amt: 179200 })]
     const s = buildAbstractSheet(over, [], BOQ, 179200)
-    const r = s.rows[0]
+    const r = s.rows.find(x => x.itemId === 12221)!
     expect(r.overrun).toBe(true)
     expect(r.balanceQty).toBeLessThan(0)
   })
 
-  it('puts the biggest money on this bill first', () => {
+  // Aksha, 11 Oct 2026: "as it is in IN4 — no rearranging". Never by money.
+  it("keeps IN4's line order, whatever the money", () => {
     const s = buildAbstractSheet(SECOND, FIRST, BOQ, 284564)
-    // The terrace line was never measured; it still has its row, last.
-    expect(s.rows.map(r => r.thisAmt)).toEqual([199054, 85511, 0])
+    expect(s.rows.map(r => r.itemId)).toEqual([12206, 12221, 12222])
+    // The terrace line was never measured; it keeps its place, at 0.
+    expect(s.rows.map(r => r.thisAmt)).toEqual([0, 85511, 199054])
   })
 
   it('merges an item split across two lines of the same abstract', () => {
@@ -103,15 +105,16 @@ describe('the abstract sheet', () => {
 
   it('still names an item the BOQ has no row for, rather than rendering blank', () => {
     const s = buildAbstractSheet([line({ itemId: 99999 })], [], BOQ, 75943)
-    expect(s.rows[0].item).toBe('Item 99999')
-    expect(s.rows[0].orderedQty).toBe(0)
+    const r = s.rows.find(x => x.itemId === 99999)!
+    expect(r.item).toBe('Item 99999')
+    expect(r.orderedQty).toBe(0)
   })
 
   // IN4 repeats one heading across a dozen BOQ lines; the description is what
   // tells them apart.
   it('prefers the description over the repeated heading', () => {
     expect(buildAbstractSheet(FIRST, [], BOQ, 160482).rows.map(r => r.item))
-      .toEqual(['Wet areas — screed', 'Wet areas — membrane', 'Terrace — membrane'])
+      .toEqual(['Terrace — membrane', 'Wet areas — membrane', 'Wet areas — screed'])
   })
 })
 
@@ -324,8 +327,12 @@ describe("every line on the order, not only this bill's", () => {
     expect(s.balance).toBeCloseTo(0, 0)
   })
 
-  it("lists this bill's lines first, then the rest by what they carry so far", () => {
-    expect(s.rows.slice(0, 7).every(r => r.thisQty > 0)).toBe(true)
-    expect(s.rows[7].itemId).toBe(16686)   // Hitachi breaker, ₹7.69 L so far
+  // The vendor's Sr No 1–14: Hand Breaker … Helper, then Welder and Mason,
+  // which were added to the order later. Exactly IN4's line order.
+  it("keeps IN4's line order — the vendor's Sr No — with no rearranging", () => {
+    expect(s.rows.map(r => r.itemId)).toEqual([
+      16682, 16683, 16684, 16685, 16686, 16687, 16688,
+      16689, 16690, 16691, 16692, 16693, 17135, 17136,
+    ])
   })
 })
