@@ -142,6 +142,7 @@ export async function loadProjectViewInput(sb: SupabaseClient, reg: Register, me
     amount: Number(r.net_amount ?? r.claimed_amount ?? 0),
     stage: r.current_stage,
     stageSince: r.stage_since,
+    enteredAt: r.created_at,
     subprojectId: r.in4_subproject_id != null && subs.has(r.in4_subproject_id) ? r.in4_subproject_id : null,
     hubProjectId: r.project_id,
     holders: (reg.memberIds.get(reg.deskKey(r)) ?? []).map(i => nameOf.get(i)).filter((n): n is string => !!n),

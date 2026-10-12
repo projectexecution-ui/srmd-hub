@@ -14,7 +14,7 @@
 
 import Link from 'next/link'
 import { ChevronRight, FolderTree, LayoutList, Search, X } from 'lucide-react'
-import { formatINR, formatINRCompact } from '@/lib/utils'
+import { formatDate, formatINR, formatINRCompact } from '@/lib/utils'
 import { stageDef, type AgeTone, type BbStage } from '@/lib/bills-booking/stages'
 import {
   TREE_STAGES, stageLine,
@@ -141,7 +141,7 @@ export function ViewBar({ scope, counts, scopeHref, look, lookHref, q, who, peop
           <span className="sr-only">Order</span>
           <select id="bb-sort" name="sort" defaultValue={sort}
                   className="h-10 w-full rounded-lg border border-gray-300 bg-white px-2 text-[13px] sm:w-44">
-            <option value="wait">Longest wait first</option>
+            <option value="wait">Longest pending first</option>
             <option value="amount">Biggest ₹ first</option>
             <option value="name">Project A–Z</option>
           </select>
@@ -220,12 +220,13 @@ function BillsTable({ bills, head = true }: { bills: ShownBill[]; head?: boolean
     <>
       {/* Laptop: a table. */}
       <table className="hidden w-full table-fixed text-left text-[12.5px] md:table">
-        <colgroup><col className="w-[34%]" /><col className="w-[13%]" /><col className="w-[22%]" /><col className="w-[15%]" /><col className="w-[16%]" /></colgroup>
+        <colgroup><col className="w-[28%]" /><col className="w-[12%]" /><col className="w-[19%]" /><col className="w-[14%]" /><col className="w-[13%]" /><col className="w-[14%]" /></colgroup>
         <thead className={head ? '' : 'sr-only'}>
           <tr className="border-b border-gray-200 text-[10.5px] uppercase tracking-wide text-gray-500">
             <th className="px-3 py-1.5 font-bold">Party · bill no</th>
             <th className="px-3 py-1.5 font-bold">Step</th>
             <th className="px-3 py-1.5 font-bold">With</th>
+            <th className="px-3 py-1.5 font-bold">Since entry</th>
             <th className="px-3 py-1.5 font-bold">At this desk</th>
             <th className="px-3 py-1.5 text-right font-bold">Amount</th>
           </tr>
@@ -241,6 +242,10 @@ function BillsTable({ bills, head = true }: { bills: ShownBill[]; head?: boolean
               <td className="px-3 py-2 text-gray-700">
                 {b.holders.length ? b.holders.join(', ') : <span className="text-amber-700">nobody set</span>}
                 {b.mine && <b className="ml-1 rounded bg-indigo-600 px-1 py-px text-[10px] font-bold text-white">YOU</b>}
+              </td>
+              <td className="px-3 py-2 tabular-nums">
+                <b className="text-gray-900">{days(b.pendingDays)}</b>
+                <span className="block text-[11px] text-gray-500">entered {formatDate(b.enteredAt)}</span>
               </td>
               <td className={`px-3 py-2 tabular-nums ${AGE[b.tone]}`}>{days(b.days)}{b.tone === 'late' ? ' · late' : ''}</td>
               <td className="px-3 py-2 text-right font-bold tabular-nums text-gray-900">{formatINR(b.amount)}</td>
@@ -261,6 +266,7 @@ function BillsTable({ bills, head = true }: { bills: ShownBill[]; head?: boolean
               <span className="block text-[12px] text-gray-700">
                 {stageDef(b.stage).label} — {b.holders.length ? b.holders.join(', ') : 'nobody set'}{b.mine ? ' (you)' : ''}
               </span>
+              <span className="block text-[12px] tabular-nums text-gray-700">Pending <b className="text-gray-900">{days(b.pendingDays)}</b> since entry · entered {formatDate(b.enteredAt)}</span>
               <span className={`block text-[12px] tabular-nums ${AGE[b.tone]}`}>{days(b.days)} at this desk{b.tone === 'late' ? ' · late' : ''}</span>
             </Link>
           </li>
@@ -342,7 +348,7 @@ export function ProjectsLook({ mains, openAll }: { mains: MainNode[]; openAll: b
 }
 
 // ── Tree ─────────────────────────────────────────────────────────────────
-const GRID = 'md:grid-cols-[minmax(240px,2.6fr)_repeat(7,minmax(74px,1fr))_minmax(64px,0.7fr)_minmax(104px,1.1fr)]'
+const GRID = 'md:grid-cols-[minmax(240px,2.6fr)_repeat(7,minmax(74px,1fr))_minmax(80px,0.8fr)_minmax(64px,0.7fr)_minmax(104px,1.1fr)]'
 
 function heat(n: number, max: number) {
   if (!n || !max) return ''
@@ -368,6 +374,8 @@ function Cells({ byStage, late, amount, n, max, strong }: {
           </span>
         )
       })}
+      {/* Since entry: shown against each bill, not per project. */}
+      <span className="hidden md:block" />
       <span className="hidden text-center md:block">{late ? <b className="text-[12.5px] tabular-nums text-rose-700">{late}</b> : <span className="text-gray-300">·</span>}</span>
       <span className="text-right">
         <b className={`block tabular-nums text-gray-900 ${strong ? 'text-[14px]' : 'text-[13px]'}`}>{formatINRCompact(amount)}</b>
@@ -384,12 +392,13 @@ export function TreeLook({ mains, openAll }: { mains: MainNode[]; openAll: boole
   const sticky = 'md:sticky md:left-0 md:z-10'
   return (
     <div className="overflow-x-auto rounded-2xl border border-gray-200 bg-white shadow-sm">
-      <div className="md:min-w-[1080px]">
+      <div className="md:min-w-[1160px]">
         <div className={`hidden ${GRID} items-end gap-x-1.5 border-b border-gray-200 bg-gray-50 px-4 py-2 text-[10.5px] font-bold uppercase tracking-wide text-gray-500 md:grid`}>
           <span className={`${sticky} bg-gray-50`}>Main project → sub-project → bill</span>
           {TREE_STAGES.map(st => <span key={st} className="text-center"><StepPill s={st} /></span>)}
+          <span className="text-center">Since entry</span>
           <span className="text-center text-rose-700">Late</span>
-          <span className="text-right">Pending</span>
+          <span className="text-right">Amount</span>
         </div>
         {mains.map(m => (
           <details key={m.key} open={openAll || m.mine} className="group/m border-b border-gray-200 last:border-b-0">
@@ -428,7 +437,8 @@ export function TreeLook({ mains, openAll }: { mains: MainNode[]; openAll: boole
                         <span className="block text-[11px] text-gray-500">
                           <span className="font-mono">{b.billNo ?? '—'}</span> · {b.holders.length ? b.holders.join(', ') : 'nobody set'}{b.mine ? ' (you)' : ''}
                         </span>
-                        <span className={`block text-[11.5px] md:hidden ${AGE[b.tone]}`}>{stageDef(b.stage).label} · {days(b.days)}</span>
+                        <span className={`block text-[11.5px] md:hidden ${AGE[b.tone]}`}>{stageDef(b.stage).label} · {days(b.days)} at this desk</span>
+                        <span className="block text-[11.5px] text-gray-700 md:hidden">Pending {days(b.pendingDays)} since entry · entered {formatDate(b.enteredAt)}</span>
                       </span>
                       {TREE_STAGES.map(st => (
                         <span key={st} className="hidden text-center md:block">
@@ -439,6 +449,10 @@ export function TreeLook({ mains, openAll }: { mains: MainNode[]; openAll: boole
                             : <span className="text-gray-200">·</span>}
                         </span>
                       ))}
+                      <span className="hidden text-center md:block">
+                        <b className="block text-[12px] tabular-nums text-gray-900">{days(b.pendingDays)}</b>
+                        <span className="block text-[10px] text-gray-500">{formatDate(b.enteredAt)}</span>
+                      </span>
                       <span className="hidden text-center md:block">{b.tone === 'late' || b.tone === 'warn' ? <b className="text-[11px] text-rose-700">late</b> : <span className="text-gray-200">·</span>}</span>
                       <span className="text-right text-[12.5px] font-bold tabular-nums text-gray-900">{formatINR(b.amount)}</span>
                     </Link>
@@ -456,6 +470,7 @@ export function TreeLook({ mains, openAll }: { mains: MainNode[]; openAll: boole
                 {c.n ? <><b className="block text-[13px] tabular-nums text-gray-900">{c.n}</b><span className="block text-[10.5px] tabular-nums text-gray-600">{formatINRCompact(c.amount)}</span></> : <span className="text-gray-300">·</span>}
               </span>
             ))}
+            <span />
             <span className="text-center">{total.late ? <b className="text-[13px] tabular-nums text-rose-700">{total.late}</b> : <span className="text-gray-300">·</span>}</span>
             <span className="text-right"><b className="block text-[14px] tabular-nums text-gray-900">{formatINRCompact(total.amount)}</b><span className="block text-[10.5px] text-gray-500">{total.n} bills</span></span>
           </div>

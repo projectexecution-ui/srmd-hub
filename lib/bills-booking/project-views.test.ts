@@ -8,7 +8,7 @@ const NOW = Date.parse('2026-10-12T12:00:00+05:30')
 const bill = (o: Partial<ViewBill>): ViewBill => ({
   id: 'b', vendor: 'Desai Construction Pvt Ltd.', billNo: 'SRASSK-MS-WC-03', orderType: 'WO',
   orderNo: 'WO/SRASSK/WCE/2026-27/90', amount: 217608, stage: 'disc_head',
-  stageSince: '2026-10-11T05:20:00Z', subprojectId: 97, hubProjectId: null,
+  stageSince: '2026-10-11T05:20:00Z', enteredAt: '2026-10-11T05:20:00Z', subprojectId: 97, hubProjectId: null,
   holders: ['Ambrishkumar Mistry'], mine: false, isExample: false, ...o,
 })
 const subs = new Map([
@@ -32,6 +32,26 @@ describe('the project-first Bills home', () => {
     expect(m.subs[0].fullName).toBe('Welcome Centre Extension - Execution')
     expect(m.byStage.disc_head).toEqual({ n: 1, amount: 217608, late: 0 })
     expect(m.oldestDays).toBe(1)
+  })
+
+  it('counts days pending since entry as well as days at this desk', () => {
+    const [m] = buildProjectViews({ ...base, bills: [
+      bill({ id: '1', enteredAt: '2026-09-30T06:00:00Z' }),
+      bill({ id: '2' }),
+    ] })
+    const b1 = m.subs[0].bills.find(b => b.id === '1')!
+    expect(b1.days).toBe(1)
+    expect(b1.pendingDays).toBe(12)
+    expect(m.oldestPending).toBe(12)
+    expect(m.subs[0].oldestPending).toBe(12)
+  })
+
+  it('puts the project whose oldest bill was entered earliest first under "longest pending"', () => {
+    const ms = sortMains(buildProjectViews({ ...base, bills: [
+      bill({ id: '1' }),
+      bill({ id: '2', subprojectId: 5, enteredAt: '2026-09-01T06:00:00Z' }),
+    ] }), 'wait')
+    expect(ms.map(m => m.name)).toEqual(['Raj Uphaar', 'Welcome Centre Extension'])
   })
 
   it('carries the whole IN4 position of the project, not only what is pending', () => {

@@ -21,6 +21,8 @@ export interface ViewBill {
   amount: number
   stage: BbStage
   stageSince: string
+  /** When the bill was entered in CT Hub — the clock for "pending since entry". */
+  enteredAt: string
   subprojectId: number | null
   /** CT Hub project, when the bill has one and IN4 does not. */
   hubProjectId: string | null
@@ -39,7 +41,9 @@ export interface StageCell { n: number; amount: number; late: number }
  *  is pending here. Balance = billed − paid. */
 export interface Position { orders: number; woCount: number; billed: number; paid: number }
 
-export type ShownBill = ViewBill & { days: number; tone: AgeTone }
+/** `days` = at the desk holding it now; `pendingDays` = since it was entered
+ *  (Aksha, 12 Oct 2026: "from the date of Entry - how many days its pending"). */
+export type ShownBill = ViewBill & { days: number; tone: AgeTone; pendingDays: number }
 
 export interface SubNode {
   key: string
@@ -51,6 +55,8 @@ export interface SubNode {
   late: number
   byStage: Partial<Record<BbStage, StageCell>>
   oldestDays: number
+  /** The oldest bill here, in days since it was entered. */
+  oldestPending: number
   waitingOnMe: number
   team: TeamSeat[]
   position: Position | null
@@ -65,6 +71,7 @@ export interface MainNode {
   late: number
   byStage: Partial<Record<BbStage, StageCell>>
   oldestDays: number
+  oldestPending: number
   waitingOnMe: number
   /** The viewer works on this project — holds one of its bills, or sits on a
    *  desk named for it (not merely a desk that covers every project). */
@@ -81,6 +88,7 @@ export type SortBy = 'wait' | 'amount' | 'name'
 export interface ViewFilters { scope: Scope; stage: BbStage | null; who: string | null; q: string | null; sort: SortBy }
 
 const DAY = 86_400_000
+const daysSince = (iso: string, now: number) => Math.max(0, Math.floor((now - Date.parse(iso)) / DAY)) || 0
 
 export function shortSubName(main: string, sub: string): string {
   const esc = main.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -150,19 +158,20 @@ export function buildProjectViews(input: BuildInput): MainNode[] {
       mainKey = 'none'; mainName = 'No project set'; subKey = 'none'; subFull = 'No sub-project'
     }
 
-    const days = Math.max(0, Math.floor((input.now - Date.parse(b.stageSince)) / DAY))
+    const days = daysSince(b.stageSince, input.now)
+    const pendingDays = daysSince(b.enteredAt, input.now)
     const tone = ageTone(b.stage, b.stageSince, input.now)
     const late = tone === 'warn' || tone === 'late'
     let m = mains.get(mainKey)
     if (!m) {
-      m = { key: mainKey, name: mainName, n: 0, amount: 0, late: 0, byStage: {}, oldestDays: 0, waitingOnMe: 0, mine: false, position: mainPos, subs: [] }
+      m = { key: mainKey, name: mainName, n: 0, amount: 0, late: 0, byStage: {}, oldestDays: 0, oldestPending: 0, waitingOnMe: 0, mine: false, position: mainPos, subs: [] }
       mains.set(mainKey, m); subsOf.set(mainKey, new Map())
     }
     const subs = subsOf.get(mainKey)!
     let s = subs.get(subKey)
     if (!s) {
       s = { key: subKey, name: shortSubName(mainName, subFull), fullName: subFull, n: 0, amount: 0, late: 0, byStage: {},
-            oldestDays: 0, waitingOnMe: 0, team: input.teams.get(subKey) ?? [], position: subPos, bills: [] }
+            oldestDays: 0, oldestPending: 0, waitingOnMe: 0, team: input.teams.get(subKey) ?? [], position: subPos, bills: [] }
       subs.set(subKey, s)
     }
     for (const node of [m, s]) {
@@ -170,9 +179,10 @@ export function buildProjectViews(input: BuildInput): MainNode[] {
       if (late) node.late += 1
       bump(node.byStage, b.stage, b.amount, late)
       node.oldestDays = Math.max(node.oldestDays, days)
+      node.oldestPending = Math.max(node.oldestPending, pendingDays)
       if (b.mine) node.waitingOnMe += 1
     }
-    s.bills.push({ ...b, days, tone })
+    s.bills.push({ ...b, days, tone, pendingDays })
     const named = (b.subprojectId != null && input.mySubs.has(b.subprojectId))
       || (!!b.hubProjectId && input.myHubProjects.has(b.hubProjectId))
     if (b.mine || named) m.mine = true
@@ -214,7 +224,7 @@ export function sortMains(mains: MainNode[], sort: SortBy): MainNode[] {
   const by = (a: MainNode, b: MainNode) =>
     sort === 'amount' ? b.amount - a.amount
       : sort === 'name' ? a.name.localeCompare(b.name)
-        : b.oldestDays - a.oldestDays || b.late - a.late
+        : b.oldestPending - a.oldestPending || b.oldestDays - a.oldestDays || b.late - a.late
   // The viewer's projects first, then what waits on them, then the chosen order.
   return [...mains].sort((a, b) => Number(b.mine) - Number(a.mine) || b.waitingOnMe - a.waitingOnMe || by(a, b))
 }
