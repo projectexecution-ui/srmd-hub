@@ -7,8 +7,13 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { Plus, ReceiptText, Clock, Users, Landmark, PackageCheck, ShieldCheck, CalendarDays, FileQuestion, MapPin, ChevronRight, Wallet, Search, X, FlaskConical } from 'lucide-react'
 import { isTerminal } from '@/lib/bills-booking/stages'
 import { BillingTree, type TrustNode, type Leaf } from './BillingTree'
-import { ProjectsLook, TreeLook, LookToggle, type Look } from './ProjectViews'
-import { loadProjectViews } from '@/lib/bills-booking/load-project-views'
+import { ProjectsLook, TreeLook, StepStrip, ViewBar, type Look } from './ProjectViews'
+import { loadProjectViewInput } from '@/lib/bills-booking/load-project-views'
+import {
+  buildProjectViews, filterBills, sortMains, stageTotals, placeOf, TREE_STAGES,
+  type Scope, type SortBy, type ViewBill,
+} from '@/lib/bills-booking/project-views'
+import type { BbStage } from '@/lib/bills-booking/stages'
 import { CheckIn4Button } from './CheckIn4Button'
 import { RegisterFilters } from './RegisterFilters'
 import { BillRows } from './BillRows'
@@ -35,7 +40,10 @@ export const maxDuration = 60
  *  Everything that decides is in lib/bills-booking (register.ts, holding.ts,
  *  money.ts) and tested; this page fetches, shapes and lays out. */
 export default async function BillsBookingPage({ searchParams }: {
-  searchParams: Promise<{ q?: string; project?: string; type?: string; late?: string; view?: string; find?: string; look?: string }>
+  searchParams: Promise<{
+    q?: string; project?: string; type?: string; late?: string; view?: string; find?: string
+    look?: string; scope?: string; stage?: string; who?: string; pq?: string; sort?: string; open?: string
+  }>
 }) {
   const me = await requireBillsAccess()
   const sp = await searchParams
@@ -147,8 +155,33 @@ export default async function BillsBookingPage({ searchParams }: {
   // IN4's main project → sub-project, full names, your projects first. The
   // desk-by-desk list this replaces mixed every project under a short code.
   const look: Look = sp.look === 'tree' ? 'tree' : 'projects'
-  const lookHrefs = { projects: qs(p => p.delete('look')), tree: qs(p => p.set('look', 'tree')) }
-  const projectMains = await loadProjectViews(supabase, reg, me).catch(() => [])
+  const openAll = sp.open === '1'
+  const viewInput = await loadProjectViewInput(supabase, reg, me).catch(() => null)
+  const allBills: ViewBill[] = viewInput?.bills ?? []
+  const where = (b: ViewBill) => viewInput ? placeOf(b, viewInput) : { key: 'none', text: '' }
+  const builtAll = viewInput ? buildProjectViews(viewInput) : []
+  const myProjectKeys = new Set(builtAll.filter(m => m.mine).map(m => m.key))
+  const scopeCounts: Record<Scope, number> = {
+    mine: allBills.filter(b => b.mine).length,
+    projects: allBills.filter(b => myProjectKeys.has(where(b).key)).length,
+    all: allBills.length,
+  }
+  // Opens on what is yours: waiting on you, else your projects, else all.
+  const scope: Scope = sp.scope === 'mine' || sp.scope === 'projects' || sp.scope === 'all' ? sp.scope
+    : scopeCounts.mine > 0 ? 'mine' : scopeCounts.projects > 0 ? 'projects' : 'all'
+  const stageF = TREE_STAGES.includes(sp.stage as BbStage) ? (sp.stage as BbStage) : null
+  const whoF = sp.who?.trim() || null
+  const pq = sp.pq?.trim() || null
+  const sortBy: SortBy = sp.sort === 'amount' || sp.sort === 'name' ? sp.sort : 'wait'
+  const inScope = (bs: ViewBill[]) => scope === 'projects' ? bs.filter(b => myProjectKeys.has(where(b).key)) : bs
+  const filterArgs = { scope, stage: stageF, who: whoF, q: pq }
+  const stripTotals = stageTotals(inScope(filterBills(allBills, filterArgs, false, b => where(b).text)), viewInput?.now ?? 0)
+  const shownBills = inScope(filterBills(allBills, filterArgs, true, b => where(b).text))
+  const projectMains = viewInput ? sortMains(buildProjectViews({ ...viewInput, bills: shownBills }), sortBy) : []
+  const holderNames = [...new Set(allBills.flatMap(b => b.holders))].sort((a, b) => a.localeCompare(b))
+  const viewKeep = Object.fromEntries(Object.entries(sp).filter(([k, v]) =>
+    typeof v === 'string' && v && !['pq', 'who', 'sort'].includes(k))) as Record<string, string>
+  const filtering = !!(stageF || whoF || pq || sortBy !== 'wait')
 
   // ── The tree, by trust → project → sub-project (kept, under Reports) ──
   const trusts = new Map<string, TrustNode>()
@@ -339,18 +372,26 @@ export default async function BillsBookingPage({ searchParams }: {
           )}
 
           <section className="space-y-3" aria-label="Pending bills by project">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <p className="text-sm font-bold text-gray-900">Pending bills — by project</p>
-                <p className="text-[12px] text-gray-500">
-                  {look === 'tree' ? 'Main project → sub-project → bills, with the step each is at.' : 'Your projects first. Tap a project to open it.'}
-                </p>
-              </div>
-              <LookToggle look={look} hrefs={lookHrefs} />
+            <div>
+              <h2 className="text-[15px] font-bold text-gray-900">Pending bills — by project</h2>
+              <p className="text-[12px] text-gray-500">
+                {look === 'tree'
+                  ? 'Main project → sub-project → bill, with each step as a column. Red is past the desk’s turnaround.'
+                  : 'Each project with its IN4 position and the bills pending here. Your projects first.'}
+              </p>
             </div>
+            <StepStrip totals={stripTotals} active={stageF}
+              hrefFor={st => qs(p => p.set('stage', st))} allHref={qs(p => p.delete('stage'))} />
+            <ViewBar scope={scope} counts={scopeCounts} scopeHref={sc => qs(p => p.set('scope', sc))}
+              look={look} lookHref={l => qs(p => { if (l === 'tree') p.set('look', 'tree'); else p.delete('look') })}
+              q={pq} who={whoF} people={holderNames} sort={sortBy} keep={viewKeep}
+              clearHref={filtering ? qs(p => { for (const k of ['pq', 'who', 'stage', 'sort']) p.delete(k) }) : null}
+              openAll={openAll} openAllHref={qs(p => { if (openAll) p.delete('open'); else p.set('open', '1') })} />
             {projectMains.length === 0
-              ? <p className="rounded-2xl border border-dashed border-gray-200 bg-white px-4 py-3 text-[13px] text-gray-500">No bills pending right now.</p>
-              : look === 'tree' ? <TreeLook mains={projectMains} /> : <ProjectsLook mains={projectMains} />}
+              ? <p className="rounded-2xl border border-dashed border-gray-200 bg-white px-4 py-3 text-[13px] text-gray-500">
+                  {allBills.length === 0 ? 'No bills pending right now.' : 'Nothing matches — change the step, scope or search above.'}
+                </p>
+              : look === 'tree' ? <TreeLook mains={projectMains} openAll={openAll} /> : <ProjectsLook mains={projectMains} openAll={openAll} />}
           </section>
         </>
       )}

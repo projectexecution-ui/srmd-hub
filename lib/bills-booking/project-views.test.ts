@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { buildProjectViews, shortSubName, stageLine, type ViewBill } from './project-views'
+import {
+  buildProjectViews, shortSubName, stageLine, filterBills, sortMains, stageTotals, matchesProject,
+  type ViewBill, type BuildInput,
+} from './project-views'
 
 const NOW = Date.parse('2026-10-12T12:00:00+05:30')
 const bill = (o: Partial<ViewBill>): ViewBill => ({
@@ -14,7 +17,12 @@ const subs = new Map([
   [6, { id: 6, name: 'RU Infra Work', projectId: 7 }],
 ])
 const mains = new Map([[30, { id: 30, name: 'Welcome Centre Extension' }], [7, { id: 7, name: 'Raj Uphaar' }]])
-const base = { subs, mains, hubProjects: new Map(), mySubs: new Set<number>(), myHubProjects: new Set<string>(), teams: new Map(), now: NOW }
+const base: Omit<BuildInput, 'bills'> = {
+  subs, mains, hubProjects: new Map(), mySubs: new Set<number>(), myHubProjects: new Set<string>(), teams: new Map(), now: NOW,
+  // Real IN4 position, 12 Oct 2026: Welcome Centre Extension - Execution.
+  subPositions: new Map([[97, { orders: 6602257, woCount: 2, billed: 2108900, paid: 1983795 }]]),
+  mainPositions: new Map([[30, { orders: 6602257, woCount: 2, billed: 2108900, paid: 1983795 }]]),
+}
 
 describe('the project-first Bills home', () => {
   it('puts Desai under its IN4 main project with the sub-project named in full, not "WCE"', () => {
@@ -22,16 +30,29 @@ describe('the project-first Bills home', () => {
     expect(m.name).toBe('Welcome Centre Extension')
     expect(m.subs[0].name).toBe('Execution')
     expect(m.subs[0].fullName).toBe('Welcome Centre Extension - Execution')
-    expect(m.byStage.disc_head).toEqual({ n: 1, amount: 217608 })
+    expect(m.byStage.disc_head).toEqual({ n: 1, amount: 217608, late: 0 })
     expect(m.oldestDays).toBe(1)
   })
 
+  it('carries the whole IN4 position of the project, not only what is pending', () => {
+    const [m] = buildProjectViews({ ...base, bills: [bill({})] })
+    expect(m.position).toEqual({ orders: 6602257, woCount: 2, billed: 2108900, paid: 1983795 })
+    expect(m.subs[0].position?.billed).toBe(2108900)
+  })
+
+  it('flags a bill past its desk turnaround as late (Disc Head: 2 days)', () => {
+    const [m] = buildProjectViews({ ...base, bills: [bill({ id: '1', stageSince: '2026-10-07T05:00:00Z' }), bill({ id: '2' })] })
+    expect(m.late).toBe(1)
+    expect(m.byStage.disc_head?.late).toBe(1)
+    expect(m.subs[0].bills[0].tone).not.toBe('ok')
+  })
+
   it('puts the viewer\'s own project first and counts what waits on them', () => {
-    const ms = buildProjectViews({ ...base, bills: [
+    const ms = sortMains(buildProjectViews({ ...base, bills: [
       bill({ id: '1' }),
       bill({ id: '2', subprojectId: 5, mine: true, stage: 'ct_head' }),
       bill({ id: '3', subprojectId: 6 }),
-    ] })
+    ] }), 'wait')
     expect(ms.map(m => m.name)).toEqual(['Raj Uphaar', 'Welcome Centre Extension'])
     expect(ms[0].mine).toBe(true)
     expect(ms[0].waitingOnMe).toBe(1)
@@ -39,14 +60,44 @@ describe('the project-first Bills home', () => {
   })
 
   it('counts a named desk seat as "my project" even with nothing waiting', () => {
-    const ms = buildProjectViews({ ...base, mySubs: new Set([97]), bills: [bill({ id: '1' }), bill({ id: '2', subprojectId: 5 })] })
+    const ms = sortMains(buildProjectViews({ ...base, mySubs: new Set([97]), bills: [bill({ id: '1' }), bill({ id: '2', subprojectId: 5 })] }), 'name')
     expect(ms[0].name).toBe('Welcome Centre Extension')
     expect(ms[0].mine).toBe(true)
   })
 
+  it('sorts the rest by biggest money or by name when asked', () => {
+    const ms = buildProjectViews({ ...base, bills: [bill({ id: '1', amount: 10 }), bill({ id: '2', subprojectId: 5, amount: 999 })] })
+    expect(sortMains(ms, 'amount').map(m => m.name)).toEqual(['Raj Uphaar', 'Welcome Centre Extension'])
+    expect(sortMains(ms, 'name').map(m => m.name)).toEqual(['Raj Uphaar', 'Welcome Centre Extension'])
+  })
+
+  it('filters by what waits on me, by step, by person and by search', () => {
+    const bills = [
+      bill({ id: '1', mine: true }),
+      bill({ id: '2', stage: 'ct_head', holders: ['Kantilal K'] }),
+      bill({ id: '3', vendor: 'Crony Electricals', billNo: '153' }),
+    ]
+    const ids = (f: Parameters<typeof filterBills>[1]) => filterBills(bills, f).map(b => b.id)
+    expect(ids({ scope: 'mine', stage: null, who: null, q: null })).toEqual(['1'])
+    expect(ids({ scope: 'all', stage: 'ct_head', who: null, q: null })).toEqual(['2'])
+    expect(ids({ scope: 'all', stage: null, who: 'Kantilal K', q: null })).toEqual(['2'])
+    expect(ids({ scope: 'all', stage: null, who: null, q: 'crony' })).toEqual(['3'])
+  })
+
+  it('lets a search match the project name too', () => {
+    const [m] = buildProjectViews({ ...base, bills: [bill({})] })
+    expect(matchesProject(m, 'welcome')).toBe(true)
+    expect(matchesProject(m, 'raj')).toBe(false)
+  })
+
+  it('totals each step for the strip, late counted', () => {
+    const t = stageTotals([bill({ id: '1' }), bill({ id: '2', stageSince: '2026-10-01T00:00:00Z' }), bill({ id: '3', stage: 'paid' })], NOW)
+    expect(t.disc_head).toEqual({ n: 2, amount: 435216, late: 1 })
+    expect(t.paid).toBeUndefined()
+  })
+
   it('leaves out paid, rejected and example bills', () => {
-    const ms = buildProjectViews({ ...base, bills: [bill({ stage: 'paid' }), bill({ stage: 'rejected' }), bill({ isExample: true })] })
-    expect(ms).toEqual([])
+    expect(buildProjectViews({ ...base, bills: [bill({ stage: 'paid' }), bill({ stage: 'rejected' }), bill({ isExample: true })] })).toEqual([])
   })
 
   it('falls back to the CT Hub project when IN4 has no sub-project', () => {

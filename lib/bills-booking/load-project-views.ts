@@ -1,20 +1,35 @@
 // Fetch and shape what the project-first Bills home needs (see project-views.ts).
-// IN4's sub-project and main-project names, the team on each sub-project's
-// desks, and where the viewer has a named seat. Read-only.
+// IN4's sub-project and main-project names and money, the team on each sub-
+// project's desks, and where the viewer has a named seat. Read-only.
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { BillsMe } from './access'
 import type { Register } from './load-register'
 import { vendorOf } from './load-register'
 import { isTerminal } from './stages'
-import { buildProjectViews, type MainNode, type ViewBill, type TeamSeat, type SubRef, type MainRef } from './project-views'
+import { sumPositions, type BuildInput, type ViewBill, type TeamSeat, type SubRef, type MainRef, type Position } from './project-views'
 
 type Seat = { desk: string; project_id: string | null; in4_subproject_id: number | null; user_id: string }
 
-export async function loadProjectViews(sb: SupabaseClient, reg: Register, me: BillsMe): Promise<MainNode[]> {
+async function paged<T>(q: (from: number, to: number) => PromiseLike<{ data: unknown[] | null }>): Promise<T[]> {
+  const out: T[] = []
+  for (let from = 0; ; from += 1000) {
+    const { data } = await q(from, from + 999)
+    const page = (data ?? []) as T[]
+    out.push(...page)
+    if (page.length < 1000) break
+  }
+  return out
+}
+
+export async function loadProjectViewInput(sb: SupabaseClient, reg: Register, me: BillsMe): Promise<BuildInput> {
   const live = reg.raw.filter(r => !isTerminal(r.current_stage) && !r.is_example)
-  if (!live.length) return []
   const mineById = new Map(reg.rows.map(r => [r.id, r.mine]))
+  const empty: BuildInput = {
+    bills: [], subs: new Map(), mains: new Map(), hubProjects: new Map(), mySubs: new Set(), myHubProjects: new Set(),
+    teams: new Map(), now: Date.now(),
+  }
+  if (!live.length) return empty
 
   const subIds = [...new Set(live.map(r => r.in4_subproject_id).filter((v): v is number => v != null))]
   const hubIds = [...new Set(live.map(r => r.project_id).filter((v): v is string => !!v))]
@@ -28,11 +43,46 @@ export async function loadProjectViews(sb: SupabaseClient, reg: Register, me: Bi
   const subs = new Map<number, SubRef>(((subRows ?? []) as Array<{ id: number; name: string | null; project_id: number | null }>)
     .map(s => [s.id, { id: s.id, name: s.name ?? `Sub-project ${s.id}`, projectId: s.project_id }]))
   const mainIds = [...new Set([...subs.values()].map(s => s.projectId).filter((v): v is number => v != null))]
-  const { data: mainRows } = mainIds.length
-    ? await sb.from('in4_projects').select('id, name').in('id', mainIds)
-    : { data: [] }
+
+  // The whole of each main project — every sub-project IN4 has under it — for
+  // its money, not only the sub-projects with a bill pending here.
+  const [{ data: mainRows }, { data: allSubRows }] = await Promise.all([
+    mainIds.length ? sb.from('in4_projects').select('id, name').in('id', mainIds) : Promise.resolve({ data: [] }),
+    mainIds.length ? sb.from('in4_subprojects').select('id, project_id').in('project_id', mainIds) : Promise.resolve({ data: [] }),
+  ])
   const mains = new Map<number, MainRef>(((mainRows ?? []) as Array<{ id: number; name: string | null }>)
     .map(m => [m.id, { id: m.id, name: m.name ?? `Project ${m.id}` }]))
+  const mainOfSub = new Map(((allSubRows ?? []) as Array<{ id: number; project_id: number }>).map(s => [s.id, s.project_id]))
+  const allSubIds = [...mainOfSub.keys()]
+
+  // IN4 money per sub-project: orders (live WOs, gross), billed and paid (WO certificates, not cancelled).
+  const subPositions = new Map<number, Position>()
+  const pos = (sid: number) => {
+    let p = subPositions.get(sid)
+    if (!p) { p = { orders: 0, woCount: 0, billed: 0, paid: 0 }; subPositions.set(sid, p) }
+    return p
+  }
+  if (allSubIds.length) {
+    const [wos, certs] = await Promise.all([
+      paged<{ subproject_id: number; wo_gross_value: number | null; status_name: string | null }>((a, b) =>
+        sb.from('in4_work_orders').select('subproject_id, wo_gross_value, status_name').in('subproject_id', allSubIds).range(a, b)),
+      paged<{ subproject_id: number; gross_bill_amt: number | null; paid_amt: number | null; status_name: string | null }>((a, b) =>
+        sb.from('in4_wo_certificates').select('subproject_id, gross_bill_amt, paid_amt, status_name')
+          .eq('kind', 'wo').in('subproject_id', allSubIds).range(a, b)),
+    ])
+    for (const w of wos) {
+      if (['cancelled', 'terminated'].includes((w.status_name ?? '').toLowerCase())) continue
+      const p = pos(w.subproject_id); p.woCount += 1; p.orders += Number(w.wo_gross_value ?? 0)
+    }
+    for (const c of certs) {
+      if ((c.status_name ?? '') === 'Cancelled') continue
+      const p = pos(c.subproject_id); p.billed += Number(c.gross_bill_amt ?? 0); p.paid += Number(c.paid_amt ?? 0)
+    }
+  }
+  const mainPositions = new Map<number, Position>()
+  for (const mid of mainIds) {
+    mainPositions.set(mid, sumPositions(allSubIds.filter(s => mainOfSub.get(s) === mid).map(s => subPositions.get(s)).filter((p): p is Position => !!p)))
+  }
 
   // Names for everyone on a desk.
   const seatRows = (seats ?? []) as Seat[]
@@ -75,14 +125,12 @@ export async function loadProjectViews(sb: SupabaseClient, reg: Register, me: Bi
     const civil = names(deskFor('disc_head_civil', sid, pid))
     const mep = names(deskFor('disc_head_mep', sid, pid))
     const atmDesk = sid != null ? deskBySub.get(sid)?.atm_head_id : null
-    const atm = names(atmDesk ? [atmDesk] : pid ? headsOf.get(pid) ?? [] : [])
-    const seatsOut: TeamSeat[] = [
+    teams.set(key, [
       { label: 'Disc Head', names: [...civil.map(n => `${n} (Civil)`), ...mep.map(n => `${n} (MEP)`)] },
       { label: 'CT Head', names: names(deskFor('ct_head', sid, pid)) },
       { label: 'CT Billing', names: names(deskFor('ct_billing', sid, pid)) },
-      { label: 'Atm Head', names: atm },
-    ]
-    teams.set(key, seatsOut)
+      { label: 'Atm Head', names: names(atmDesk ? [atmDesk] : pid ? headsOf.get(pid) ?? [] : []) },
+    ])
   }
 
   const bills: ViewBill[] = live.map(r => ({
@@ -107,11 +155,10 @@ export async function loadProjectViews(sb: SupabaseClient, reg: Register, me: Bi
     hubProjects.set(id, { name: p.name, parentName: parent?.name ?? null })
   }
 
-  return buildProjectViews({
-    bills, subs, mains, hubProjects,
+  return {
+    bills, subs, mains, hubProjects, teams, subPositions, mainPositions,
     mySubs: new Set([...me.desks.map(d => d.subprojectId).filter((v): v is number => v != null), ...me.atmSubprojects]),
     myHubProjects: new Set([...me.desks.map(d => d.projectId).filter((v): v is string => !!v), ...me.atmProjects]),
-    teams,
     now: Date.now(),
-  })
+  }
 }
