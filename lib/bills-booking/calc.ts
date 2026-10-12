@@ -97,7 +97,28 @@ const pctOf = (part: number, whole: number): number | null => {
   return Math.abs(whole * (pct / 100) - part) < 1 ? pct : null
 }
 
-export function billLadder(c: CertMoney): BillLadder {
+/** IN4 often leaves exactly 1% or 2% of the basic unpaid on a bill it has
+ *  paid: the contractor TDS rate (1% individual, 2% company), held back when
+ *  paying but never entered in IN4 — so IN4 calls the bill "Partially Paid".
+ *  Desai RA-1, ENP/SRASSK/WCE/2026-27/184: payable ₹13,82,297, paid ₹13,57,832,
+ *  left ₹24,465 = 2% of ₹12,23,272, IN4's TDS field 0. Named, never changed —
+ *  Paid stays IN4's figure (Aksha, 12 Oct 2026). Within ₹2: IN4 leaves 5,690
+ *  against 2% = 5,691.28 on WO 1537. Work orders only — a supplier's bill is
+ *  not under the contractor TDS rule. */
+export interface TdsGap { pct: number; amount: number }
+
+export function tdsGap(c: Pick<CertMoney, 'certified' | 'paid' | 'outstanding'>): TdsGap | null {
+  if (!(c.paid > 0) || !(c.outstanding > 0) || !(c.certified > 0)) return null
+  for (const pct of [1, 2]) {
+    const due = (c.certified * pct) / 100
+    if (due >= 100 && Math.abs(due - c.outstanding) <= 2) return { pct, amount: c.outstanding }
+  }
+  return null
+}
+
+export const tdsNote = (t: TdsGap) => `= ${t.pct}% of the basic value — TDS, not recorded in IN4`
+
+export function billLadder(c: CertMoney, opts: { tds?: boolean } = {}): BillLadder {
   const tax = r2(c.gross - c.certified)
   const gstPct = tax > 0 ? pctOf(tax, c.certified) : null
   const retentionPct = pctOf(c.retention, c.certified)
@@ -145,7 +166,8 @@ export function billLadder(c: CertMoney): BillLadder {
 
   if (c.paid > 0) {
     steps.push({ label: 'Already paid', amount: c.paid, deduct: true })
-    steps.push({ label: 'Still owed', amount: stillOwed, total: true })
+    const tds = opts.tds ? tdsGap(c) : null
+    steps.push({ label: 'Still owed', amount: stillOwed, total: true, ...(tds ? { note: tdsNote(tds) } : {}) })
   }
 
   const outBy = r2(stillOwed - c.outstanding)
@@ -187,6 +209,8 @@ export interface WoBillRow {
   /** Ordered value less that — what is left after this bill. */
   leftToBill: number
   dead: boolean
+  /** What IN4 left unpaid when it is exactly the TDS rate (see tdsGap). */
+  tds: TdsGap | null
 }
 
 export interface WoHistory {
@@ -206,7 +230,7 @@ import type { LadderBill } from './abstract'
 
 const DEAD = new Set(['cancelled', 'reversed'])
 
-export function woHistory(certs: CertMoney[], orderedGross: number): WoHistory {
+export function woHistory(certs: CertMoney[], orderedGross: number, opts: { tds?: boolean } = {}): WoHistory {
   // Oldest first to build the cumulative…
   const sorted = [...certs].sort((a, b) =>
     (a.createdOn ?? '').localeCompare(b.createdOn ?? '') || a.certificateId - b.certificateId)
@@ -231,6 +255,7 @@ export function woHistory(certs: CertMoney[], orderedGross: number): WoHistory {
       cumulativeGross: cum,
       leftToBill: Math.max(0, r2(orderedGross - cum)),
       dead,
+      tds: !dead && opts.tds ? tdsGap(c) : null,
     }
   })
 

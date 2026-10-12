@@ -2,7 +2,7 @@ import { Card } from '@/components/ui/card'
 import { Calculator, Receipt, Wallet } from 'lucide-react'
 import { formatINR, formatDate } from '@/lib/utils'
 import type { BillCalc } from '@/lib/bills-booking/load-calc'
-import type { BillLadder } from '@/lib/bills-booking/calc'
+import { tdsNote, type BillLadder, type TdsGap } from '@/lib/bills-booking/calc'
 import type { AdvancePosition } from '@/lib/bills-booking/purchase'
 
 /** How this bill adds up, and every bill already raised on the same order.
@@ -114,6 +114,7 @@ export function Calculation({ calc }: { calc: BillCalc }) {
                     <Pair k="Paid" v={formatINR(r.paid)} />
                     <Pair k="Left after" v={formatINR(r.leftToBill)} />
                   </dl>
+                  {r.tds && <TdsLine t={r.tds} />}
                 </div>
               ))}
             </div>
@@ -139,7 +140,14 @@ export function Calculation({ calc }: { calc: BillCalc }) {
                       <td className="px-3 py-2 text-right tabular-nums">{formatINR(r.certified)}</td>
                       <td className="px-3 py-2 text-right font-medium tabular-nums">{formatINR(r.gross)}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{formatINR(r.retention)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{formatINR(r.paid)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {formatINR(r.paid)}
+                        {r.tds && (
+                          <span className="block text-[10.5px] text-amber-800" title={`${formatINR(r.tds.amount)} not paid ${tdsNote(r.tds)}`}>
+                            {formatINR(r.tds.amount)} left = {r.tds.pct}% TDS, not in IN4
+                          </span>
+                        )}
+                      </td>
                       <td className="px-3 py-2 text-right tabular-nums text-gray-500">{formatINR(r.leftToBill)}</td>
                       {showStatus && <td className="px-3 py-2 text-xs">{r.status ?? '—'}</td>}
                     </tr>
@@ -151,6 +159,15 @@ export function Calculation({ calc }: { calc: BillCalc }) {
         )}
       </Card>
     </>
+  )
+}
+
+/** IN4 left exactly the TDS rate unpaid — said, not changed (Aksha, 12 Oct 2026). */
+function TdsLine({ t }: { t: TdsGap }) {
+  return (
+    <p className="mt-1.5 text-[11px] text-amber-800">
+      {formatINR(t.amount)} not paid {tdsNote(t)}
+    </p>
   )
 }
 

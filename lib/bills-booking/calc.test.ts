@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { billLadder, woHistory, type CertMoney, earlierBillsOn } from './calc'
+import { billLadder, woHistory, tdsGap, type CertMoney, earlierBillsOn } from './calc'
 
 /** The figures below are REAL, read out of the mirror on 14 Sep 2026 — work
  *  order 1537, WO/SRASSK/NGH/2025-26/271, Kasturi Projects, NGH B. Pinning the
@@ -271,5 +271,47 @@ describe('the bills before this one', () => {
       [...WH210, { ...WH210[0], certificateId: 9999, createdOn: '2026-07-01', invoiceNo: 'X', statusName: 'Cancelled' }],
       31480771.73)
     expect(earlierBillsOn(withDead, null).map(b => b.invoiceNo)).not.toContain('X')
+  })
+})
+
+// Desai Construction Pvt Ltd., WO/SRASSK/WCE/2026-27/90 — read from IN4 on
+// 12 Oct 2026. IN4's TDS field is 0 on both; what it leaves unpaid is exactly
+// 2% of the basic, the company contractor TDS rate.
+const DESAI: CertMoney[] = [
+  cert({ certificateId: 2992, displayNo: 'ENP/SRASSK/WCE/2026-27/184', invoiceNo: 'SRASSK-MS-WC-01', createdOn: '2026-08-12',
+         statusName: 'Partially Paid', certified: 1223272.27, gross: 1443461.27, retention: 61164,
+         deductions: 0, paid: 1357832, outstanding: 24465 }),
+  cert({ certificateId: 3096, displayNo: 'ENP/SRASSK/WCE/2026-27/232', invoiceNo: 'SRASSK-MS-WC-02', createdOn: '2026-09-09',
+         statusName: 'Partially Paid', certified: 563930.99, gross: 665438.57, retention: 28197,
+         deductions: 0, paid: 625963, outstanding: 11279 }),
+]
+
+describe('TDS that IN4 never recorded', () => {
+  it('names the 2% left unpaid on Desai RA-1 and RA-2, and leaves Paid as IN4 has it', () => {
+    const h = woHistory(DESAI, 2365677, { tds: true })
+    const [ra2, ra1] = h.rows
+    expect(ra1.tds).toEqual({ pct: 2, amount: 24465 })
+    expect(ra2.tds).toEqual({ pct: 2, amount: 11279 })
+    expect(ra1.paid).toBe(1357832)
+    expect(ra2.paid).toBe(625963)
+  })
+
+  it('says so on the ladder, under Still owed', () => {
+    const l = billLadder(DESAI[0], { tds: true })
+    const owed = l.steps.find(s => s.label === 'Still owed')!
+    expect(owed.amount).toBeCloseTo(24465.27, 2)
+    expect(owed.note).toBe('= 2% of the basic value — TDS, not recorded in IN4')
+    expect(l.reconciles).toBe(true)
+  })
+
+  it('allows IN4 a rupee or two of rounding (WO 1537: 5,690 left vs 2% = 5,691.28)', () => {
+    expect(tdsGap(WO_1537[1])).toEqual({ pct: 2, amount: 5690 })
+  })
+
+  it('stays quiet on a purchase order, an unpaid bill, or a gap that is not the rate', () => {
+    expect(woHistory(DESAI, 2365677).rows.every(r => r.tds === null)).toBe(true)
+    expect(billLadder(DESAI[0]).steps.find(s => s.label === 'Still owed')!.note).toBeUndefined()
+    expect(tdsGap({ ...DESAI[0], paid: 0 })).toBeNull()
+    expect(tdsGap({ ...DESAI[0], outstanding: 30000 })).toBeNull()
   })
 })

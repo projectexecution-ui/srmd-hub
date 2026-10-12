@@ -192,7 +192,7 @@ export async function loadBillCalc(
 
   const certs = ((certData ?? []) as Record<string, unknown>[]).map(toMoney)
   const ordered = n(woRow.wo_gross_value)
-  const history = woHistory(certs, ordered)
+  const history = woHistory(certs, ordered, { tds: true })
 
   // Is one of them THIS bill? Billing keys the contractor's invoice number
   // into IN4, so that is the only honest link — matching on amount would pair
@@ -254,7 +254,7 @@ export async function loadBillCalc(
     kind: 'WO',
     orderedGross: ordered,
     history,
-    mine: mineCert ? billLadder(mineCert) : null,
+    mine: mineCert ? billLadder(mineCert, { tds: true }) : null,
     mineCert,
     expected,
     sheet,
