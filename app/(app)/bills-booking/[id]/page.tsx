@@ -23,8 +23,11 @@ import { loadDebitNotes } from '@/lib/bills-booking/debit-notes'
 import { loadBillRules } from '@/lib/bills-booking/rules'
 import { DebitNotes } from './DebitNotes'
 import { CorrectEntry } from './CorrectEntry'
+import { RefreshFromIn4 } from './RefreshFromIn4'
 
 export const dynamic = 'force-dynamic'
+// "Refresh from IN4" reads IN4 (AWS, us-east-1) inside this route.
+export const maxDuration = 60
 const one = <T,>(v: T | T[] | null): T | null => (Array.isArray(v) ? v[0] ?? null : v)
 
 type Ev = {
@@ -161,6 +164,18 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
     loadBillRules(supabase),
   ])
   const cancelledInIn4 = bill.in4_cancelled_at != null
+
+  // How fresh this bill's IN4 figures are: the later of the scheduled syncs
+  // and the last "Refresh from IN4" on it.
+  const { data: syncRows } = await supabase.from('app_settings').select('value')
+    .in('key', ['in4_last_sync_boq', 'in4_last_sync_contractor'])
+  const syncTimes = (syncRows ?? []).map(r => {
+    try { return Date.parse((JSON.parse(String(r.value)) as { at?: string }).at ?? '') } catch { return NaN }
+  }).filter(t => Number.isFinite(t))
+  const syncedAt = syncTimes.length ? Math.min(...syncTimes) : NaN
+  const handAt = bill.in4_refreshed_at ? Date.parse(bill.in4_refreshed_at as string) : NaN
+  const freshest = [syncedAt, handAt].filter(t => Number.isFinite(t))
+  const in4AsOf = freshest.length ? formatDateTime(new Date(Math.max(...freshest)).toISOString()) : null
   const isBilling = me.isAdmin || (!!me.userId && bill.created_by === me.userId)
     || me.desks.some(d => d.desk === 'erp' || d.desk === 'ct_billing')
   const canCorrect = rules.bb_rule_billing_correct && isBilling && !bill.is_example
@@ -317,7 +332,10 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
     <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-5">
       <PageHeader title={vendor} back="/bills-booking"
         subtitle={`${project?.code ?? subprojectName ?? ''} · ${bill.order_type} ${bill.order_no ?? ''}${bill.discipline ? ' · ' + bill.discipline : ''}`}>
-        <StagePill stage={stage} />
+        <div className="flex flex-wrap items-start gap-2">
+          {canAct && bill.order_type === 'WO' && !bill.is_example && <RefreshFromIn4 billId={bill.id as string} asOf={in4AsOf} />}
+          <StagePill stage={stage} />
+        </div>
       </PageHeader>
 
       {autoRaised && (

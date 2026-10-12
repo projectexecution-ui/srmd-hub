@@ -7,7 +7,8 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { Plus, ReceiptText, Clock, Users, Landmark, PackageCheck, ShieldCheck, CalendarDays, FileQuestion, MapPin, ChevronRight, Wallet, Search, X, FlaskConical } from 'lucide-react'
 import { isTerminal } from '@/lib/bills-booking/stages'
 import { BillingTree, type TrustNode, type Leaf } from './BillingTree'
-import { WhoHolds } from './WhoHolds'
+import { ProjectsLook, TreeLook, LookToggle, type Look } from './ProjectViews'
+import { loadProjectViews } from '@/lib/bills-booking/load-project-views'
 import { CheckIn4Button } from './CheckIn4Button'
 import { RegisterFilters } from './RegisterFilters'
 import { BillRows } from './BillRows'
@@ -20,6 +21,8 @@ import { DESKS } from '@/lib/bills-booking/desk-list'
 import { formatINRCompact } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
+// "Check IN4" now re-reads IN4 itself for the live bills' orders.
+export const maxDuration = 60
 
 /** The register, as the person in front of it needs it.
  *
@@ -32,7 +35,7 @@ export const dynamic = 'force-dynamic'
  *  Everything that decides is in lib/bills-booking (register.ts, holding.ts,
  *  money.ts) and tested; this page fetches, shapes and lays out. */
 export default async function BillsBookingPage({ searchParams }: {
-  searchParams: Promise<{ q?: string; project?: string; type?: string; late?: string; view?: string; find?: string }>
+  searchParams: Promise<{ q?: string; project?: string; type?: string; late?: string; view?: string; find?: string; look?: string }>
 }) {
   const me = await requireBillsAccess()
   const sp = await searchParams
@@ -139,6 +142,13 @@ export default async function BillsBookingPage({ searchParams }: {
     }
   })
   const holdSummary = summarise(desks)
+
+  // ── Pending bills, project-first: Projects | Tree (Aksha, 12 Oct 2026) ──
+  // IN4's main project → sub-project, full names, your projects first. The
+  // desk-by-desk list this replaces mixed every project under a short code.
+  const look: Look = sp.look === 'tree' ? 'tree' : 'projects'
+  const lookHrefs = { projects: qs(p => p.delete('look')), tree: qs(p => p.set('look', 'tree')) }
+  const projectMains = await loadProjectViews(supabase, reg, me).catch(() => [])
 
   // ── The tree, by trust → project → sub-project (kept, under Reports) ──
   const trusts = new Map<string, TrustNode>()
@@ -328,7 +338,20 @@ export default async function BillsBookingPage({ searchParams }: {
             )
           )}
 
-          <WhoHolds desks={desks} summary={holdSummary} />
+          <section className="space-y-3" aria-label="Pending bills by project">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="text-sm font-bold text-gray-900">Pending bills — by project</p>
+                <p className="text-[12px] text-gray-500">
+                  {look === 'tree' ? 'Main project → sub-project → bills, with the step each is at.' : 'Your projects first. Tap a project to open it.'}
+                </p>
+              </div>
+              <LookToggle look={look} hrefs={lookHrefs} />
+            </div>
+            {projectMains.length === 0
+              ? <p className="rounded-2xl border border-dashed border-gray-200 bg-white px-4 py-3 text-[13px] text-gray-500">No bills pending right now.</p>
+              : look === 'tree' ? <TreeLook mains={projectMains} /> : <ProjectsLook mains={projectMains} />}
+          </section>
         </>
       )}
 

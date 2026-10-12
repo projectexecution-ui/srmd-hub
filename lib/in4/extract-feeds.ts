@@ -4,6 +4,7 @@
 // lower-cased, and dates come out as ISO 'YYYY-MM-DD' strings.
 
 import { in4Query } from './db'
+import { idList } from './extract'
 import type { In4IndentRow } from './tracker'
 import type { In4ContractorCert } from './contractor'
 import type { In4SupplierCert } from './supplier'
@@ -113,7 +114,12 @@ const d = (v: unknown): string | null => {
 
 // ── Contractor certificates ──────────────────────────────────────────────────
 
-export async function extractContractorCerts(): Promise<In4ContractorCert[]> {
+export async function extractContractorCerts(woIds?: number[]): Promise<In4ContractorCert[]> {
+  // With woIds: only those work orders' certificates and advances (the misc
+  // certificates belong to no order and are left to the scheduled sync).
+  const woOnly = woIds ? ` WHERE c.WORK_ORDER_ID ${idList(woIds)}` : ''
+  const advOnly = woIds ? ` WHERE a.WO_ID ${idList(woIds)}` : ''
+  const miscOnly = woIds ? ' WHERE 1 = 0' : ''
   const rows = await in4Query<Record<string, unknown>>(`
     SELECT 'wo' kind, c.CERTIFICATE_ID, c.CERTIFICATE_TYPE_ID type_id, c.CERTIFICATE_SUBTYPE type_name, pa.DISPLAY_NO display_no, c.WORK_ORDER_ID wo_id, w.DISPLAY_NO wo_no, w.WORK_ORDER_VALUE wo_value,
            w.PROJECT_ID, w.SUBPROJECT_ID, w.SKILL_ID, w.SUB_SKILL_ID, w.SERVICE_PROVIDER_ID contractor_id, c.STATUS, sl.NAME status_name,
@@ -124,7 +130,7 @@ export async function extractContractorCerts(): Promise<In4ContractorCert[]> {
     FROM ENGG_RPT_WO_CERTIFICATE_DETAILS c
     JOIN ENGG_WORK_ORDER w ON w.ID = c.WORK_ORDER_ID
     LEFT JOIN ENGG_WO_PAYMENT_AUTHORISATION pa ON pa.ID = c.CERTIFICATE_ID
-    LEFT JOIN COMMON_STATUS_LOOKUP sl ON sl.ID = c.STATUS
+    LEFT JOIN COMMON_STATUS_LOOKUP sl ON sl.ID = c.STATUS${woOnly}
     UNION ALL
     SELECT 'advance', a.CERTIFICATE_ID, 1, 'Advance', aa.DISPLAY_NO, a.WO_ID, w.DISPLAY_NO, w.WORK_ORDER_VALUE,
            w.PROJECT_ID, a.SUBPROJECT_ID, w.SKILL_ID, w.SUB_SKILL_ID, w.SERVICE_PROVIDER_ID, a.STATUS, sl2.NAME,
@@ -133,7 +139,7 @@ export async function extractContractorCerts(): Promise<In4ContractorCert[]> {
     FROM BI.ENGG_ADVANCE_PAYMENTS_HEADER a
     JOIN ENGG_WORK_ORDER w ON w.ID = a.WO_ID
     LEFT JOIN ENGG_WO_ADVANCE_AUTHORISATION aa ON aa.ID = a.CERTIFICATE_ID
-    LEFT JOIN COMMON_STATUS_LOOKUP sl2 ON sl2.ID = a.STATUS
+    LEFT JOIN COMMON_STATUS_LOOKUP sl2 ON sl2.ID = a.STATUS${advOnly}
     UNION ALL
     SELECT 'misc', m.CERTIFICATE_ID, 0, 'Misc', NULL, NULL, NULL, 0,
            sp.PROJECT_ID, m.SUBPROJECT_ID, NULL, NULL, m.CONTRACTOR_ID, m.STATUS, sl3.NAME,
@@ -141,7 +147,7 @@ export async function extractContractorCerts(): Promise<In4ContractorCert[]> {
            m.GROSS_BILL_AMT, ISNULL(m.RECOVERED_AMT,0), (ISNULL(m.GROSS_BILL_AMT,0) - ISNULL(m.TAX_DEDUCTION_AMT,0) - ISNULL(m.OUTSTANDING_AMT,0)), ISNULL(m.TAX_DEDUCTION_AMT,0), 0, m.OUTSTANDING_AMT, m.CERTIFICATE_AMT
     FROM BI.ENGG_MISC_PAYMENTS_HEADER m
     JOIN ENGG_SUBPROJECT sp ON sp.ID = m.SUBPROJECT_ID
-    LEFT JOIN COMMON_STATUS_LOOKUP sl3 ON sl3.ID = m.STATUS`)
+    LEFT JOIN COMMON_STATUS_LOOKUP sl3 ON sl3.ID = m.STATUS${miscOnly}`)
   return rows.map(r => ({
     kind: r.kind as In4ContractorCert['kind'], certificate_id: n(r.CERTIFICATE_ID),
     certificate_type_id: ni(r.type_id), certificate_type: sn(r.type_name), display_no: sn(r.display_no),
@@ -475,7 +481,7 @@ export interface In4CertEvent {
  *  The timestamp is kept to the second, not truncated to a day. Three
  *  approvals eighty-four seconds apart is a real and useful pattern, and a
  *  date would erase it. */
-export async function extractCertEvents(): Promise<In4CertEvent[]> {
+export async function extractCertEvents(certIds?: number[]): Promise<In4CertEvent[]> {
   const rows = await in4Query<Record<string, unknown>>(`
     SELECT t.ID event_id, t.AUTHORISATION_ID certificate_id, a.DISPLAY_NO display_no,
            t.MODIFIED_DT at, t.STATUS status, s.NAME status_name,
@@ -483,7 +489,7 @@ export async function extractCertEvents(): Promise<In4CertEvent[]> {
       FROM ENGG_WO_PAYMENT_AUDIT_TRAIL t
       LEFT JOIN ENGG_WO_PAYMENT_AUTHORISATION a ON a.ID = t.AUTHORISATION_ID
       LEFT JOIN COMMON_STATUS_LOOKUP s ON s.ID = t.STATUS
-      LEFT JOIN BI.DIM_HR_EMPLOYEE_MASTER e ON e.EMP_ID = t.MODIFIED_BY`)
+      LEFT JOIN BI.DIM_HR_EMPLOYEE_MASTER e ON e.EMP_ID = t.MODIFIED_BY${certIds ? ` WHERE t.AUTHORISATION_ID ${idList(certIds)}` : ''}`)
   return rows.map(r => ({
     event_id: n(r.event_id), certificate_id: n(r.certificate_id), display_no: sn(r.display_no),
     at: new Date(r.at as string).toISOString(), status: n(r.status), status_name: sn(r.status_name),
@@ -505,14 +511,14 @@ export interface In4WoDebitNote {
   note_type: string | null; reason: string | null; remarks: string | null
   note_date: string | null; created_at: string | null
 }
-export async function extractWoDebitNotes(): Promise<In4WoDebitNote[]> {
+export async function extractWoDebitNotes(woIds?: number[]): Promise<In4WoDebitNote[]> {
   const rows = await in4Query<Record<string, unknown>>(`
     SELECT d.ID, d.DISPLAY_NO, d.DEBIT_TO_WO_ID, d.DEBIT_TO_CONTRACTOR_ID, d.DEBIT_AMOUNT, d.STATUS,
            s.NAME STATUS_NAME, t.DESCRIPTION NOTE_TYPE, r.NAME REASON, d.REMARKS, d.DEBIT_NOTE_DATE, d.CREATION_DT
       FROM ENGG_WO_DEBIT_NOTE d
       LEFT JOIN COMMON_STATUS_LOOKUP s ON s.ID = d.STATUS
       LEFT JOIN ENGG_WO_DEBIT_NOTE_TYPE_LOOKUP t ON t.ID = d.DEBIT_NOTE_TYPE
-      LEFT JOIN ENGG_DEBIT_NOTE_REASON_TYPE_LOOKUP r ON r.ID = d.REASON_TYPE_ID`)
+      LEFT JOIN ENGG_DEBIT_NOTE_REASON_TYPE_LOOKUP r ON r.ID = d.REASON_TYPE_ID${woIds ? ` WHERE d.DEBIT_TO_WO_ID ${idList(woIds)}` : ''}`)
   return rows.map(r => ({
     id: n(r.ID), display_no: sn(r.DISPLAY_NO), wo_id: ni(r.DEBIT_TO_WO_ID), contractor_id: ni(r.DEBIT_TO_CONTRACTOR_ID),
     amount: num(r.DEBIT_AMOUNT) ?? 0, status: ni(r.STATUS), status_name: sn(r.STATUS_NAME),
@@ -524,9 +530,9 @@ export async function extractWoDebitNotes(): Promise<In4WoDebitNote[]> {
 export interface In4WoDebitNoteRecovery {
   id: number; debit_note_id: number; certificate_id: number | null; deducted_amt: number; created_at: string | null
 }
-export async function extractWoDebitNoteRecoveries(): Promise<In4WoDebitNoteRecovery[]> {
+export async function extractWoDebitNoteRecoveries(noteIds?: number[]): Promise<In4WoDebitNoteRecovery[]> {
   const rows = await in4Query<Record<string, unknown>>(`
-    SELECT ID, DEBIT_NOTE_ID, WO_PAYMENT_AUTH_ID, DEDUCTED_AMT, CREATION_DT FROM ENGG_WO_PAYMENT_DEBIT_NOTE_RECOVERY`)
+    SELECT ID, DEBIT_NOTE_ID, WO_PAYMENT_AUTH_ID, DEDUCTED_AMT, CREATION_DT FROM ENGG_WO_PAYMENT_DEBIT_NOTE_RECOVERY${noteIds ? ` WHERE DEBIT_NOTE_ID ${idList(noteIds)}` : ''}`)
   return rows.map(r => ({
     id: n(r.ID), debit_note_id: n(r.DEBIT_NOTE_ID), certificate_id: ni(r.WO_PAYMENT_AUTH_ID),
     deducted_amt: num(r.DEDUCTED_AMT) ?? 0, created_at: r.CREATION_DT ? new Date(r.CREATION_DT as string).toISOString() : null,

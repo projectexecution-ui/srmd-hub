@@ -27,10 +27,11 @@ export function CheckIn4Button() {
       if (!r.ok) { toast.error(r.error ?? 'Could not check IN4'); return }
       const moved = r.moved ?? 0
       setLast(moved > 0 ? `${moved} moved on` : 'nothing new')
+      const readLine = r.read ? `Read ${r.read} ${r.read === 1 ? 'order' : 'orders'} fresh from IN4. ` : ''
       toast.success(
         moved > 0
-          ? `${moved} ${moved === 1 ? 'bill' : 'bills'} moved to the CT Disc Head — IN4 has approved the measurement`
-          : `Nothing new. ${r.checked ?? 0} ${r.checked === 1 ? 'bill is' : 'bills are'} with the Site Head, still waiting on IN4.`,
+          ? `${readLine}${moved} ${moved === 1 ? 'bill' : 'bills'} moved to the CT Disc Head — IN4 has approved the measurement`
+          : `${readLine}Nothing new. ${r.checked ?? 0} ${r.checked === 1 ? 'bill is' : 'bills are'} with the Site Head, still waiting on IN4.`,
       )
       router.refresh()
     })

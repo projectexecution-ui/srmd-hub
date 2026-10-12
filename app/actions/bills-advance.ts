@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { requireBillsAccess } from '@/lib/bills-booking/access'
+import { refreshWorkOrdersFromIn4 } from '@/lib/in4/refresh-orders'
 
 /** Pull in anything IN4 has approved since the last look — now, not at six.
  *
@@ -21,7 +22,7 @@ import { requireBillsAccess } from '@/lib/bills-booking/access'
  *  is acting, IN4 is, and the events say so. The gate is `requireBillsAccess`,
  *  so only someone who can already see the section can press it. */
 export async function checkIn4Now(): Promise<{
-  ok: boolean; error?: string; raised?: number; moved?: number; checked?: number; note?: string
+  ok: boolean; error?: string; raised?: number; moved?: number; checked?: number; note?: string; read?: number
 }> {
   await requireBillsAccess()
 
@@ -32,6 +33,24 @@ export async function checkIn4Now(): Promise<{
   }
 
   const sb = createServiceClient(url, key, { auth: { persistSession: false } })
+
+  // Read IN4 itself first (12 Oct 2026). Until now this button only re-checked
+  // CT Hub's copy, which the scheduled sync refreshes twice a day — so "Check
+  // IN4" could not see anything approved since the morning. Now the work
+  // orders of every live bill are re-read from IN4, then the checks run.
+  let read = 0
+  {
+    const { data: live } = await sb.from('bb_bills').select('order_no')
+      .eq('order_type', 'WO').not('current_stage', 'in', '(paid,rejected)').eq('is_example', false)
+    const nos = [...new Set((live ?? []).map(r => r.order_no as string | null).filter((v): v is string => !!v))].slice(0, 80)
+    if (nos.length) {
+      const { data: wos } = await sb.from('in4_work_orders').select('wo_id').in('display_no', nos)
+      const ids = (wos ?? []).map(w => w.wo_id as number)
+      try { read = (await refreshWorkOrdersFromIn4(sb, ids)).orders }
+      catch (e) { return { ok: false, error: `IN4 could not be read: ${(e as Error).message}` } }
+    }
+  }
+
   const raised = await sb.rpc('bb_rpc_raise_from_in4')
   if (raised.error) return { ok: false, error: raised.error.message }
   const advanced = await sb.rpc('bb_rpc_advance_measured')
@@ -47,5 +66,5 @@ export async function checkIn4Now(): Promise<{
   const a = (advanced.data ?? {}) as { checked?: number; moved?: number }
   revalidatePath('/bills-booking')
   revalidatePath('/approvals')
-  return { ok: true, raised: r.raised ?? 0, moved: a.moved ?? 0, checked: a.checked ?? 0, note: r.note }
+  return { ok: true, raised: r.raised ?? 0, moved: a.moved ?? 0, checked: a.checked ?? 0, note: r.note, read }
 }

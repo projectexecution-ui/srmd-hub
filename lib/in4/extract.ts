@@ -216,13 +216,13 @@ export async function extractWoBoqShares(): Promise<In4WoBoqShare[]> {
 /** Every WO BOQ line as ORDERED (quantity × rate = amt), with its name/unit
  *  from the paired dimension BI.DIM_ENGG_WORK_ORDER_BOQ (keyed on ITEM_ID). The
  *  budget split above keeps SUM(AMT); this carries the item rows themselves. */
-export async function extractWoBoqItems(): Promise<In4WoBoqItem[]> {
+export async function extractWoBoqItems(woIds?: number[]): Promise<In4WoBoqItem[]> {
   const rows = await in4Query<Record<string, unknown>>(`
     SELECT f.ITEM_ID, f.WO_ID, f.BOQ_ID, f.WORK_CATEGORY_ID, f.WORK_SUBCATEGORY_ID,
            f.QUANTITY, f.RATE, f.AMT,
            d.BOQ_NAME, d.BOQ_SUBNAME, d.BOQ_DESCRIPTION, d.UOM, d.UOM_ID
     FROM BI.FACT_ENGG_WORK_ORDER_BOQ f
-    LEFT JOIN BI.DIM_ENGG_WORK_ORDER_BOQ d ON d.ITEM_ID = f.ITEM_ID`)
+    LEFT JOIN BI.DIM_ENGG_WORK_ORDER_BOQ d ON d.ITEM_ID = f.ITEM_ID${woIds ? ` WHERE f.WO_ID ${idList(woIds)}` : ''}`)
   return rows.map(r => ({
     item_id: n(r.ITEM_ID), wo_id: n(r.WO_ID), boq_id: n(r.BOQ_ID),
     category_id: n(r.WORK_CATEGORY_ID), subcategory_id: n(r.WORK_SUBCATEGORY_ID),
@@ -236,7 +236,7 @@ export async function extractWoBoqItems(): Promise<In4WoBoqItem[]> {
  *  bill number + date from the ENGG_BOQ_ABSTRACT header. Joins to the ordered
  *  items on ITEM_ID. LEFT JOIN so an executed row is never dropped if its header
  *  is somehow missing (bill_no/date come back null then). */
-export async function extractWoAbstractItems(): Promise<In4WoAbstractItem[]> {
+export async function extractWoAbstractItems(woIds?: number[]): Promise<In4WoAbstractItem[]> {
   const rows = await in4Query<Record<string, unknown>>(`
     SELECT a.ABSTRACT_ID, a.WO_ID, a.ITEM_ID, a.EXECUTED_QUANTITY, a.RECOMMENDED_RATE, a.EXECUTED_AMT,
            h.BILL_NO, h.DISPLAY_NO, h.ABSTRACT_DT,
@@ -246,7 +246,7 @@ export async function extractWoAbstractItems(): Promise<In4WoAbstractItem[]> {
     -- One row per abstract, so this is the current state and not a history.
     -- CAST because the column is nvarchar and carries "No Items" alongside the
     -- real statuses; reading it as an int fails on those 14 rows.
-    LEFT JOIN dbo.ENGG_BOQ_ABSTRACT_STATUS st ON st.ABSTRACT_ID = a.ABSTRACT_ID`)
+    LEFT JOIN dbo.ENGG_BOQ_ABSTRACT_STATUS st ON st.ABSTRACT_ID = a.ABSTRACT_ID${woIds ? ` WHERE a.WO_ID ${idList(woIds)}` : ''}`)
   return rows.map(r => ({
     abstract_id: n(r.ABSTRACT_ID), wo_id: n(r.WO_ID), item_id: n(r.ITEM_ID),
     executed_quantity: n(r.EXECUTED_QUANTITY), recommended_rate: n(r.RECOMMENDED_RATE), executed_amt: n(r.EXECUTED_AMT),
@@ -317,3 +317,10 @@ export async function extractAll(): Promise<In4Extract> {
     supplier: await extractSupplierSkill(),
   }
 }
+/** "IN (1,2,3)" for a list of IN4 ids — integers only, so nothing but digits
+ *  ever reaches the SQL text. Empty list → a filter that matches nothing. */
+export function idList(ids: number[]): string {
+  const ok = [...new Set(ids.filter(i => Number.isInteger(i) && i > 0))]
+  return ok.length ? `IN (${ok.join(',')})` : 'IN (NULL)'
+}
+

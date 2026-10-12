@@ -191,10 +191,13 @@ export default function UsersClient({
     const trimmed = next.trim()
     if (!trimmed || trimmed === (u.name ?? '')) { setEditingNameId(null); return }
     setNameBusy(true); setError(null)
-    const { error } = await supabase.from('profiles').update({ name: trimmed }).eq('id', u.id)
+    // Both fields: the rest of the hub reads full_name first, so a rename that
+    // set only `name` showed here and nowhere else (Aksha, 12 Oct 2026). The
+    // database trigger does the same, for any other place a name is edited.
+    const { error } = await supabase.from('profiles').update({ name: trimmed, full_name: trimmed }).eq('id', u.id)
     setNameBusy(false)
     if (error) { setError(error.message); return }
-    setUsers(prev => prev.map(x => x.id === u.id ? { ...x, name: trimmed } : x))
+    setUsers(prev => prev.map(x => x.id === u.id ? { ...x, name: trimmed, full_name: trimmed } : x))
     setEditingNameId(null)
   }
 
