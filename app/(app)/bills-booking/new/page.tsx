@@ -38,14 +38,19 @@ export default async function NewBillPage() {
     // …and the mapping that says where a work order books and who approves it,
     // so the old "Where it books" step is answered instead of asked.
     loadBookingMaps(supabase),
-    // Who can be the Site Head: every real account with its role, so the
-    // picker can put site people first and hide the rest behind a toggle.
-    supabase.from('profiles').select('id, full_name, email, role').not('email', 'like', 'anon-%'),
+    // Who can be the Site Head: every real, ACTIVE account with its role — the
+    // same people the People page lists (a deactivated duplicate "Atmarpit
+    // Yash" showed under "Show everyone", 12 Oct 2026) — so the picker can put
+    // site people first and hide the rest behind a toggle.
+    supabase.from('profiles').select('id, full_name, email, role').not('email', 'like', 'anon-%').eq('is_active', true),
     supabase.from('bb_desk_members').select('user_id, project_id, in4_subproject_id').eq('desk', 'site_head'),
     getRoleLabels(),
   ])
 
   const owners: OwnerPerson[] = ((profileRows ?? []) as Array<{ id: string; full_name: string | null; email: string | null; role: string }>)
+    // A test login is nobody's Site Head (Aksha, 12 Oct 2026: the "Test"
+    // account is a test login — keep it out of this picker).
+    .filter(p => (p.full_name ?? '').trim().toLowerCase() !== 'test')
     .map(p => ({
       id: p.id,
       name: (p.full_name || p.email || 'Unnamed').trim(),
