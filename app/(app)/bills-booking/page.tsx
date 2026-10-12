@@ -20,8 +20,6 @@ import { BillRows } from './BillRows'
 import { whoHoldsWhat, summarise, type PendingBill } from '@/lib/bills-booking/holding'
 import { loadRegister, vendorOf } from '@/lib/bills-booking/load-register'
 import { applyFilters, duplicateKeys, waitingOnMe, type RegisterFilters as Filters, type View } from '@/lib/bills-booking/register'
-import { loadUnpaidCerts } from '@/lib/bills-booking/load-money'
-import { moneyAtRest } from '@/lib/bills-booking/money'
 import { DESKS } from '@/lib/bills-booking/desk-list'
 import { formatINRCompact } from '@/lib/utils'
 
@@ -33,7 +31,9 @@ export const maxDuration = 60
  *
  *  Aksha, 16 Sep 2026, screen A of the look-and-feel preview: "Build it".
  *  Signed in as a desk, not as admin: what is waiting on YOU first, then what
- *  arrived from IN4 by itself, then the money at rest across every desk. Then
+ *  arrived from IN4 by itself. (The "money at rest" tile went 12 Oct 2026 —
+ *  Aksha: "this is of no use". It summed every unpaid IN4 certificate, not
+ *  these bills; the page behind it stays under Reports.) Then
  *  the controls — search, project, WO/PO, late-only, saved views, export — and
  *  the rows, each saying why it is here. Then who holds what, as heat.
  *
@@ -49,12 +49,7 @@ export default async function BillsBookingPage({ searchParams }: {
   const sp = await searchParams
   const supabase = await createClient()
 
-  const [reg, certs] = await Promise.all([
-    loadRegister(supabase, me),
-    // The money-at-rest tile. One number; the page behind it does the rest.
-    loadUnpaidCerts(supabase).catch(() => []),
-  ])
-  const money = moneyAtRest(certs)
+  const reg = await loadRegister(supabase, me)
 
   const filters: Filters = {
     q: sp.q ?? null,
@@ -294,8 +289,8 @@ export default async function BillsBookingPage({ searchParams }: {
         <QueryError what="the bills" message={reg.error} />
       ) : (
         <>
-          {/* Three tiles: you, what arrived, the money */}
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+          {/* Two tiles: you, what arrived */}
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             {me.onAnyDesk ? (
               <div className={`rounded-2xl border bg-white p-4 shadow-sm ${mine.tone === 'late' ? 'border-rose-300' : mine.tone === 'warn' ? 'border-amber-300' : 'border-indigo-200'}`}>
                 <p className="text-[11px] font-bold uppercase tracking-wide text-indigo-700">Waiting on you</p>
@@ -318,11 +313,6 @@ export default async function BillsBookingPage({ searchParams }: {
               <p className="mt-1 text-2xl font-extrabold tabular-nums text-gray-900">{reg.arrivedToday}</p>
               <p className="mt-1 text-[12px] text-gray-600">Raised by themselves when IN4 approved the abstract. Nobody typed them.</p>
             </div>
-            <Link href="/bills-booking/money" className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm hover:border-indigo-300 hover:bg-indigo-50/30">
-              <p className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-gray-500"><Wallet className="h-3.5 w-3.5" /> Money at rest — IN4</p>
-              <p className="mt-1 text-2xl font-extrabold tabular-nums text-gray-900">{formatINRCompact(money.wo.value)}</p>
-              <p className="mt-1 text-[12px] text-gray-600">{money.wo.bills} contractor bills not yet paid · <span className="font-semibold text-indigo-700">where it stands ›</span></p>
-            </Link>
           </div>
 
           {findOpen && <RegisterFilters projects={projectOptions} counts={counts} onDesk={me.onAnyDesk} closeHref={findHref} />}
