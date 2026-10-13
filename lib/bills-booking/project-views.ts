@@ -30,6 +30,8 @@ export interface ViewBill {
   /** The viewer is on the desk holding it now. */
   mine: boolean
   isExample: boolean
+  /** On Hold in IN4 right now (13 Oct 2026). */
+  heldInIn4?: boolean
 }
 
 export interface SubRef { id: number; name: string; projectId: number | null }

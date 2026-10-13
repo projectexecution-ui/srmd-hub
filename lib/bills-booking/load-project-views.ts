@@ -148,6 +148,7 @@ export async function loadProjectViewInput(sb: SupabaseClient, reg: Register, me
     holders: (reg.memberIds.get(reg.deskKey(r)) ?? []).map(i => nameOf.get(i)).filter((n): n is string => !!n),
     mine: mineById.get(r.id) ?? false,
     isExample: r.is_example,
+    heldInIn4: !!r.in4_hold_at,
   }))
 
   const hubProjects = new Map<string, { name: string; parentName: string | null }>()

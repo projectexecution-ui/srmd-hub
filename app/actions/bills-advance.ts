@@ -53,8 +53,12 @@ export async function checkIn4Now(): Promise<{
 
   const raised = await sb.rpc('bb_rpc_raise_from_in4')
   if (raised.error) return { ok: false, error: raised.error.message }
+  const picked = await sb.rpc('bb_rpc_autopick_abstract')
+  if (picked.error) return { ok: false, error: picked.error.message }
   const advanced = await sb.rpc('bb_rpc_advance_measured')
   if (advanced.error) return { ok: false, error: advanced.error.message }
+  const amended = await sb.rpc('bb_rpc_follow_amendments')
+  if (amended.error) return { ok: false, error: amended.error.message }
   // And the IN4 side after the CT Head — certificate raised, approved, paid.
   const tracked = await sb.rpc('bb_rpc_track_in4')
   if (tracked.error) return { ok: false, error: tracked.error.message }

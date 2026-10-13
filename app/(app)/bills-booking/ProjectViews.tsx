@@ -247,7 +247,10 @@ function BillsTable({ bills, head = true }: { bills: ShownBill[]; head?: boolean
                 <b className="text-gray-900">{days(b.pendingDays)}</b>
                 <span className="block text-[11px] text-gray-500">entered {formatDate(b.enteredAt)}</span>
               </td>
-              <td className={`px-3 py-2 tabular-nums ${AGE[b.tone]}`}>{days(b.days)}{b.tone === 'late' ? ' · late' : ''}</td>
+              <td className={`px-3 py-2 tabular-nums ${AGE[b.tone]}`}>
+                {days(b.days)}{b.tone === 'late' ? ' · late' : ''}
+                {b.heldInIn4 && <span className="block text-[11px] font-bold text-rose-700">on hold in IN4</span>}
+              </td>
               <td className="px-3 py-2 text-right font-bold tabular-nums text-gray-900">{formatINR(b.amount)}</td>
             </tr>
           ))}
@@ -267,7 +270,7 @@ function BillsTable({ bills, head = true }: { bills: ShownBill[]; head?: boolean
                 {stageDef(b.stage).label} — {b.holders.length ? b.holders.join(', ') : 'nobody set'}{b.mine ? ' (you)' : ''}
               </span>
               <span className="block text-[12px] tabular-nums text-gray-700">Pending <b className="text-gray-900">{days(b.pendingDays)}</b> since entry · entered {formatDate(b.enteredAt)}</span>
-              <span className={`block text-[12px] tabular-nums ${AGE[b.tone]}`}>{days(b.days)} at this desk{b.tone === 'late' ? ' · late' : ''}</span>
+              <span className={`block text-[12px] tabular-nums ${AGE[b.tone]}`}>{days(b.days)} at this desk{b.tone === 'late' ? ' · late' : ''}{b.heldInIn4 && <b className="text-rose-700"> · on hold in IN4</b>}</span>
             </Link>
           </li>
         ))}
@@ -436,8 +439,9 @@ export function TreeLook({ mains, openAll }: { mains: MainNode[]; openAll: boole
                         <span className="block text-[12.5px] font-semibold text-gray-900">{b.vendor}</span>
                         <span className="block text-[11px] text-gray-500">
                           <span className="font-mono">{b.billNo ?? '—'}</span> · {b.holders.length ? b.holders.join(', ') : 'nobody set'}{b.mine ? ' (you)' : ''}
+                          {b.heldInIn4 && <b className="hidden text-rose-700 md:inline"> · on hold in IN4</b>}
                         </span>
-                        <span className={`block text-[11.5px] md:hidden ${AGE[b.tone]}`}>{stageDef(b.stage).label} · {days(b.days)} at this desk</span>
+                        <span className={`block text-[11.5px] md:hidden ${AGE[b.tone]}`}>{stageDef(b.stage).label} · {days(b.days)} at this desk{b.heldInIn4 && <b className="text-rose-700"> · on hold in IN4</b>}</span>
                         <span className="block text-[11.5px] text-gray-700 md:hidden">Pending {days(b.pendingDays)} since entry · entered {formatDate(b.enteredAt)}</span>
                       </span>
                       {TREE_STAGES.map(st => (

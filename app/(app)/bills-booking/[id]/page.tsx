@@ -5,7 +5,7 @@ import { requireBillsAccess } from '@/lib/bills-booking/access'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { RefreshCw } from 'lucide-react'
-import { PIPELINE, stageDef, stageIndex, type BbStage } from '@/lib/bills-booking/stages'
+import { PIPELINE, stageDef, stageIndex, daysAtStage, type BbStage } from '@/lib/bills-booking/stages'
 import { StagePill } from '../StagePill'
 import { ActionBar } from './ActionBar'
 import { StatusTimeline } from './StatusTimeline'
@@ -25,6 +25,9 @@ import { DebitNotes } from './DebitNotes'
 import { CorrectEntry } from './CorrectEntry'
 import { RefreshFromIn4 } from './RefreshFromIn4'
 import { sameName } from '@/lib/bills-booking/party-search'
+import { Amendments, type AmendmentRow } from './Amendments'
+import { AttachOrder } from './AttachOrder'
+import { loadPickList } from '@/lib/bills-booking/wo-picker'
 
 export const dynamic = 'force-dynamic'
 // "Refresh from IN4" reads IN4 (AWS, us-east-1) inside this route.
@@ -51,6 +54,11 @@ type Ev = {
  *    one figure being approved, and stays there while the sheet scrolls.
  *  · On a phone the sheet gives way to a summary that leads with net payable;
  *    the full sheet is one tap away. */
+const EDIT_LABEL: Record<string, string> = {
+  abstract: 'Abstract number', in4_hold: 'Held in IN4', in4_unhold: 'Hold lifted in IN4',
+  in4_processed: 'Processed in IN4', amended: 'Order amended in IN4', attach: 'Order attached', correct: 'Corrected',
+}
+
 export default async function BillDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const me = await requireBillsAccess()
   const { id } = await params
@@ -172,6 +180,21 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
   ])
   const cancelledInIn4 = bill.in4_cancelled_at != null
 
+  // Following IN4 (13 Oct 2026): every version of the order, and the
+  // certificate's own remark (the MFP line Accounts looks for).
+  const isOrder = (bill.order_type === 'WO' || bill.order_type === 'PO') && !!bill.order_no
+  const [amendRows, certRemark] = await Promise.all([
+    isOrder && rules.bb_rule_follow_amendments
+      ? supabase.from('in4_order_amendments').select('amendment_no, status_name, gross_value, approved_at, approved_by, remark')
+          .eq('kind', bill.order_type as string).eq('order_no', bill.order_no as string).order('amendment_no')
+          .then(r => (r.data ?? []) as AmendmentRow[])
+      : Promise.resolve([] as AmendmentRow[]),
+    bill.order_type === 'WO' && bill.in4_certificate_id != null && rules.bb_rule_mfp_remark
+      ? supabase.from('in4_wo_certificates').select('remarks').eq('kind', 'wo').eq('certificate_id', bill.in4_certificate_id as number)
+          .maybeSingle().then(r => ((r.data?.remarks as string | null) ?? '').trim())
+      : Promise.resolve(null as string | null),
+  ])
+
   // How fresh this bill's IN4 figures are: the later of the scheduled syncs
   // and the last "Refresh from IN4" on it.
   const { data: syncRows } = await supabase.from('app_settings').select('value')
@@ -187,6 +210,16 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
     || me.desks.some(d => d.desk === 'erp' || d.desk === 'ct_billing')
   const canCorrect = rules.bb_rule_billing_correct && isBilling && !bill.is_example
     && (['submitted', 'site_head', 'disc_head', 'ct_head', 'ct_billing'].includes(stage) || cancelledInIn4)
+  // "No WO yet" → attach the order once IN4 raises it (13 Oct 2026).
+  const canAttachOrder = rules.bb_rule_attach_order && isBilling && !bill.is_example
+    && bill.order_type === 'Without WO/PO' && !['paid', 'rejected'].includes(stage)
+  const attachLists = canAttachOrder
+    ? await Promise.all([
+        loadPickList(supabase).catch(() => ({ wos: [], pos: [], projects: [] })),
+        supabase.from('in4_subprojects').select('id, name').then(r => ((r.data ?? []) as Array<{ id: number; name: string | null }>).map(x => [x.id, (x.name ?? '').trim()] as [number, string])),
+      ])
+    : null
+  const daysSince = (iso: string | null | undefined) => (iso ? Math.floor(daysAtStage(iso)) : null)
 
   const maker = bill.order_no && bill.order_type === 'WO'
     ? await loadMakerSeed(supabase, { billId: bill.id as string, woNo: bill.order_no as string }).catch(() => null)
@@ -239,11 +272,17 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
     on: d.created_at ? formatDate(d.created_at as string) : null,
   }))
   const hasStampedBill = docs.some(d => d.kind === 'bill' || d.kind === 'stamped_bill')
+  const isRelease = bill.bill_type === 'Retention release' && rules.bb_rule_retention_release
   const required: RequiredDoc[] = [
     { kinds: ['bill', 'stamped_bill'], label: 'Stamped bill', note: 'Needed before the Disc Head can forward' },
-    ...(bill.order_type === 'WO'
-      ? [{ kinds: ['abstract'], label: 'Abstract', note: 'Made in IN4 by the Site Head', satisfiedBy: calc?.sheet ? 'read from IN4' : null } as RequiredDoc]
-      : [{ kinds: ['support'], label: 'Goods receipt', note: 'Raised in IN4 at the gate', satisfiedBy: calc?.grn ? 'read from IN4' : null } as RequiredDoc]),
+    // A retention release has no measurement behind it.
+    ...(isRelease ? []
+      : bill.order_type === 'WO'
+        ? [{ kinds: ['abstract'], label: 'Abstract', note: 'Made in IN4 by the Site Head', satisfiedBy: calc?.sheet ? 'read from IN4' : null } as RequiredDoc]
+        : [{ kinds: ['support'], label: 'Goods receipt', note: 'Raised in IN4 at the gate', satisfiedBy: calc?.grn ? 'read from IN4' : null } as RequiredDoc]),
+    ...(bill.bill_type === 'Full & Final' && rules.bb_rule_final_no_due
+      ? [{ kinds: ['no_due'], label: 'No-Due certificate', note: 'Needed before the Disc Head can forward a Full & Final bill' } as RequiredDoc]
+      : []),
   ]
 
   const money = formatINR
@@ -365,6 +404,7 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
       {bill.wo_pending && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           <b>No WO/PO issued</b> — this bill is to be <b>regularised</b>; a work order needs to be raised.
+          {canAttachOrder && <> Once IN4 has raised it, attach it below.</>}
         </div>
       )}
       {partyNotInIn4 && (
@@ -377,6 +417,34 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
         <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
           <b>WO budget short — IN4 amendment needed.</b> Paid-so-far + this bill exceeds the {bill.order_type} value; raise the amendment in IN4 before payment.
         </div>
+      )}
+
+      {bill.in4_hold_at && (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+          <b>On hold in IN4.</b> {String(bill.in4_hold_note ?? '')} · since {formatDateTime(bill.in4_hold_at as string)}.
+          {' '}It lifts here by itself when IN4 lifts it.
+        </div>
+      )}
+      {stage === 'trust' && !bill.in4_hold_at && (bill.order_type === 'WO' || bill.order_type === 'PO') && (
+        <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+          {bill.in4_processed_at
+            ? <><b>Processed by Accounts in IN4</b>{bill.in4_processed_by ? <> by {String(bill.in4_processed_by)}</> : null} on {formatDate(bill.in4_processed_at as string)} — waiting for payment ({daysSince(bill.in4_processed_at as string)} days).</>
+            : <><b>Waiting for Accounts to process it in IN4</b>{bill.in4_approved_at ? <> — {daysSince(bill.in4_approved_at as string)} days since the Atm Head approved on {formatDate(bill.in4_approved_at as string)}</> : null}.
+                {bill.in4_accounts_nudged_at ? <> CT Billing was told on {formatDate(bill.in4_accounts_nudged_at as string)}.</> : rules.bb_rule_accounts_nudge ? <> CT Billing is told if it waits past 5 days.</> : null}</>}
+        </div>
+      )}
+      {certRemark !== null && ['atm_in4', 'trust'].includes(stage) && (
+        /mfp/i.test(certRemark)
+          ? <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+              <b>★ MFP instruction is in IN4’s remark:</b> “{certRemark}”
+            </div>
+          : <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              <b>⚠ No MFP instruction in IN4’s remark</b>{certRemark ? <> (it says “{certRemark}”)</> : <> (it is blank)</>} — add
+              “MFP AS PER COP INSTRUCTION BY …” on the certificate in IN4 before Accounts processes it.
+            </div>
+      )}
+      {isOrder && amendRows.length > 0 && (
+        <Amendments kind={bill.order_type as string} orderNo={bill.order_no as string} rows={amendRows} />
       )}
 
       {bill.verdict && (
@@ -424,7 +492,7 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
           <Fact k="Bill type" v={bill.bill_type || '—'} />
           <Fact k="Category" v={(bill.discipline as string | null) || (bill.bill_category as string | null) || '—'} />
           <Fact k="Work" v={bill.work || '—'} />
-          <Fact k={`${bill.order_type} value`} v={money(bill.wo_value)} />
+          <Fact k={`${bill.order_type} value`} v={`${money(bill.wo_value)}${bill.wo_amendment_no ? ` (amendment ${bill.wo_amendment_no})` : ''}`} />
           <Fact k="Paid till date" v={money(bill.paid_till_date)} />
           <Fact k="This bill" v={money(bill.claimed_amount)} />
           <Fact k="Certified" v={money(bill.certified_amount)} />
@@ -440,6 +508,12 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
           {!project && subprojectName && <Fact k="Books under" v="Bills Approval project" />}
         </div>
       </Card>
+
+      {canAttachOrder && attachLists && (
+        <AttachOrder billId={bill.id as string} wos={attachLists[0].wos} pos={attachLists[0].pos}
+                     projects={attachLists[0].projects.map(p => [p.id, p.name] as [number, string])} subprojects={attachLists[1]}
+                     vendor={(bill.vendor_text as string | null) ?? ''} />
+      )}
 
       {canCorrect && (
         <CorrectEntry
@@ -529,7 +603,7 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
               const who = one(e.profiles)
               return (
                 <li key={e.id} className="flex flex-wrap items-baseline gap-x-2">
-                  <b className="text-gray-900">{e.action === 'abstract' ? 'Abstract number' : e.action}</b>
+                  <b className="text-gray-900">{EDIT_LABEL[e.action ?? ''] ?? e.action}</b>
                   {e.comment && <span className="text-gray-600">{e.comment}</span>}
                   <span className="ml-auto text-[11px] text-gray-400">
                     {who?.full_name || who?.email || 'Someone'} · {formatDateTime(e.created_at)}

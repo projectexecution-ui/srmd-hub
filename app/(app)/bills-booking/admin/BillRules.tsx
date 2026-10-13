@@ -33,15 +33,19 @@ export function BillRules({ initial }: { initial: Record<BillRuleKey, boolean> }
     <Card className="p-0 overflow-hidden">
       <div className="px-4 py-3 border-b border-gray-100 bg-gray-50/70">
         <p className="text-sm font-bold text-gray-900 inline-flex items-center gap-2">
-          <ShieldCheck className="h-4 w-4 text-indigo-600" /> Bill rules — when a bill changes
+          <ShieldCheck className="h-4 w-4 text-indigo-600" /> Bill rules
         </p>
-        <p className="text-xs text-gray-600 mt-0.5">Each can be switched off here. They act on the next IN4 check (twice a day, or Check IN4).</p>
+        <p className="text-xs text-gray-600 mt-0.5">Each can be switched off here, and the bill goes back to how it worked before. They act on the next IN4 check (twice a day, or Check IN4).</p>
       </div>
       <div className="divide-y divide-gray-100">
-        {BILL_RULES.map(r => {
+        {BILL_RULES.map((r, i) => {
           const on = state[r.key]
           return (
-            <div key={r.key} className="flex items-start gap-3 px-4 py-3.5">
+            <div key={r.key}>
+            {(i === 0 || BILL_RULES[i - 1].group !== r.group) && (
+              <p className="bg-gray-50/60 px-4 pb-1.5 pt-3 text-[11px] font-bold uppercase tracking-wide text-gray-500">{r.group}</p>
+            )}
+            <div className="flex items-start gap-3 px-4 py-3.5">
               <div className="min-w-0 flex-1">
                 <p className="text-[13px] font-semibold text-gray-900">{r.label}</p>
                 <p className="mt-0.5 text-[12px] text-gray-600">{r.detail}</p>
@@ -55,6 +59,7 @@ export function BillRules({ initial }: { initial: Record<BillRuleKey, boolean> }
                   {busy === r.key && <Loader2 className="h-3 w-3 animate-spin text-gray-500" />}
                 </span>
               </button>
+            </div>
             </div>
           )
         })}

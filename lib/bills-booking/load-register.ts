@@ -20,6 +20,8 @@ export interface RawBill {
   discipline: string | null; trust: string | null; project_id: string | null
   wo_pending: boolean; amendment_flag: boolean; is_example: boolean; in4_subproject_id: number | null
   vendor_text: string | null; created_by: string | null; created_at: string
+  /** Put on Hold in IN4 (13 Oct 2026) — shown on the home rows. */
+  in4_hold_at?: string | null
 }
 
 export interface ProjectRef { code: string; name: string; parent: string | null }
@@ -40,7 +42,7 @@ export interface Register {
 const istDay = (iso: string) =>
   new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(iso))
 
-const COLS = 'id, order_type, bill_type, bill_no, order_no, claimed_amount, net_amount, current_stage, stage_since, discipline, trust, project_id, wo_pending, amendment_flag, is_example, vendor_text, in4_subproject_id, created_by, created_at'
+const COLS = 'id, order_type, bill_type, bill_no, order_no, claimed_amount, net_amount, current_stage, stage_since, discipline, trust, project_id, wo_pending, amendment_flag, is_example, vendor_text, in4_subproject_id, created_by, created_at, in4_hold_at'
 
 /** A bill with no contractor named still has to be findable in a list. The
  *  order number is what the person holding the paper is looking at. */

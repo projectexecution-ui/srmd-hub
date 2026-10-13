@@ -45,6 +45,9 @@ export interface In4ContractorCert {
   retention: number
   outstanding: number
   certified: number
+  /** The certificate's own remark in IN4 — where Billing writes "MFP AS PER
+   *  COP INSTRUCTION BY …" (13 Oct 2026). Work-order certificates only. */
+  remarks?: string | null
 }
 
 export interface ContractorNames {

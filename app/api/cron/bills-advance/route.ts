@@ -39,8 +39,14 @@ export async function GET(req: Request) {
 
   const raised = await sb.rpc('bb_rpc_raise_from_in4')
   if (raised.error) return NextResponse.json({ ok: false, error: `raise: ${raised.error.message}` }, { status: 500 })
+  // IN4's approved abstract with the same bill no is taken by itself (13 Oct 2026).
+  const picked = await sb.rpc('bb_rpc_autopick_abstract')
+  if (picked.error) return NextResponse.json({ ok: false, error: `abstract: ${picked.error.message}` }, { status: 500 })
   const advanced = await sb.rpc('bb_rpc_advance_measured')
   if (advanced.error) return NextResponse.json({ ok: false, error: `advance: ${advanced.error.message}` }, { status: 500 })
+  // A bill takes its order's latest approved amendment (13 Oct 2026).
+  const amended = await sb.rpc('bb_rpc_follow_amendments')
+  if (amended.error) return NextResponse.json({ ok: false, error: `amendments: ${amended.error.message}` }, { status: 500 })
   // 3. TRACK (10 Oct 2026). After the CT Head: the certificate appearing in
   //    IN4, the Atm Head's approval there (compared with the sanctioned net and
   //    told to the Atm Head and Billing), and payment.
@@ -62,6 +68,8 @@ export async function GET(req: Request) {
     checked: a.checked ?? 0,
     tracked: t,
     changes: changes.data,
+    abstracts: picked.data,
+    amendments: amended.data,
     summary: `${r.raised ?? 0} raised from IN4${r.note ? ` (${r.note})` : ''} · ${a.moved ?? 0} of ${a.checked ?? 0} at the Site Head moved on · after CT Head: ${t.certified ?? 0} certified, ${t.approved ?? 0} approved in IN4, ${t.paid ?? 0} paid`,
   })
 }

@@ -69,6 +69,24 @@ export const NOTIFICATION_EVENTS: NotificationEventDef[] = [
     audience: 'CT Billing',
   },
   {
+    type: 'bb_in4_held',
+    label: 'Bills — a bill was put on hold in IN4',
+    description: 'Accounts (or anyone) put the certificate on Hold in IN4. The bill says so, with who held it and the reason IN4 shows, and it lifts by itself when IN4 does. A switch in Bills settings.',
+    audience: 'CT Billing',
+  },
+  {
+    type: 'bb_in4_sent_back',
+    label: 'Bills — a bill was sent back in IN4',
+    description: 'The certificate was sent back (ReSubmit) in IN4. The bill returns to the CT Billing desk with IN4’s reason; once it is submitted again in IN4, CT Hub follows it on. A switch in Bills settings.',
+    audience: 'CT Billing',
+  },
+  {
+    type: 'bb_accounts_waiting',
+    label: 'Bills — Accounts has not processed a bill in IN4',
+    description: 'Five days after the Atm Head approved the certificate, Accounts has still not processed it in IN4. Sent once per bill so Billing can follow up. A switch in Bills settings.',
+    audience: 'CT Billing',
+  },
+  {
     type: 'in4_indent_verify',
     label: 'IN4 — indent waiting for approval',
     description: 'An indent in IN4 reached Verify; the Atm Head of the linked project is asked to approve it in IN4.',

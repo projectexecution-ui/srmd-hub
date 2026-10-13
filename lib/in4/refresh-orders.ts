@@ -10,7 +10,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { extractWoBoqItems, extractWoAbstractItems } from './extract'
-import { extractContractorCerts, extractCertEvents, extractWoDebitNotes, extractWoDebitNoteRecoveries } from './extract-feeds'
+import { extractContractorCerts, extractCertEvents, extractWoDebitNotes, extractWoDebitNoteRecoveries, extractOrderAmendments } from './extract-feeds'
 
 export interface RefreshResult {
   orders: number
@@ -43,11 +43,12 @@ export async function refreshWorkOrdersFromIn4(sb: SupabaseClient, woIds: number
   if (!ids.length) return empty
   const now = new Date().toISOString()
 
-  const [boq, abstracts, certs, notes, partiesRes] = await Promise.all([
+  const [boq, abstracts, certs, notes, amendments, partiesRes] = await Promise.all([
     extractWoBoqItems(ids),
     extractWoAbstractItems(ids),
     extractContractorCerts(ids),
     extractWoDebitNotes(ids),
+    extractOrderAmendments({ kinds: ['WO'], woIds: ids }),
     sb.from('in4_parties').select('id, name').eq('kind', 'contractor'),
   ])
   const certIds = certs.filter(c => c.kind === 'wo').map(c => c.certificate_id)
@@ -80,13 +81,20 @@ export async function refreshWorkOrdersFromIn4(sb: SupabaseClient, woIds: number
     contractor_name: c.contractor_id != null ? contractor.get(c.contractor_id) ?? `Contractor ${c.contractor_id}` : null,
     status: c.status, status_name: c.status_name, invoice_no: c.invoice_no, invoice_date: c.invoice_date, creation_dt: c.creation_dt,
     gross_bill_amt: c.gross, certified_amt: c.certified, paid_amt: c.paid, recoveries: c.recoveries, deductions: c.deductions,
-    retention_amt: c.retention, outstanding_amt: c.outstanding, synced_at: now,
+    retention_amt: c.retention, outstanding_amt: c.outstanding, remarks: c.remarks ?? null, synced_at: now,
   })), 'kind,certificate_id')
   // Certificates of these orders that IN4 no longer lists.
   {
     const { error } = await sb.from('in4_wo_certificates').delete()
       .in('wo_id', ids).in('kind', ['wo', 'advance']).lt('synced_at', now)
     if (error) throw new Error(`in4_wo_certificates cleanup: ${error.message}`)
+  }
+
+  // Every version of these orders (13 Oct 2026).
+  await upsert(sb, 'in4_order_amendments', amendments.map(a => ({ ...a, synced_at: now })), 'kind,order_id,amendment_no')
+  {
+    const { error } = await sb.from('in4_order_amendments').delete().eq('kind', 'WO').in('order_id', ids).lt('synced_at', now)
+    if (error) throw new Error(`in4_order_amendments cleanup: ${error.message}`)
   }
 
   // The trail is append-only — rows only ever arrive (see runTrail).

@@ -17,7 +17,7 @@ import {
   extractIndentRows, extractContractorCerts, extractSupplierCerts,
   extractParties, extractMaterials, extractStores, extractCompanies, extractCompanyGstins, extractUoms,
   extractLastPoByMaterial, extractPurchaseOrders, extractPoItems, extractGrnItems, extractSupplierPayLines,
-  extractCertEvents, extractWoDebitNotes, extractWoDebitNoteRecoveries,
+  extractCertEvents, extractWoDebitNotes, extractWoDebitNoteRecoveries, extractOrderAmendments,
 } from './extract-feeds'
 import { buildTracker, buildTrackerState, compareTracker, type TrackerStoredState } from './tracker'
 import { revalidateTrackerSoon } from '@/lib/procurement/tracker-cache'
@@ -334,9 +334,15 @@ async function runContractor(sb: SupabaseClient, now: string, mode: FeedMode, ac
     category_id: c.skill_id ?? 0, subcategory_id: c.subskill_id ?? 0, contractor_id: c.contractor_id, contractor_name: names.contractorName(c.contractor_id) || null,
     status: c.status, status_name: c.status_name, invoice_no: c.invoice_no, invoice_date: c.invoice_date, creation_dt: c.creation_dt,
     gross_bill_amt: c.gross, certified_amt: c.certified, paid_amt: c.paid, recoveries: c.recoveries, deductions: c.deductions,
-    retention_amt: c.retention, outstanding_amt: c.outstanding, synced_at: now,
+    retention_amt: c.retention, outstanding_amt: c.outstanding, remarks: c.remarks ?? null, synced_at: now,
   })), 'kind,certificate_id')
   await dropStale(sb, 'in4_wo_certificates', now)
+
+  // Every version of every work order, with who approved it and why — so a
+  // bill follows the latest approved amendment (Aksha, 13 Oct 2026).
+  const woAmendments = await extractOrderAmendments({ kinds: ['WO'] })
+  await upsertAll(sb, 'in4_order_amendments', woAmendments.map(a => ({ ...a, synced_at: now })), 'kind,order_id,amendment_no')
+  await dropStale(sb, 'in4_order_amendments', now, q => q.eq('kind', 'WO'))
 
   // Contractor debit notes and which bill recovered them — read-only, shown
   // on a bill only when its work order has one (Aksha, 11 Oct 2026).
@@ -369,6 +375,10 @@ async function runSupplier(sb: SupabaseClient, now: string, mode: FeedMode, acto
     debit_note_adj: c.debit_note, retention: c.retention, payable: c.payable, paid: c.paid, outstanding: c.outstanding, synced_at: now,
   })), 'kind,certificate_id')
   await dropStale(sb, 'in4_supplier_certificates', now)
+
+  const poAmendments = await extractOrderAmendments({ kinds: ['PO'] })
+  await upsertAll(sb, 'in4_order_amendments', poAmendments.map(a => ({ ...a, synced_at: now })), 'kind,order_id,amendment_no')
+  await dropStale(sb, 'in4_order_amendments', now, q => q.eq('kind', 'PO'))
 
   const { data: cur } = await sb.from('supplier_report_state').select('state').eq('id', 'global').maybeSingle()
   const hubDocs = ((cur?.state as { reports?: SupplierDoc[] } | null)?.reports ?? [])

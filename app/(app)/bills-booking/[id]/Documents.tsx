@@ -16,6 +16,8 @@ const KINDS = [
   { key: 'mb', label: 'MB sheet' },
   { key: 'abstract', label: 'Abstract' },
   { key: 'support', label: 'Supporting' },
+  // A Full & Final bill: IN4 sends it back without one (13 Oct 2026).
+  { key: 'no_due', label: 'No-Due certificate' },
 ]
 const ACCEPT = 'image/*,application/pdf,.xlsx,.xls,.csv,.doc,.docx'
 const isImg = (e: string) => ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(e.toLowerCase())

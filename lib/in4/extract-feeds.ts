@@ -126,7 +126,8 @@ export async function extractContractorCerts(woIds?: number[]): Promise<In4Contr
            c.INVOICE_NO, c.INVOICE_DATE, c.CREATION_DT,
            c.GROSS_AMT gross,
            (ISNULL(c.ADVANCE_RECOVERY_AMT,0) + ISNULL(c.MISC_EXPENSE_RECOVERY_AMT,0) + ISNULL(c.MATERIAL_ADJUSTMENT,0) + ISNULL(c.DEBIT_NOTE_RECOVERY_AMT,0)) recoveries,
-           c.PAID_AMT paid, (ISNULL(c.TAX_DED,0) + ISNULL(c.ADDITIONAL_DEDUCTION_AMT,0)) deductions, c.RETENTION_AMT retention, c.Amt_Outstanding outstanding, c.CERTIFICATE_AMT certified
+           c.PAID_AMT paid, (ISNULL(c.TAX_DED,0) + ISNULL(c.ADDITIONAL_DEDUCTION_AMT,0)) deductions, c.RETENTION_AMT retention, c.Amt_Outstanding outstanding, c.CERTIFICATE_AMT certified,
+           c.REMARKS remarks
     FROM ENGG_RPT_WO_CERTIFICATE_DETAILS c
     JOIN ENGG_WORK_ORDER w ON w.ID = c.WORK_ORDER_ID
     LEFT JOIN ENGG_WO_PAYMENT_AUTHORISATION pa ON pa.ID = c.CERTIFICATE_ID
@@ -135,7 +136,7 @@ export async function extractContractorCerts(woIds?: number[]): Promise<In4Contr
     SELECT 'advance', a.CERTIFICATE_ID, 1, 'Advance', aa.DISPLAY_NO, a.WO_ID, w.DISPLAY_NO, w.WORK_ORDER_VALUE,
            w.PROJECT_ID, a.SUBPROJECT_ID, w.SKILL_ID, w.SUB_SKILL_ID, w.SERVICE_PROVIDER_ID, a.STATUS, sl2.NAME,
            a.BILL_NO, a.BILL_DT, a.CREATED_DT,
-           a.GROSS_BILL_AMT, 0, (ISNULL(a.PAYABLE_AMT,0) - ISNULL(a.OUTSTANDING_AMT,0)), ISNULL(a.TAX_DEDUCTION_AMT,0), 0, a.OUTSTANDING_AMT, a.CERTIFIED_AMT
+           a.GROSS_BILL_AMT, 0, (ISNULL(a.PAYABLE_AMT,0) - ISNULL(a.OUTSTANDING_AMT,0)), ISNULL(a.TAX_DEDUCTION_AMT,0), 0, a.OUTSTANDING_AMT, a.CERTIFIED_AMT, NULL
     FROM BI.ENGG_ADVANCE_PAYMENTS_HEADER a
     JOIN ENGG_WORK_ORDER w ON w.ID = a.WO_ID
     LEFT JOIN ENGG_WO_ADVANCE_AUTHORISATION aa ON aa.ID = a.CERTIFICATE_ID
@@ -144,7 +145,7 @@ export async function extractContractorCerts(woIds?: number[]): Promise<In4Contr
     SELECT 'misc', m.CERTIFICATE_ID, 0, 'Misc', NULL, NULL, NULL, 0,
            sp.PROJECT_ID, m.SUBPROJECT_ID, NULL, NULL, m.CONTRACTOR_ID, m.STATUS, sl3.NAME,
            m.BILL_NO, m.BILL_DT, m.CREATED_DT,
-           m.GROSS_BILL_AMT, ISNULL(m.RECOVERED_AMT,0), (ISNULL(m.GROSS_BILL_AMT,0) - ISNULL(m.TAX_DEDUCTION_AMT,0) - ISNULL(m.OUTSTANDING_AMT,0)), ISNULL(m.TAX_DEDUCTION_AMT,0), 0, m.OUTSTANDING_AMT, m.CERTIFICATE_AMT
+           m.GROSS_BILL_AMT, ISNULL(m.RECOVERED_AMT,0), (ISNULL(m.GROSS_BILL_AMT,0) - ISNULL(m.TAX_DEDUCTION_AMT,0) - ISNULL(m.OUTSTANDING_AMT,0)), ISNULL(m.TAX_DEDUCTION_AMT,0), 0, m.OUTSTANDING_AMT, m.CERTIFICATE_AMT, NULL
     FROM BI.ENGG_MISC_PAYMENTS_HEADER m
     JOIN ENGG_SUBPROJECT sp ON sp.ID = m.SUBPROJECT_ID
     LEFT JOIN COMMON_STATUS_LOOKUP sl3 ON sl3.ID = m.STATUS${miscOnly}`)
@@ -156,7 +157,83 @@ export async function extractContractorCerts(woIds?: number[]): Promise<In4Contr
     contractor_id: ni(r.contractor_id), status: n(r.STATUS), status_name: sn(r.status_name),
     invoice_no: sn(r.INVOICE_NO), invoice_date: d(r.INVOICE_DATE), creation_dt: d(r.CREATION_DT),
     gross: n(r.gross), recoveries: n(r.recoveries), paid: n(r.paid), deductions: n(r.deductions), retention: n(r.retention), outstanding: n(r.outstanding), certified: n(r.certified),
+    remarks: sn(r.remarks),
   }))
+}
+
+// ── Order amendments ─────────────────────────────────────────────────────────
+
+/** One version of a work order or purchase order. Version 0 is the order as
+ *  first approved; 1, 2… are amendments ("Amended & Approved" when done). The
+ *  value is the order's value AT that version — IN4 snapshots the whole order
+ *  per amendment — so before → after is version n-1 → n. Who approved it and
+ *  the reason typed come from the order's own trail (Aksha, 13 Oct 2026: "make
+ *  sure the Latest Amended WO which is approved in IN4 is auto taken … and also
+ *  show the trail in short"). */
+export interface In4OrderAmendment {
+  kind: 'WO' | 'PO'
+  order_id: number
+  order_no: string | null
+  amendment_no: number
+  status_name: string | null
+  gross_value: number | null
+  value: number | null
+  approved_at: string | null
+  approved_by: string | null
+  remark: string | null
+}
+
+export async function extractOrderAmendments(opts: { woIds?: number[]; poIds?: number[]; kinds?: Array<'WO' | 'PO'> } = {}): Promise<In4OrderAmendment[]> {
+  const kinds = opts.kinds ?? ['WO', 'PO']
+  const woOnly = opts.woIds ? ` AND h.WORK_ORDER_ID ${idList(opts.woIds)}` : ''
+  const poOnly = opts.poIds ? ` AND h.PURCHASE_ORDER_ID ${idList(opts.poIds)}` : ''
+  // A remark worth showing: not blank, not just "ok".
+  const said = (col: string) => `NULLIF(NULLIF(LTRIM(RTRIM(${col})), ''), 'Ok')`
+  const [wo, po] = await Promise.all([
+    kinds.includes('WO') && !(opts.woIds && !opts.woIds.length) ? in4Query<Record<string, unknown>>(`
+      SELECT h.WORK_ORDER_ID order_id, w.DISPLAY_NO order_no, h.AMENDMENT_NO amendment_no, s.NAME status_name,
+             a.WO_GROSS_VALUE gross_value, a.WORK_ORDER_VALUE value,
+             ap.MODIFIED_DT approved_at, ap.EMP_NAME approved_by, rm.REMARKS remark
+      FROM ENGG_WO_AMENDMENT_HEADER h
+      JOIN ENGG_WORK_ORDER w ON w.ID = h.WORK_ORDER_ID
+      LEFT JOIN COMMON_STATUS_LOOKUP s ON s.ID = h.STATUS
+      OUTER APPLY (SELECT TOP 1 x.WO_GROSS_VALUE, x.WORK_ORDER_VALUE FROM ENGG_WORK_ORDER_AMENDMENT x WHERE x.AMENDMENT_ID = h.ID ORDER BY x.A_ID DESC) a
+      OUTER APPLY (SELECT TOP 1 t.MODIFIED_DT, e.EMP_NAME FROM ENGG_WO_AUDIT_TRAIL t
+                   LEFT JOIN BI.DIM_HR_EMPLOYEE_MASTER e ON e.EMP_ID = t.MODIFIED_BY
+                   WHERE t.AMENDMENT_ID = h.ID AND t.STATUS = 78 ORDER BY t.MODIFIED_DT DESC) ap
+      OUTER APPLY (SELECT TOP 1 ${said('t.REMARKS')} REMARKS FROM ENGG_WO_AUDIT_TRAIL t
+                   WHERE t.AMENDMENT_ID = h.ID AND ${said('t.REMARKS')} IS NOT NULL ORDER BY t.MODIFIED_DT DESC) rm
+      WHERE 1 = 1${woOnly}`) : Promise.resolve([]),
+    // A PO's trail carries no amendment id: the n-th "Amended & Approved" event
+    // on the order is amendment n.
+    kinds.includes('PO') && !(opts.poIds && !opts.poIds.length) ? in4Query<Record<string, unknown>>(`
+      WITH ap AS (
+        SELECT t.PURCHASE_ORDER_ID po, t.MODIFIED_DT at, e.EMP_NAME who,
+               ROW_NUMBER() OVER (PARTITION BY t.PURCHASE_ORDER_ID ORDER BY t.MODIFIED_DT, t.ID) n,
+               LAG(t.MODIFIED_DT) OVER (PARTITION BY t.PURCHASE_ORDER_ID ORDER BY t.MODIFIED_DT, t.ID) prev_at
+        FROM PURCH_PURCHASE_ORDER_AUDIT_TRAIL t LEFT JOIN BI.DIM_HR_EMPLOYEE_MASTER e ON e.EMP_ID = t.MODIFIED_BY
+        WHERE t.STATUS = 78
+      )
+      SELECT h.PURCHASE_ORDER_ID order_id, o.DISPLAY_NO order_no, h.AMENDMENT_NO amendment_no, s.NAME status_name,
+             a.TOTAL_VALUE gross_value, a.TOTAL_VALUE value, ap.at approved_at, ap.who approved_by, rm.REMARKS remark
+      FROM PURCH_PO_AMENDMENT_HEADER h
+      JOIN PURCH_PURCHASE_ORDER o ON o.ID = h.PURCHASE_ORDER_ID
+      LEFT JOIN COMMON_STATUS_LOOKUP s ON s.ID = h.STATUS
+      OUTER APPLY (SELECT TOP 1 x.TOTAL_VALUE FROM PURCH_PURCHASE_ORDER_AMENDMENT x WHERE x.AMENDMENT_ID = h.ID ORDER BY x.A_ID DESC) a
+      LEFT JOIN ap ON ap.po = h.PURCHASE_ORDER_ID AND ap.n = h.AMENDMENT_NO
+      OUTER APPLY (SELECT TOP 1 ${said('t.REMARKS')} REMARKS FROM PURCH_PURCHASE_ORDER_AUDIT_TRAIL t
+                   WHERE t.PURCHASE_ORDER_ID = h.PURCHASE_ORDER_ID AND t.STATUS IN (77, 117, 78)
+                     AND ap.at IS NOT NULL AND t.MODIFIED_DT <= ap.at AND (ap.prev_at IS NULL OR t.MODIFIED_DT > ap.prev_at)
+                     AND ${said('t.REMARKS')} IS NOT NULL ORDER BY t.MODIFIED_DT DESC) rm
+      WHERE 1 = 1${poOnly}`) : Promise.resolve([]),
+  ])
+  const map = (kind: 'WO' | 'PO') => (r: Record<string, unknown>): In4OrderAmendment => ({
+    kind, order_id: n(r.order_id), order_no: sn(r.order_no), amendment_no: n(r.amendment_no), status_name: sn(r.status_name),
+    gross_value: num(r.gross_value), value: num(r.value),
+    approved_at: r.approved_at == null ? null : new Date(r.approved_at as string).toISOString(),
+    approved_by: sn(r.approved_by), remark: sn(r.remark),
+  })
+  return [...wo.map(map('WO')), ...po.map(map('PO'))]
 }
 
 // ── Supplier certificates ────────────────────────────────────────────────────

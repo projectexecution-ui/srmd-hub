@@ -28,7 +28,7 @@ type Category = { id: number; name: string; subs: Array<{ id: number; name: stri
  *  no measurement behind it; petty cash and misc never are, and asking for an
  *  order number on those is how you teach people to type something wrong to get
  *  past a field. */
-const AGAINST_ORDER = new Set(['Running', 'Full & Final', 'Advance'])
+const AGAINST_ORDER = new Set(['Running', 'Full & Final', 'Advance', 'Retention release'])
 
 /** What the server sends, as plain arrays — Maps do not survive the boundary
  *  between a server component and a client one. */
@@ -54,7 +54,7 @@ const hydrate = (s: BookingSeed): BookingMaps => ({
   disciplines: new Map(s.disciplines),
 })
 
-export function BillForm({ projects, categories, in4Wos, in4Pos, in4Projects, seed, parties, in4Mains, in4Subs, owners, seats, canAdmin }: {
+export function BillForm({ projects, categories, in4Wos, in4Pos, in4Projects, seed, parties, in4Mains, in4Subs, owners, seats, canAdmin, allowRelease = true }: {
   projects: Opt[]; categories: Category[]
   in4Wos: PickableOrder[]; in4Pos: PickableOrder[]
   in4Projects: Array<{ id: number; name: string }>
@@ -69,6 +69,8 @@ export function BillForm({ projects, categories, in4Wos, in4Pos, in4Projects, se
   owners: OwnerPerson[]
   seats: SiteHeadSeat[]
   canAdmin: boolean
+  /** The "Retention release" type — a switch in Bills settings. */
+  allowRelease?: boolean
 }) {
   const router = useRouter()
   const supabase = createClient()
@@ -225,7 +227,7 @@ export function BillForm({ projects, categories, in4Wos, in4Pos, in4Projects, se
       {/* 1 — what kind of bill, because it decides whether the rest applies */}
       <Section n={1} title="What kind of bill is this?">
         <div className="flex flex-wrap gap-2">
-          {['Running', 'Full & Final', 'Advance', 'Petty Cash', 'Misc'].map(t => (
+          {['Running', 'Full & Final', 'Advance', ...(allowRelease ? ['Retention release'] : []), 'Petty Cash', 'Misc'].map(t => (
             <button key={t} type="button" onClick={() => { setBillType(t); setOrder(null); setSubPick(null); setNoOrder(false) }}
                     className={`rounded-lg border px-3 py-2 text-sm font-semibold min-h-[44px] ${
                       billType === t ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-gray-300 text-gray-700 hover:bg-gray-50'}`}>
@@ -234,7 +236,9 @@ export function BillForm({ projects, categories, in4Wos, in4Pos, in4Projects, se
           ))}
         </div>
         <p className="mt-2 text-xs text-gray-500">
-          {AGAINST_ORDER.has(billType)
+          {billType === 'Retention release'
+            ? 'Releases the retention held on a work order. No measurement is asked for; CT Hub follows IN4’s Retention certificate on that order.'
+            : AGAINST_ORDER.has(billType)
             ? 'Drawn against a work order or a purchase order. Find it below and IN4 fills the rest.'
             : 'No order and no abstract — these go straight to Billing with a head of account.'}
         </p>
@@ -263,17 +267,17 @@ export function BillForm({ projects, categories, in4Wos, in4Pos, in4Projects, se
             />
           )}
 
-          <label className="mt-3 flex items-start gap-2 text-sm">
+          {billType !== 'Retention release' && <label className="mt-3 flex items-start gap-2 text-sm">
             <input type="checkbox" checked={noOrder} className="mt-0.5 h-4 w-4"
                    onChange={e => { setNoOrder(e.target.checked); if (e.target.checked) setOrder(null) }} />
             <span>
               <b>No {kind === 'WO' ? 'work order' : 'purchase order'} yet</b>
               <span className="block text-xs text-gray-500">
                 The bill came first and the {kind} is still to be raised. A third of bills arrive this way.
-                It is recorded now, ages from its own bill date, and stops before the Atm desk until a number is attached.
+                It is recorded now, ages from its own bill date, and the {kind} is attached on the bill once IN4 raises it.
               </span>
             </span>
-          </label>
+          </label>}
 
         </Section>
       )}

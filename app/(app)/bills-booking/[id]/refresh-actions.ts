@@ -41,7 +41,7 @@ export async function refreshBillFromIn4(billId: string): Promise<
   } catch (e) {
     return { ok: false, error: `IN4 could not be read: ${(e as Error).message}` }
   }
-  for (const fn of ['bb_rpc_advance_measured', 'bb_rpc_track_in4', 'bb_rpc_check_changes']) {
+  for (const fn of ['bb_rpc_autopick_abstract', 'bb_rpc_advance_measured', 'bb_rpc_follow_amendments', 'bb_rpc_track_in4', 'bb_rpc_check_changes']) {
     const { error } = await svc.rpc(fn)
     if (error) return { ok: false, error: `Read IN4, but the bill check failed: ${error.message}` }
   }

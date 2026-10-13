@@ -7,6 +7,7 @@ import { loadBookingMaps } from '@/lib/bills-booking/desks'
 import { inScopeProjects, isOutOfScope } from '@/lib/bills-booking/scope'
 import { DESKS } from '@/lib/bills-booking/desk-list'
 import type { In4Party } from '@/lib/bills-booking/party-search'
+import { loadBillRules } from '@/lib/bills-booking/rules'
 import { getRoleLabels } from '@/lib/role-labels'
 import type { Role } from '@/lib/types'
 import type { OwnerPerson, SiteHeadSeat } from './OwnerPicker'
@@ -144,6 +145,7 @@ export default async function NewBillPage() {
         in4Subs={in4Subs}
         owners={owners}
         seats={seats}
+        allowRelease={(await loadBillRules(supabase)).bb_rule_retention_release}
         // Every page in this section already requires admin, so anyone who got
         // here can set a desk. The prop stays so it survives the day desk users
         // exist and this stops being true.
