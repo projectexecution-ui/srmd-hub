@@ -11,6 +11,8 @@ import { Loader2, Send } from 'lucide-react'
 import { OrderPicker, type OrderKind } from './OrderPicker'
 import { DeskPanel } from './DeskPanel'
 import { OwnerPicker, type OwnerPerson, type SiteHeadSeat } from './OwnerPicker'
+import { PartyPicker, type PartyValue } from './PartyPicker'
+import type { In4Party } from '@/lib/bills-booking/party-search'
 import type { PickableOrder } from '@/lib/bills-booking/orders'
 import { resolveBooking, bookingGaps, type BookingMaps, type Booking } from '@/lib/bills-booking/booking'
 import { formatINR } from '@/lib/utils'
@@ -52,11 +54,16 @@ const hydrate = (s: BookingSeed): BookingMaps => ({
   disciplines: new Map(s.disciplines),
 })
 
-export function BillForm({ projects, categories, in4Wos, in4Pos, in4Projects, seed, owners, seats, canAdmin }: {
+export function BillForm({ projects, categories, in4Wos, in4Pos, in4Projects, seed, parties, in4Mains, in4Subs, owners, seats, canAdmin }: {
   projects: Opt[]; categories: Category[]
   in4Wos: PickableOrder[]; in4Pos: PickableOrder[]
   in4Projects: Array<{ id: number; name: string }>
   seed: BookingSeed
+  /** IN4's party master — the contractor or supplier on a bill with no order. */
+  parties: In4Party[]
+  /** IN4's project → sub-project, for a bill with no order to read them off. */
+  in4Mains: Array<{ id: number; name: string }>
+  in4Subs: Array<{ id: number; name: string; projectId: number }>
   /** Who can be named the Site Head, with roles, and the Site Head seats
    *  already set on the desks screen. */
   owners: OwnerPerson[]
@@ -82,12 +89,18 @@ export function BillForm({ projects, categories, in4Wos, in4Pos, in4Projects, se
   // numbers because that is what the ERP prints and what Aksha asked to see.
   const [catId, setCatId] = useState('')
   const [subCatId, setSubCatId] = useState('')
-  const [vendorText, setVendorText] = useState('')
+  // The party, from IN4 or typed by hand (Aksha, 13 Oct 2026).
+  const [party, setParty] = useState<PartyValue>({ name: '', party: null })
+  // A bill with no WO/PO yet books by IN4 project → sub-project, and asks for
+  // nothing else about where it belongs — no category, no scope (Aksha, 13 Oct
+  // 2026: "i dont want extra Discipline n Sub Discpline entry - just want which
+  // Project n sub projject").
+  const [in4MainId, setIn4MainId] = useState('')
+  const [in4SubId, setIn4SubId] = useState('')
   const [workManual, setWorkManual] = useState('')
   const [billNo, setBillNo] = useState('')
   const [billDate, setBillDate] = useState('')
   const [claimed, setClaimed] = useState('')
-  const [orderNoManual, setOrderNoManual] = useState('')
   // Aksha, 10 Oct 2026: Billing names the Site Head who will process the
   // bill; that person is told, and the bill lands on their desk at once.
   const [ownerId, setOwnerId] = useState('')
@@ -97,21 +110,29 @@ export function BillForm({ projects, categories, in4Wos, in4Pos, in4Projects, se
   const projectNames = new Map(in4Projects.map(p => [p.id, p.name]))
   const needsOrder = AGAINST_ORDER.has(billType) && !noOrder
   const usingOrder = needsOrder && !!order
-  const party = kind === 'WO' ? 'contractor' : 'supplier'
+  // An order-type bill whose WO/PO is still to be raised.
+  const noOrderBill = AGAINST_ORDER.has(billType) && noOrder
+  const partyKind = kind === 'WO' ? 'contractor' : 'supplier'
+  const subId = noOrderBill && in4SubId ? Number(in4SubId) : null
 
-  // Where it books, worked out from the order rather than asked for.
+  // Where it books, worked out from the order rather than asked for — or, with
+  // no order, from the IN4 sub-project picked.
   const booksTo = subPick ?? order?.subprojectId ?? null
   const booking: Booking = useMemo(
-    () => resolveBooking(usingOrder ? { ...order, subprojectId: booksTo } : null, maps),
-    [usingOrder, order, booksTo, maps])
+    () => resolveBooking(
+      usingOrder ? { ...order, subprojectId: booksTo }
+        : subId != null ? { subprojectId: subId, categoryId: null, workDescription: null }
+          : null,
+      maps),
+    [usingOrder, order, booksTo, subId, maps])
   const gaps = bookingGaps(booking)
 
   // Everything below is what IN4 supplies once an order is chosen. It is not
   // asked for, and it is not editable: the point of reading IN4 is that nobody
   // retypes a figure the ERP already holds.
   const orderType = usingOrder ? order.kind : 'Without WO/PO'
-  const orderNo = usingOrder ? order.orderNo : orderNoManual.trim()
-  const contractor = usingOrder ? order.party : vendorText.trim()
+  const orderNo = usingOrder ? order.orderNo : ''
+  const contractor = usingOrder ? order.party : party.name.trim()
   const trust = usingOrder ? (order.trust ?? '') : ''
   const woValue = usingOrder ? Math.round(order.orderedGross) : null
   const paidTill = usingOrder ? Math.round(order.billedGross) : 0
@@ -119,7 +140,7 @@ export function BillForm({ projects, categories, in4Wos, in4Pos, in4Projects, se
   // The CT Hub project is read off the order when there is one. The scope only
   // when IN4 holds one — a work order carries a description, a purchase order
   // has no such field, so on a PO it is asked rather than left blank.
-  const finalProjectId = usingOrder ? booking.projectId : (projectId || null)
+  const finalProjectId = usingOrder || noOrderBill ? booking.projectId : (projectId || null)
   const cat = categories.find(c => String(c.id) === catId) ?? null
   const subCat = cat?.subs.find(s => String(s.id) === subCatId) ?? null
   // A bill entered without an order has no cc_disciplines id to carry — the
@@ -127,8 +148,8 @@ export function BillForm({ projects, categories, in4Wos, in4Pos, in4Projects, se
   const finalDisciplineId = usingOrder ? booking.disciplineId : null
   const finalDisciplineName = usingOrder
     ? (booking.disciplineName ?? booking.categoryIn4)
-    : (cat?.name ?? null)
-  const work = booking.scope ?? (workManual.trim() || null)
+    : noOrderBill ? null : (cat?.name ?? null)
+  const work = noOrderBill ? null : booking.scope ?? (workManual.trim() || null)
 
   const thisBill = Number(claimed) || 0
   const overWO = usingOrder && woValue != null && woValue > 0 && paidTill + thisBill > woValue
@@ -148,14 +169,15 @@ export function BillForm({ projects, categories, in4Wos, in4Pos, in4Projects, se
     // recorded against its IN4 sub-project and shows on the desks screen as a
     // gap — it is never refused, because refusing it just means it is kept in
     // somebody's drawer instead.
-    if (!usingOrder && !projectId) { setErr('Pick the CT Hub project this books against'); return }
+    if (noOrderBill && subId == null) { setErr('Pick the project and sub-project this bill is for'); return }
+    if (!usingOrder && !noOrderBill && !projectId) { setErr('Pick the CT Hub project this books against'); return }
     if (needsOrder && !order) {
       setErr(kind === 'WO'
         ? 'Find the work order, or tick "no work order yet"'
         : 'Find the purchase order, or tick "no purchase order yet"')
       return
     }
-    if (!contractor) { setErr(`Name the ${party}`); return }
+    if (!contractor) { setErr(`Name the ${partyKind}`); return }
     if (!(thisBill > 0)) { setErr('Enter what this bill is for'); return }
     if (!effectiveOwner) { setErr('Name the Site Head who will process this bill'); return }
     setBusy(true); setErr(null)
@@ -163,7 +185,7 @@ export function BillForm({ projects, categories, in4Wos, in4Pos, in4Projects, se
       p: {
         order_type: orderType, bill_type: billType,
         // The sub-category, when one was picked. IN4's name, number and all.
-        bill_category: usingOrder ? null : (subCat?.name ?? null),
+        bill_category: usingOrder || noOrderBill ? null : (subCat?.name ?? null),
         ct_other_dept: 'CT', order_no: orderNo, project_id: finalProjectId,
         vendor_id: null, vendor_text: contractor,
         discipline_id: finalDisciplineId,
@@ -253,21 +275,42 @@ export function BillForm({ projects, categories, in4Wos, in4Pos, in4Projects, se
             </span>
           </label>
 
-          {noOrder && (
-            <div className="mt-3">
-              <Label htmlFor="ono">Reference, if there is one</Label>
-              <Input id="ono" value={orderNoManual} onChange={e => setOrderNoManual(e.target.value)} placeholder="optional" />
-            </div>
-          )}
         </Section>
       )}
 
       {/* 3 — only what IN4 cannot know */}
       <Section n={AGAINST_ORDER.has(billType) ? 3 : 2} title="The bill itself">
+        {noOrderBill && (
+          <div className="mb-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div>
+              <Label htmlFor="in4p">Project *</Label>
+              <select id="in4p" value={in4MainId} className={sel}
+                      onChange={e => { setIn4MainId(e.target.value); setIn4SubId('') }}>
+                <option value="">— select —</option>
+                {in4Mains.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <Label htmlFor="in4s">Sub-project *</Label>
+              <select id="in4s" value={in4SubId} onChange={e => setIn4SubId(e.target.value)} disabled={!in4MainId}
+                      className={`${sel} disabled:bg-gray-50 disabled:text-gray-400`}>
+                <option value="">{in4MainId ? '— select —' : 'Pick the project first'}</option>
+                {in4Subs.filter(s => String(s.projectId) === in4MainId).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
+            {subId != null && (
+              <p className="text-[11.5px] text-gray-500 md:col-span-2">
+                {booking.projectName ? <>CT Hub project <b className="text-gray-700">{booking.projectName}</b></> : 'No CT Hub project linked — it books by the IN4 sub-project'}
+                {' · '}Atm Head {booking.atmHeads.length ? <b className="text-gray-700">{booking.atmHeads.map(p => p.name).join(', ')}</b> : 'not set yet'}
+              </p>
+            )}
+          </div>
+        )}
+
         {(!usingOrder) && (
           <div className="mb-3">
-            <Label htmlFor="vent">Contractor / vendor *</Label>
-            <Input id="vent" value={vendorText} onChange={e => setVendorText(e.target.value)} placeholder="e.g. Desai Construction" />
+            <Label>{partyKind === 'supplier' ? 'Supplier' : 'Contractor / vendor'} *</Label>
+            <PartyPicker parties={parties} prefer={partyKind} value={party} onChange={setParty} />
           </div>
         )}
 
@@ -308,7 +351,8 @@ export function BillForm({ projects, categories, in4Wos, in4Pos, in4Projects, se
           </p>
         )}
 
-        <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+        {/* With no WO/PO yet, nothing more is asked: no scope, no category. */}
+        {!noOrderBill && <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
           {/* The scope is read off the order when IN4 holds one. A work order
               carries a description; a purchase order has no such field, so on a
               PO this is asked rather than left empty. */}
@@ -356,7 +400,7 @@ export function BillForm({ projects, categories, in4Wos, in4Pos, in4Projects, se
               </div>
             </>
           )}
-        </div>
+        </div>}
 
         {/* The abstract number is NOT asked for here. Aksha, 14 Sep 2026: "why
             Abstract Number - that will come ahead in process na ???" — it is

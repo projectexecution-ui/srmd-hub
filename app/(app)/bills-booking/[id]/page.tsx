@@ -24,6 +24,7 @@ import { loadBillRules } from '@/lib/bills-booking/rules'
 import { DebitNotes } from './DebitNotes'
 import { CorrectEntry } from './CorrectEntry'
 import { RefreshFromIn4 } from './RefreshFromIn4'
+import { sameName } from '@/lib/bills-booking/party-search'
 
 export const dynamic = 'force-dynamic'
 // "Refresh from IN4" reads IN4 (AWS, us-east-1) inside this route.
@@ -69,6 +70,12 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
 
   const project = one(bill.projects as { code: string; name: string } | null)
   const vendor = (bill.vendor_text as string | null) || '—'
+  // A bill with no order names its party from IN4, or by hand when IN4 does
+  // not hold it yet (13 Oct 2026). Said until IN4 holds that exact name.
+  const partyNotInIn4 = bill.order_type === 'Without WO/PO' && !!bill.vendor_text
+    ? await supabase.from('in4_parties').select('name').eq('is_active', true)
+        .then(({ data, error }) => !error && !(data ?? []).some(p => sameName((p.name as string | null) ?? '', bill.vendor_text as string)))
+    : false
   const stage = bill.current_stage as BbStage
   const curIdx = stageIndex(stage)
   const evs = (events ?? []) as Ev[]
@@ -358,6 +365,12 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
       {bill.wo_pending && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           <b>No WO/PO issued</b> — this bill is to be <b>regularised</b>; a work order needs to be raised.
+        </div>
+      )}
+      {partyNotInIn4 && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <b>Party not in IN4 yet</b> — “{vendor}” was typed by hand when this bill was entered. Billing adds the
+          party in IN4; this note goes by itself once IN4 holds the same name.
         </div>
       )}
       {bill.amendment_flag && (

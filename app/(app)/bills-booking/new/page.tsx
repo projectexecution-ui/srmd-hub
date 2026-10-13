@@ -4,7 +4,9 @@ import { PageHeader } from '@/components/PageHeader'
 import { BillForm, type BookingSeed } from './BillForm'
 import { loadPickList } from '@/lib/bills-booking/wo-picker'
 import { loadBookingMaps } from '@/lib/bills-booking/desks'
-import { inScopeProjects } from '@/lib/bills-booking/scope'
+import { inScopeProjects, isOutOfScope } from '@/lib/bills-booking/scope'
+import { DESKS } from '@/lib/bills-booking/desk-list'
+import type { In4Party } from '@/lib/bills-booking/party-search'
 import { getRoleLabels } from '@/lib/role-labels'
 import type { Role } from '@/lib/types'
 import type { OwnerPerson, SiteHeadSeat } from './OwnerPicker'
@@ -14,7 +16,7 @@ export const dynamic = 'force-dynamic'
 export default async function NewBillPage() {
   await requireBillsWrite()
   const supabase = await createClient()
-  const [{ data: projects }, { data: skills }, pick, maps, { data: profileRows }, { data: seatRows }, roleLabels] = await Promise.all([
+  const [{ data: projects }, { data: skills }, pick, maps, { data: profileRows }, { data: deskRows }, roleLabels, { data: partyRows }, { data: subRows }] = await Promise.all([
     supabase.from('projects').select('id, code, name, parent_project_id, group_label').is('archived_at', null).order('code'),
     // Aksha, 17 Sep 2026: "category and sub category in entering a bill without
     // PO should come of IN4 - also with thier Numbers - also it should be
@@ -43,9 +45,28 @@ export default async function NewBillPage() {
     // Yash" showed under "Show everyone", 12 Oct 2026) — so the picker can put
     // site people first and hide the rest behind a toggle.
     supabase.from('profiles').select('id, full_name, email, role').not('email', 'like', 'anon-%').eq('is_active', true),
-    supabase.from('bb_desk_members').select('user_id, project_id, in4_subproject_id').eq('desk', 'site_head'),
+    // Every desk seat: the Site Head ones default the picker, and all of them
+    // tell the picker what each person actually does.
+    supabase.from('bb_desk_members').select('desk, user_id, project_id, in4_subproject_id'),
     getRoleLabels(),
+    // IN4's party master, for a bill with no order (Aksha, 13 Oct 2026: "The
+    // Vendor or Contractor should come from Live In4 data"). 622 rows; no PAN,
+    // bank or phone leaves the server.
+    supabase.from('in4_parties').select('kind, id, name, code, city, skills').eq('is_active', true).order('name'),
+    // IN4's sub-projects, for picking project → sub-project on a bill with no
+    // order. Design and Professional Consultancy stay out, as everywhere here.
+    supabase.from('in4_subprojects').select('id, name, project_id').eq('is_active', true).order('name'),
   ])
+
+  const desksRaw = (deskRows ?? []) as Array<{ desk: string; user_id: string; project_id: string | null; in4_subproject_id: number | null }>
+  const deskLabel = new Map<string, string>(DESKS.map(d => [d.key, d.key === 'ct_billing' ? 'CT Billing' : d.label]))
+  const desksOf = new Map<string, string[]>()
+  for (const d of desksRaw) {
+    const label = deskLabel.get(d.desk) ?? d.desk
+    const list = desksOf.get(d.user_id) ?? []
+    if (!list.includes(label)) list.push(label)
+    desksOf.set(d.user_id, list)
+  }
 
   const owners: OwnerPerson[] = ((profileRows ?? []) as Array<{ id: string; full_name: string | null; email: string | null; role: string }>)
     // A test login is nobody's Site Head (Aksha, 12 Oct 2026: the "Test"
@@ -56,9 +77,21 @@ export default async function NewBillPage() {
       name: (p.full_name || p.email || 'Unnamed').trim(),
       role: p.role,
       roleLabel: roleLabels[p.role as Role]?.label ?? p.role,
+      desks: desksOf.get(p.id) ?? [],
     }))
-  const seats: SiteHeadSeat[] = ((seatRows ?? []) as Array<{ user_id: string; project_id: string | null; in4_subproject_id: number | null }>)
+  const seats: SiteHeadSeat[] = desksRaw.filter(s => s.desk === 'site_head')
     .map(s => ({ userId: s.user_id, projectId: s.project_id, subprojectId: s.in4_subproject_id }))
+
+  const parties: In4Party[] = ((partyRows ?? []) as Array<{ kind: string; id: number; name: string | null; code: string | null; city: string | null; skills: string[] | null }>)
+    .filter(p => (p.name ?? '').trim() && (p.kind === 'contractor' || p.kind === 'supplier'))
+    .map(p => ({ kind: p.kind as In4Party['kind'], id: p.id, name: (p.name ?? '').trim(), code: p.code, city: p.city, trades: p.skills ?? [] }))
+
+  // Project → sub-project, IN4's two levels, only where a sub-project is in scope.
+  const in4Subs = ((subRows ?? []) as Array<{ id: number; name: string | null; project_id: number | null }>)
+    .filter(r => r.project_id != null && (r.name ?? '').trim() && !isOutOfScope(r.name))
+    .map(r => ({ id: r.id, name: (r.name ?? '').trim(), projectId: r.project_id as number }))
+  const withSubs = new Set(in4Subs.map(r => r.projectId))
+  const in4Mains = pick.projects.filter(p => withSubs.has(p.id)).sort((a, b) => a.name.localeCompare(b.name))
 
   // The skill tree, folded into the two levels the form offers. A category is
   // a skill with children; its sub-categories are those children. IN4's own
@@ -106,6 +139,9 @@ export default async function NewBillPage() {
         in4Pos={pick.pos}
         in4Projects={pick.projects}
         seed={seed}
+        parties={parties}
+        in4Mains={in4Mains}
+        in4Subs={in4Subs}
         owners={owners}
         seats={seats}
         // Every page in this section already requires admin, so anyone who got
