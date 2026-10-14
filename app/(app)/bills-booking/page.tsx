@@ -404,7 +404,8 @@ export default async function BillsBookingPage({ searchParams }: {
               { href: '/bills-booking/retention', icon: Landmark, label: 'Retention', hint: 'Held and not given back' },
               { href: '/bills-booking/closure', icon: PackageCheck, label: 'Never closed', hint: 'No final bill, gone quiet' },
               { href: '/bills-booking/sanctions', icon: ShieldCheck, label: 'Sanctions', hint: 'What you approved vs IN4' },
-              { href: '/bills-booking/daily', icon: CalendarDays, label: 'Daily report', hint: 'Paid, and at each trust' },
+              { href: '/bills-booking/daily-report', icon: CalendarDays, label: 'Daily bills report', hint: 'For management — copy or PDF' },
+              { href: '/bills-booking/daily', icon: CalendarDays, label: 'IN4 payments', hint: 'Paid and at trust, all of IN4' },
               { href: '/bills-booking/no-order', icon: FileQuestion, label: 'No work order', hint: 'Misc, and bills before the WO' },
               { href: '/bills-booking/mapping', icon: MapPin, label: 'Where bills book', hint: 'Sub-project → project & Atm Head' },
             ] as const).map(v => (
