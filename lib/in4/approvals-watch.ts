@@ -1,8 +1,10 @@
-// Watching IN4 for the three moments the Atm Head asked to hear about:
+// Watching IN4 for the two moments the Atm Head asked to hear about:
 //   · an indent reaches Verify        → "approve it in IN4"
-//   · a purchase order reaches Verify → "approve it in IN4"
-//   · a work order reaches Verify     → "approve it in IN4" (Aksha, 10 Sep 2026)
 //   · a GRN is approved               → "material received"
+// Purchase orders and work orders at Verify are NOT announced: Subhash (CT
+// Billing) approves those in IN4, not the Atm Head (Aksha, 14 Oct 2026 —
+// WOs had been announced since 10 Sep 2026). They are still remembered in
+// the watch state, so switching them back on would not replay a backlog.
 //
 // IN4 has no hooks, so this is a poll: read what is at Verify now and what
 // was received since last time, compare with what was already told, and
@@ -93,6 +95,8 @@ export function planNotices(state: WatchState, pending: readonly PendingDoc[], g
     book[String(d.id)] = d.statusId
     if (before[String(d.id)] === d.statusId) continue
     if (!VERIFY_STATUS_IDS.has(d.statusId)) continue
+    // Only indents are the Atm Head's to approve; POs and WOs are CT Billing's.
+    if (d.kind !== 'indent') continue
     const since = day(d.since)
     notices.push(d.kind === 'indent'
       ? {

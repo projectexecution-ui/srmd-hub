@@ -8,13 +8,13 @@ const SUBMITTED: PendingDoc = { ...IND, id: 1, ref: 'IND/X', statusId: 1, status
 const GRN: GrnDoc = { grnId: 1336, grnNo: 'GRN/SRASSK/NGH/2026-27/1', date: '2026-09-08T00:00:00.000Z', subprojectId: 12, projectId: 12, poNo: 'PO/SRASSK/NGH/2025-26/93', supplier: 'NATUROPROTECT', qty: 70, value: 1094.45, materials: 'Pidilite - Roff (T02) Grey' }
 
 describe('planNotices — tell once, tell the right thing', () => {
-  it('announces an indent and a PO at Verify, in words the Atm Head can act on', () => {
-    const { notices } = planNotices(EMPTY_STATE, [IND, PO], [], NOW)
-    expect(notices.map(x => x.type)).toEqual(['in4_indent_verify', 'in4_po_verify'])
+  it('announces an indent at Verify, in words the Atm Head can act on — and not the PO, which is CT Billing’s to approve', () => {
+    const { notices, next } = planNotices(EMPTY_STATE, [IND, PO], [], NOW)
+    expect(notices.map(x => x.type)).toEqual(['in4_indent_verify'])
     expect(notices[0].title).toBe('Indent IND/SRASSK/NGH/2026-27/151 is waiting for your approval in IN4')
     expect(notices[0].body).toContain('raised by Kantilal Kheni')
     expect(notices[0].body).toContain('Open IN4 to approve it.')
-    expect(notices[1].body).toContain('₹63,142')
+    expect(next.pos).toEqual({ '1269': 113 })
   })
 
   it('does NOT announce Submitted — only Verify is the Atm Head’s turn', () => {

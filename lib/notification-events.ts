@@ -92,18 +92,8 @@ export const NOTIFICATION_EVENTS: NotificationEventDef[] = [
     description: 'An indent in IN4 reached Verify; the Atm Head of the linked project is asked to approve it in IN4.',
     audience: 'Atm Heads (per project)',
   },
-  {
-    type: 'in4_po_verify',
-    label: 'IN4 — purchase order waiting for approval',
-    description: 'A purchase order in IN4 reached Verify; the Atm Head of the linked project is asked to approve it in IN4.',
-    audience: 'Atm Heads (per project)',
-  },
-  {
-    type: 'in4_wo_verify',
-    label: 'IN4 — work order waiting for approval',
-    description: 'A work order in IN4 reached Verify; the Atm Head of the linked project is asked to approve it in IN4. The WO / PO tab shows every rate against the last one paid.',
-    audience: 'Atm Heads (per project)',
-  },
+  // in4_po_verify / in4_wo_verify were retired 14 Oct 2026: Subhash (CT
+  // Billing) approves POs and WOs in IN4, not the Atm Head, so nothing fires.
   {
     type: 'in4_grn_received',
     label: 'IN4 — material received',
