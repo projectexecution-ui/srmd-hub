@@ -31,7 +31,7 @@ import { formatINR } from '@/lib/utils'
  *  them, and both are recorded either way. Reject is the only step in the flow
  *  that ends a bill, and it was one click from a desk holding lakhs. */
 export function ActionBar({ billId, stage, netAmount, certified, claimed, preHoldStage, measured, orderType,
-  hasStampedBill, hasMeasurement = false, noMeasurement = false, navCollapsed, undoUntil, undoWhat, reconciles }: {
+  hasStampedBill, hasMeasurement = false, noMeasurement = false, skipSiteHead = false, navCollapsed, undoUntil, undoWhat, reconciles }: {
   billId: string; stage: BbStage
   netAmount: number | null; certified: number | null; claimed: number
   preHoldStage: BbStage | null
@@ -41,6 +41,9 @@ export function ActionBar({ billId, stage, netAmount, certified, claimed, preHol
   hasMeasurement?: boolean
   /** No abstract or goods receipt is asked for (a retention release). */
   noMeasurement?: boolean
+  /** No Site Head step for this bill type: Entered goes to the Disc Head, and
+   *  the Disc Head sends back to Billing (14 Oct 2026). */
+  skipSiteHead?: boolean
   orderType: string | null
   hasStampedBill: boolean
   navCollapsed: boolean
@@ -66,8 +69,8 @@ export function ActionBar({ billId, stage, netAmount, certified, claimed, preHol
     return () => clearInterval(t)
   }, [undoUntil])
 
-  const fwd = nextStage(stage)
-  const back = prevStage(stage)
+  const fwd = skipSiteHead && stage === 'submitted' ? 'disc_head' : nextStage(stage)
+  const back = skipSiteHead && stage === 'disc_head' ? 'submitted' : prevStage(stage)
   const thing = orderType === 'PO' ? 'goods receipt' : 'abstract'
   const showAmount = stage === 'ct_head'
   const resumeTo = preHoldStage ?? 'site_head'

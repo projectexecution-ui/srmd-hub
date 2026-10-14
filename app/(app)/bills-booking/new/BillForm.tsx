@@ -54,7 +54,7 @@ const hydrate = (s: BookingSeed): BookingMaps => ({
   disciplines: new Map(s.disciplines),
 })
 
-export function BillForm({ projects, categories, in4Wos, in4Pos, in4Projects, seed, parties, in4Mains, in4Subs, owners, seats, canAdmin, allowRelease = true }: {
+export function BillForm({ projects, categories, in4Wos, in4Pos, in4Projects, seed, parties, in4Mains, in4Subs, owners, seats, canAdmin, allowRelease = true, skipSiteHead = true }: {
   projects: Opt[]; categories: Category[]
   in4Wos: PickableOrder[]; in4Pos: PickableOrder[]
   in4Projects: Array<{ id: number; name: string }>
@@ -71,6 +71,9 @@ export function BillForm({ projects, categories, in4Wos, in4Pos, in4Projects, se
   canAdmin: boolean
   /** The "Retention release" type — a switch in Bills settings. */
   allowRelease?: boolean
+  /** Advance, Petty Cash, Misc and Retention release go straight to the CT
+   *  Disc Head — a switch in Bills settings (Aksha, 14 Oct 2026). */
+  skipSiteHead?: boolean
 }) {
   const router = useRouter()
   const supabase = createClient()
@@ -181,7 +184,7 @@ export function BillForm({ projects, categories, in4Wos, in4Pos, in4Projects, se
     }
     if (!contractor) { setErr(`Name the ${partyKind}`); return }
     if (!(thisBill > 0)) { setErr('Enter what this bill is for'); return }
-    if (!effectiveOwner) { setErr('Name the Site Head who will process this bill'); return }
+    if (!noSiteHead && !effectiveOwner) { setErr('Name the Site Head who will process this bill'); return }
     setBusy(true); setErr(null)
     const { data, error } = await supabase.rpc('bb_rpc_create_bill', {
       p: {
@@ -197,7 +200,7 @@ export function BillForm({ projects, categories, in4Wos, in4Pos, in4Projects, se
         bill_date: billDate || null, claimed_amount: thisBill, trust: trust || null,
         wo_value: woValue, paid_till_date: paidTill,
         in4_subproject_id: booking.subprojectId,
-        owner_id: effectiveOwner,
+        owner_id: noSiteHead ? null : effectiveOwner,
       },
     })
     if (error) { setBusy(false); setErr(error.message); return }
@@ -219,6 +222,8 @@ export function BillForm({ projects, categories, in4Wos, in4Pos, in4Projects, se
     return pick.length === 1 ? pick[0].userId : ''
   })()
   const effectiveOwner = ownerId || seatDefault
+  // No measurement in IN4 for these, so no Site Head (14 Oct 2026).
+  const noSiteHead = skipSiteHead && ['Advance', 'Petty Cash', 'Misc', 'Retention release'].includes(billType)
 
   return (
     <Card className="p-5 space-y-5">
@@ -333,14 +338,18 @@ export function BillForm({ projects, categories, in4Wos, in4Pos, in4Projects, se
           </div>
         </div>
 
-        <div className="mt-4">
+        {noSiteHead ? (
+          <p className="mt-4 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-[12.5px] text-indigo-900">
+            <b>No Site Head step for {billType}.</b> IN4 makes no abstract for it, so the bill goes straight to the CT Disc Head, who is told now.
+          </p>
+        ) : <div className="mt-4">
           <Label>Site Head who will process it *</Label>
           <p className="mb-2 text-[11px] text-gray-500">
             The bill goes to this person&apos;s desk now and they are told. They make the abstract or goods receipt in IN4, pick it on the bill, and send it to the CT Disc Head.
           </p>
           <OwnerPicker people={owners} seats={seats} projectId={ownerProjectId} subprojectId={ownerSubprojectId}
                        value={effectiveOwner} onChange={setOwnerId} />
-        </div>
+        </div>}
 
         {raNo && (
           <p className="mt-2 text-xs text-gray-500">
@@ -432,7 +441,9 @@ export function BillForm({ projects, categories, in4Wos, in4Pos, in4Projects, se
             and waits. Saying so is the fix. Forwarding on create would skip a
             step the flow is meant to have. */}
         <p className="mt-2 text-xs text-gray-500">
-          It lands with the <b>Site Head</b> you named, who is told now. The trail starts from this moment.
+          {noSiteHead
+            ? <>It lands with the <b>CT Disc Head</b>, who is told now. The trail starts from this moment.</>
+            : <>It lands with the <b>Site Head</b> you named, who is told now. The trail starts from this moment.</>}
         </p>
       </div>
     </Card>

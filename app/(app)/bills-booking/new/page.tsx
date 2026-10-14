@@ -128,6 +128,8 @@ export default async function NewBillPage() {
     disciplines: [...maps.disciplines],
   }
 
+  const rules = await loadBillRules(supabase)
+
   return (
     <div className="p-4 md:p-6 max-w-2xl mx-auto space-y-5">
       <PageHeader title="New bill" back="/bills-booking" subtitle="Enter a contractor (WO) or vendor (PO) bill to start the flow." />
@@ -145,7 +147,8 @@ export default async function NewBillPage() {
         in4Subs={in4Subs}
         owners={owners}
         seats={seats}
-        allowRelease={(await loadBillRules(supabase)).bb_rule_retention_release}
+        allowRelease={rules.bb_rule_retention_release}
+        skipSiteHead={rules.bb_rule_skip_site_head}
         // Every page in this section already requires admin, so anyone who got
         // here can set a desk. The prop stays so it survives the day desk users
         // exist and this stops being true.

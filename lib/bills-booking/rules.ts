@@ -75,6 +75,19 @@ export const BILL_RULES = [
     label: 'Full & Final needs the No-Due certificate',
     detail: 'The CT Disc Head cannot forward a Full & Final bill until the No-Due certificate is attached — IN4 sends it back without one.',
   },
+  // Aksha's answers on the bill-type process page, 14 Oct 2026.
+  {
+    group: 'Following IN4',
+    key: 'bb_rule_skip_site_head',
+    label: 'Advance, Petty Cash, Misc and Retention release skip the Site Head',
+    detail: 'IN4 makes no abstract for these, so they are entered straight to the CT Disc Head; a send-back from the Disc Head goes to Billing. Off: they go to a Site Head like a Running bill.',
+  },
+  {
+    group: 'Following IN4',
+    key: 'bb_rule_follow_advance_misc',
+    label: 'Follow Advance, Petty Cash and Misc in IN4',
+    detail: 'After CT Billing, CT Hub finds IN4’s advance certificate (work order + bill no) or site-expense certificate (bill no + amount) and moves the bill through Atm approval, Accounts and Paid by itself.',
+  },
   {
     group: 'Following IN4',
     key: 'bb_rule_mfp_remark',
