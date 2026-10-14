@@ -620,7 +620,7 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
           netAmount={net} certified={certified} claimed={claimed}
           preHoldStage={(bill.pre_hold_stage as BbStage | null) ?? null}
           measured={measured} orderType={bill.order_type as string | null}
-          hasStampedBill={hasStampedBill} hasMeasurement={hasMeasurement} navCollapsed={navCollapsed}
+          hasStampedBill={hasStampedBill} hasMeasurement={hasMeasurement} noMeasurement={isRelease} navCollapsed={navCollapsed}
           undoUntil={undoUntil} undoWhat={undoWhat}
           reconciles={calc?.sheet?.reconciles ?? calc?.grn?.reconciles ?? null} />
       )}

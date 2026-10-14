@@ -31,7 +31,7 @@ import { formatINR } from '@/lib/utils'
  *  them, and both are recorded either way. Reject is the only step in the flow
  *  that ends a bill, and it was one click from a desk holding lakhs. */
 export function ActionBar({ billId, stage, netAmount, certified, claimed, preHoldStage, measured, orderType,
-  hasStampedBill, hasMeasurement = false, navCollapsed, undoUntil, undoWhat, reconciles }: {
+  hasStampedBill, hasMeasurement = false, noMeasurement = false, navCollapsed, undoUntil, undoWhat, reconciles }: {
   billId: string; stage: BbStage
   netAmount: number | null; certified: number | null; claimed: number
   preHoldStage: BbStage | null
@@ -39,6 +39,8 @@ export function ActionBar({ billId, stage, netAmount, certified, claimed, preHol
   /** The Site Head has picked the approved abstract / goods receipt from IN4
    *  (10 Oct 2026) — the bill cannot leave the Site Head desk without it. */
   hasMeasurement?: boolean
+  /** No abstract or goods receipt is asked for (a retention release). */
+  noMeasurement?: boolean
   orderType: string | null
   hasStampedBill: boolean
   navCollapsed: boolean
@@ -70,7 +72,8 @@ export function ActionBar({ billId, stage, netAmount, certified, claimed, preHol
   const showAmount = stage === 'ct_head'
   const resumeTo = preHoldStage ?? 'site_head'
   const needsDoc = stage === 'disc_head' && !hasStampedBill
-  const needsPick = stage === 'site_head' && !hasMeasurement
+  // A retention release has no measurement behind it (13 Oct 2026).
+  const needsPick = stage === 'site_head' && !hasMeasurement && !noMeasurement
   const blocked = needsDoc || needsPick
   const blockedWhy = needsDoc ? 'Attach the stamped bill first' : needsPick ? `Pick the approved ${thing} from IN4 first` : undefined
   // Aksha, 10 Oct 2026: at the CT Head, "reject" means send it back to the CT
@@ -212,6 +215,11 @@ export function ActionBar({ billId, stage, netAmount, certified, claimed, preHol
                   </span>
                 )}
                 {stage === 'site_head' && (
+                  noMeasurement ? (
+                  <span className="order-first mr-auto rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[12px] text-emerald-900">
+                    A retention release needs no abstract — send it on to the CT Disc Head
+                  </span>
+                  ) :
                   <span className={`order-first mr-auto rounded-lg border px-3 py-2 text-[12px] ${hasMeasurement ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : measured ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-blue-200 bg-blue-50 text-blue-900'}`}>
                     {hasMeasurement
                       ? <>The {thing} is recorded from IN4 — send it on; the CT Disc Head is picked by the bill&apos;s category</>
