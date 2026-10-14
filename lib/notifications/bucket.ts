@@ -37,6 +37,9 @@ export const NEWS_TYPES: ReadonlySet<string> = new Set([
   'bills_sanction_matched',
   'in4_entered',
   'in4_grn_received',
+  // The Trustee sent a budget back: the Project Head and Atm Head are told,
+  // but the engineer is the one who acts (14 Oct 2026).
+  'cc_trustee_returned',
   // Scheduled reports and round-ups. A digest is a summary of things that
   // already have their own notice if they need one.
   'procurement_digest',

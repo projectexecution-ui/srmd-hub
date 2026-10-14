@@ -123,6 +123,12 @@ export const NOTIFICATION_EVENTS: NotificationEventDef[] = [
     audience: 'The engineer who raised the sheet',
   },
   {
+    type: 'cc_trustee_returned',
+    label: 'Trustee returned a budget (Project Head & Atm Head)',
+    description: 'When the Trustee sends a working sheet back for changes, the project’s Project Head and Atm Head are told too, with the reason — they signed it off, and it comes back to them after the engineer resubmits.',
+    audience: 'Project Head & Atm Head (per project)',
+  },
+  {
     type: 'cc_budget_approved',
     label: 'Budget approved by Trustee (Atm Head, instant)',
     description: 'The moment the Trustee approves/releases a working sheet, its Atm Head is told it went through.',

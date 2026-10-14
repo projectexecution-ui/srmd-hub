@@ -124,6 +124,7 @@ const INSTANT_RECIPIENTS: Record<string, RecipientSource> = {
   approval_pending:      { kind: 'approvers', who: 'Whoever may approve it' },
   cc_estimate_approved:  { kind: 'derived',   who: 'IN4-entry team (Billing / Coordinator)' },
   cc_ws_returned:        { kind: 'actor',     who: 'The engineer who raised the sheet' },
+  cc_trustee_returned:   { kind: 'derived',   who: "The project's Project Head and Atm Head" },
   cc_budget_approved:    { kind: 'derived',   who: "The project's Atm Head" },
   cc_budget_transfer:    { kind: 'derived',   who: "The project's named Atm Head" },
   cc_transfer_pending:   { kind: 'approvers', who: 'Whoever may approve the transfer' },
@@ -144,7 +145,7 @@ const INSTANT_MODULE: Record<string, string> = {
   access_request: 'admin-users', access_approved: 'admin-users', email_health: 'admin-settings',
   approval_pending: 'approvals', comment_mention: 'cost-control',
   sr_assigned: 'cost-control', sr_replied: 'cost-control', sr_closed: 'cost-control',
-  cc_estimate_approved: 'cost-control', cc_ws_returned: 'cost-control', cc_budget_approved: 'cost-control', cc_budget_transfer: 'cost-control',
+  cc_estimate_approved: 'cost-control', cc_ws_returned: 'cost-control', cc_trustee_returned: 'cost-control', cc_budget_approved: 'cost-control', cc_budget_transfer: 'cost-control',
   cc_transfer_pending: 'cost-control', cc_transfer_rejected: 'cost-control', cc_transfer_awaiting_in4: 'cost-control', cc_transfer_in4_done: 'cost-control', cc_transfer_amount_changed: 'cost-control', cc_transfer_confirmed: 'cost-control', cc_transfer_mismatch: 'cost-control',
 }
 

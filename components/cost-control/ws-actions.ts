@@ -905,7 +905,7 @@ export async function returnWorkingSheet(wsId: string, reason: string): Promise<
   const supabase = await createClient()
   const { data: ws, error } = await supabase
     .from('cc_working_sheets')
-    .select('id, status, engineer_id, project_id, total_amount, ws_code')
+    .select('id, status, engineer_id, project_id, sub_skill_id, total_amount, ws_code')
     .eq('id', wsId)
     .single()
   if (error || !ws) return { ok: false, error: 'Working Sheet not found' }
@@ -984,6 +984,7 @@ export async function returnWorkingSheet(wsId: string, reason: string): Promise<
   // act on it (they were NOT being notified before). notify_user is SECURITY
   // DEFINER, so it posts to the engineer's inbox + rides their channel prefs.
   // Best-effort: a notify hiccup must never fail the return itself.
+  const byName = me.profile ? personName(me.profile.full_name, me.profile.name, me.profile.email) : 'An approver'
   if (ws.engineer_id && ws.engineer_id !== me.user.id) {
     await supabase.rpc('notify_user', {
       p_user_id: ws.engineer_id,
@@ -994,7 +995,45 @@ export async function returnWorkingSheet(wsId: string, reason: string): Promise<
       p_module_slug: 'cost-control',
       p_doc_table: 'cc_working_sheets',
       p_doc_id: wsId,
+      p_data: { ws_code: ws.ws_code, reason: reason.trim(), by: byName, from_stage: ws.status },
     })
+  }
+
+  // The Trustee sent it back: the Project Head and Atm Head signed this off
+  // and will see it again after the resubmit, so they are told too, with the
+  // reason (Aksha, 14 Oct 2026). News, not work — the engineer is the one who
+  // acts. Best-effort, like the engineer's notice.
+  if ((ws.status === 'atm_approved' || ws.status === 'partially_approved') && ws.project_id) {
+    try {
+      const [projRes, subRes, engRes, headsRes] = await Promise.all([
+        supabase.from('projects').select('code, name').eq('id', ws.project_id).maybeSingle(),
+        ws.sub_skill_id ? supabase.from('cc_sub_skills').select('code, name').eq('id', ws.sub_skill_id).maybeSingle() : Promise.resolve({ data: null }),
+        ws.engineer_id ? supabase.from('profiles').select('full_name, name, email').eq('id', ws.engineer_id).maybeSingle() : Promise.resolve({ data: null }),
+        supabase.rpc('cc_ph_atm_recipients', { p_project: ws.project_id }),
+      ])
+      const proj = projRes.data as { code: string | null; name: string | null } | null
+      const sub = subRes.data as { code: string | null; name: string | null } | null
+      const eng = engRes.data as { full_name: string | null; name: string | null; email: string | null } | null
+      const projectLabel = [proj?.code, proj?.name].filter(Boolean).join(' · ') || 'the project'
+      const work = [sub?.code, sub?.name].filter(Boolean).join(' ') || ws.ws_code || 'budget'
+      const raisedBy = eng ? personName(eng.full_name, eng.name, eng.email) : null
+      const amount = Number(ws.total_amount ?? 0)
+      const skip = new Set([me.user.id, ws.engineer_id].filter(Boolean) as string[])
+      const heads = [...new Set(((headsRes.data ?? []) as unknown[]).map(String))].filter(id => id && !skip.has(id))
+      for (const uid of heads) {
+        await supabase.rpc('notify_user', {
+          p_user_id: uid,
+          p_type: 'cc_trustee_returned',
+          p_title: `Trustee returned ${ws.ws_code ?? 'a budget'}`,
+          p_body: `${byName} returned ${projectLabel} · ${work} (${formatINR(amount)}) for changes. Reason: ${reason.trim()} The engineer will fix and resubmit; it comes back to you for sign-off.`,
+          p_url: `/cost-control/working-sheets/${wsId}`,
+          p_module_slug: 'cost-control',
+          p_doc_table: 'cc_working_sheets',
+          p_doc_id: wsId,
+          p_data: { ws_code: ws.ws_code, project: projectLabel, work, amount, reason: reason.trim(), by: byName, raised_by: raisedBy, from_stage: ws.status },
+        })
+      }
+    } catch { /* a notify hiccup must never fail the return itself */ }
   }
 
   revalidatePath(`/cost-control/working-sheets/${wsId}`)

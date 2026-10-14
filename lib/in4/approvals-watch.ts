@@ -70,6 +70,14 @@ const iso = (v: unknown): string | null => {
 }
 const inr = (v: number) => `₹${Math.round(v).toLocaleString('en-IN')}`
 const day = (isoStr: string | null) => (isoStr ? new Date(isoStr).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', timeZone: 'Asia/Kolkata' }) : '')
+/** A WO description is a BOQ paragraph; the notice needs the first line of it. */
+const short = (t: string | null, max = 90) => (t && t.length > max ? t.slice(0, max - 1).trimEnd() + '…' : t)
+/** "Mortice handle A, Mortice handle B, Lock body" → "Mortice handle A +2 more items". */
+const firstOf = (list: string | null) => {
+  const parts = (list ?? '').split(',').map(s => s.trim()).filter(Boolean)
+  if (parts.length === 0) return 'material'
+  return parts.length === 1 ? parts[0] : `${parts[0]} +${parts.length - 1} more item${parts.length - 1 === 1 ? '' : 's'}`
+}
 
 /**
  * What to tell, and the memory to keep. Pure.
@@ -97,13 +105,13 @@ export function planNotices(state: WatchState, pending: readonly PendingDoc[], g
       ? {
           type: 'in4_wo_verify', subprojectId: d.subprojectId, projectId: d.projectId,
           title: `WO ${d.ref} is waiting for your approval in IN4`,
-          body: [`${d.ref}${d.what ? ` to ${d.what}` : ''}${d.value ? ` for ${inr(d.value)}` : ''} reached ${d.status}${since ? ` on ${since}` : ''}${d.who ? `, by ${d.who}` : ''}.`, d.context ? d.context : null, 'Open IN4 to approve it; the WO / PO tab in CT Hub shows every rate against the last one paid.'].filter(Boolean).join(' '),
+          body: [`${d.ref}${d.what ? ` to ${d.what}` : ''}${d.value ? ` for ${inr(d.value)}` : ''} reached ${d.status}${since ? ` on ${since}` : ''}${d.who ? `, by ${d.who}` : ''}.`, short(d.context), 'Open IN4 to approve it; the WO / PO tab in CT Hub shows every rate against the last one paid.'].filter(Boolean).join(' '),
           data: { kind: 'wo', id: d.id, ref: d.ref, status: d.status, who: d.who, since: d.since, contractor: d.what, value: d.value, context: d.context },
         }
       : {
           type: 'in4_po_verify', subprojectId: d.subprojectId, projectId: d.projectId,
           title: `PO ${d.ref} is waiting for your approval in IN4`,
-          body: [`${d.ref}${d.what ? ` to ${d.what}` : ''}${d.value ? ` for ${inr(d.value)}` : ''} reached ${d.status}${since ? ` on ${since}` : ''}${d.who ? `, by ${d.who}` : ''}.`, d.context ? d.context : null, 'Open IN4 to approve it.'].filter(Boolean).join(' '),
+          body: [`${d.ref}${d.what ? ` to ${d.what}` : ''}${d.value ? ` for ${inr(d.value)}` : ''}${d.context ? `, ${d.context}` : ''}, reached ${d.status}${since ? ` on ${since}` : ''}${d.who ? `, by ${d.who}` : ''}.`, 'Open IN4 to approve it.'].join(' '),
           data: { kind: 'po', id: d.id, ref: d.ref, status: d.status, who: d.who, since: d.since, supplier: d.what, value: d.value, context: d.context },
         })
   }
@@ -119,7 +127,7 @@ export function planNotices(state: WatchState, pending: readonly PendingDoc[], g
       notices.push({
         type: 'in4_grn_received', subprojectId: g.subprojectId, projectId: g.projectId,
         title: `Material received${g.poNo ? ` against ${g.poNo}` : ''}`,
-        body: [`${g.grnNo ?? `GRN ${g.grnId}`}${g.date ? ` on ${day(g.date)}` : ''}${g.supplier ? ` from ${g.supplier}` : ''}: ${g.materials ?? 'material'}${g.qty ? ` — ${g.qty.toLocaleString('en-IN')} units` : ''}${g.value ? `, ${inr(g.value)}` : ''}.`].join(' '),
+        body: [`${g.grnNo ?? `GRN ${g.grnId}`}${g.date ? ` on ${day(g.date)}` : ''}${g.supplier ? ` from ${g.supplier}` : ''}: ${firstOf(g.materials)}${g.qty ? ` — ${g.qty.toLocaleString('en-IN')} units` : ''}${g.value ? `, ${inr(g.value)}` : ''}.`].join(' '),
         data: { kind: 'grn', id: g.grnId, ref: g.grnNo, date: g.date, po: g.poNo, supplier: g.supplier, qty: g.qty, value: g.value, materials: g.materials },
       })
     }
@@ -190,7 +198,9 @@ export async function readIn4Watch(grnSince: string | null): Promise<{ pending: 
       kind: 'indent' as const, id: n(r.ID), ref: s(r.DISPLAY_NO) ?? `Indent ${r.ID}`, statusId: n(r.STATUS), status: s(r.status_name) ?? String(r.STATUS),
       subprojectId: r.SUBPROJECT_ID == null ? null : n(r.SUBPROJECT_ID), projectId: r.PROJECT_ID == null ? null : n(r.PROJECT_ID),
       who: s(r.who), since: iso(r.since),
-      what: [s(r.MATERIAL_TYPE)?.replace(/^\s*\d+\s*\(M\)\s*/, ''), `${n(r.items)} item${n(r.items) === 1 ? '' : 's'}`, s(r.REMARKS)].filter(Boolean).join(' · ') || null,
+      // IN4 fills REMARKS with "ok" / "k" / "App" far more often than with a
+      // remark; only a sentence-length one is worth the reader's time.
+      what: [s(r.MATERIAL_TYPE)?.replace(/^\s*\d+\s*\(M\)\s*/, ''), `${n(r.items)} item${n(r.items) === 1 ? '' : 's'}`, (s(r.REMARKS)?.length ?? 0) >= 8 ? s(r.REMARKS) : null].filter(Boolean).join(' · ') || null,
       value: null, context: s(r.wo_no) ? `for ${s(r.wo_no)}` : null,
     })),
     ...pos.map(r => ({

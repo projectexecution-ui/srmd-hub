@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { handleApprovalCallback, handleApprovalAmountReply, handleApprovalMedia } from '@/lib/telegram/cc-approval-webhook'
+import { handleSeenCallback } from '@/lib/telegram/seen'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -44,7 +45,11 @@ export async function POST(req: NextRequest) {
       id: string
       data?: string
       from?: { id?: number | string }
-      message?: { message_id?: number; chat?: { id?: number | string } }
+      message?: {
+        message_id?: number
+        chat?: { id?: number | string }
+        reply_markup?: { inline_keyboard?: Array<Array<{ text: string; url?: string; callback_data?: string }>> }
+      }
     }
   } | null = null
   try { update = await req.json() } catch { return NextResponse.json({ ok: true }) }
@@ -53,11 +58,15 @@ export async function POST(req: NextRequest) {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
   const svc = url && key ? createServiceClient(url, key, { auth: { persistSession: false } }) : null
 
-  // ── Inline-button taps (budget approvals) arrive as callback_query, not a
-  //     message. Handle + ack them before the message path. ──
+  // ── Inline-button taps (✓ Seen on any card, budget approvals) arrive as
+  //     callback_query, not a message. Handle + ack them before the message path. ──
   const cbq = update?.callback_query
   if (cbq) {
-    if (svc) { try { await handleApprovalCallback(svc, token, cbq) } catch { /* always ack 200 */ } }
+    if (svc) {
+      try {
+        if (!(await handleSeenCallback(svc, token, cbq))) await handleApprovalCallback(svc, token, cbq)
+      } catch { /* always ack 200 */ }
+    }
     return NextResponse.json({ ok: true })
   }
 
