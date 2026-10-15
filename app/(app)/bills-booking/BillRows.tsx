@@ -75,6 +75,9 @@ export function BillRows({ rows, dupes, title, note }: {
                       className="flex min-h-[44px] flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3 hover:bg-gray-50/60">
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
+                      {r.serial && (
+                        <span className="font-mono text-[12px] font-semibold text-gray-500" title="The hub number — quote it in messages">{r.serial}</span>
+                      )}
                       <span className="truncate text-sm font-semibold text-gray-900">{r.vendor}</span>
                       <StagePill stage={r.stage} />
                       {tags.map(t => (

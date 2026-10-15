@@ -23,6 +23,8 @@ export interface ReportEvent { to: string; at: string; amount: number | null }
 
 export interface ReportBillInput {
   id: string
+  /** The hub number (WCE-9). Null before 15 Oct 2026 and on examples. */
+  serial: string | null
   vendor: string
   project: string
   billNo: string | null
@@ -39,6 +41,7 @@ export interface ReportBillInput {
 
 export interface ReportRow {
   id: string
+  serial: string | null
   vendor: string
   project: string
   billNo: string | null
@@ -90,7 +93,7 @@ export function buildDailyReport(bills: ReportBillInput[], date: string): DailyR
   for (const b of bills) {
     const trust = (b.mark?.trust || b.trust || '').trim().toUpperCase() || UNSET
     const trustFromOrder = !b.mark?.trust && !!b.trust?.trim()
-    const base = { id: b.id, vendor: b.vendor, project: b.project, billNo: b.billNo, remark: b.mark?.remark ?? null, note: b.note ?? null, trust, trustFromOrder }
+    const base = { id: b.id, serial: b.serial, vendor: b.vendor, project: b.project, billNo: b.billNo, remark: b.mark?.remark ?? null, note: b.note ?? null, trust, trustFromOrder }
 
     // Paid that day.
     const paidEv = b.events.find(e => e.to === 'paid' && istDay(e.at) === date)

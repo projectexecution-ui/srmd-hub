@@ -7,7 +7,7 @@ import type { BbStage } from '@/lib/bills-booking/stages'
 import { formatINR, formatINRCompact } from '@/lib/utils'
 
 export type Leaf = {
-  id: string; vendor: string; billNo: string | null; orderType: string
+  id: string; serial: string | null; vendor: string; billNo: string | null; orderType: string
   billType: string | null; discipline: string | null; stage: BbStage; amount: number
   /** A seeded walkthrough bill. Badged here, and kept out of every total. */
   isExample?: boolean
@@ -104,7 +104,7 @@ function Sub({ s }: { s: SubNode }) {
                     {b.billType && <span className="rounded bg-indigo-50 px-1 py-px text-[10px] font-semibold text-indigo-700">{b.billType}</span>}
                     {b.discipline && <span className="rounded bg-gray-100 px-1 py-px text-[10px] font-semibold text-gray-600">{b.discipline}</span>}
                   </div>
-                  <span className="text-[11px] text-gray-400">Bill {b.billNo || '—'}</span>
+                  <span className="text-[11px] text-gray-400">{b.serial ? <span className="font-mono text-gray-500">{b.serial}</span> : null}{b.serial ? ' · ' : ''}Bill {b.billNo || '—'}</span>
                 </div>
                 <span className="text-[13px] font-bold tabular-nums text-gray-900">{formatINR(b.amount)}</span>
                 <StagePill stage={b.stage} />

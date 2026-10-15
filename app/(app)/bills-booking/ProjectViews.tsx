@@ -236,7 +236,7 @@ function BillsTable({ bills, head = true }: { bills: ShownBill[]; head?: boolean
             <tr key={b.id} className={`hover:bg-indigo-50/40 ${b.mine ? 'bg-indigo-50/60' : ''}`}>
               <td className="px-3 py-2">
                 <Link href={`/bills-booking/${b.id}`} className="font-semibold text-gray-900 hover:text-indigo-700 hover:underline">{b.vendor}</Link>
-                <span className="block font-mono text-[11px] text-gray-500">{b.billNo ?? '—'}{b.orderNo ? ` · ${b.orderNo}` : ''}</span>
+                <span className="block font-mono text-[11px] text-gray-500">{b.serial ? `${b.serial} · ` : ''}{b.billNo ?? '—'}{b.orderNo ? ` · ${b.orderNo}` : ''}</span>
               </td>
               <td className="px-3 py-2"><StepPill s={b.stage} /></td>
               <td className="px-3 py-2 text-gray-700">
@@ -265,7 +265,7 @@ function BillsTable({ bills, head = true }: { bills: ShownBill[]; head?: boolean
                 <span className="min-w-0 break-words text-[13px] font-semibold text-gray-900">{b.vendor}</span>
                 <span className="text-[13px] font-bold tabular-nums text-gray-900">{formatINR(b.amount)}</span>
               </span>
-              <span className="block font-mono text-[11px] text-gray-500">{b.billNo ?? '—'}</span>
+              <span className="block font-mono text-[11px] text-gray-500">{b.serial ? `${b.serial} · ` : ''}{b.billNo ?? '—'}</span>
               <span className="block text-[12px] text-gray-700">
                 {stageDef(b.stage).label} — {b.holders.length ? b.holders.join(', ') : 'nobody set'}{b.mine ? ' (you)' : ''}
               </span>

@@ -56,7 +56,7 @@ export default async function DailyReportPage({
     for (const part of chunk([...ids], 200)) {
       const [b, e, m] = await Promise.all([
         sb.from('bb_bills')
-          .select('id, vendor_text, order_no, bill_no, trust, project_id, claimed_amount, net_amount, sanctioned_net, in4_payable, is_example, in4_hold_at, in4_hold_note, in4_processed_at')
+          .select('id, serial, vendor_text, order_no, bill_no, trust, project_id, claimed_amount, net_amount, sanctioned_net, in4_payable, is_example, in4_hold_at, in4_hold_note, in4_processed_at')
           .in('id', part),
         sb.from('bb_bill_events').select('bill_id, to_stage, created_at').in('bill_id', part),
         sb.from('bb_report_marks').select('bill_id, sent_date, remark, trust').in('bill_id', part),
@@ -86,6 +86,7 @@ export default async function DailyReportPage({
       const num = (k: string) => (r[k] == null ? null : Number(r[k]))
       bills.push({
         id,
+        serial: (r.serial as string | null) ?? null,
         vendor: vendorOf(r as { vendor_text: string | null; order_no: string | null; bill_no: string | null }),
         project: projectName.get(r.project_id as string) ?? '—',
         billNo: (r.bill_no as string | null) ?? null,

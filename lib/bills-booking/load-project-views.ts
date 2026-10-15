@@ -135,6 +135,7 @@ export async function loadProjectViewInput(sb: SupabaseClient, reg: Register, me
 
   const bills: ViewBill[] = live.map(r => ({
     id: r.id,
+    serial: r.serial ?? null,
     vendor: vendorOf(r),
     billNo: r.bill_no,
     orderType: r.order_type,

@@ -14,6 +14,8 @@ import { PIPELINE, isTerminal, ageTone, type AgeTone, type BbStage } from './sta
 
 export interface ViewBill {
   id: string
+  /** The hub number, WCE-9 (15 Oct 2026). Null on examples. */
+  serial: string | null
   vendor: string
   billNo: string | null
   orderType: string
@@ -211,7 +213,7 @@ export function filterBills(
     (f.scope !== 'mine' || b.mine)
     && (!withStage || !f.stage || b.stage === f.stage)
     && (!f.who || b.holders.includes(f.who))
-    && (!q || [b.vendor, b.billNo, b.orderNo, placeOf?.(b)].some(v => (v ?? '').toLowerCase().includes(q))))
+    && (!q || [b.serial, b.vendor, b.billNo, b.orderNo, placeOf?.(b)].some(v => (v ?? '').toLowerCase().includes(q))))
 }
 
 /** Search also matches project and sub-project names — a project that matches

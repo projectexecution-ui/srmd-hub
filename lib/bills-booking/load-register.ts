@@ -22,6 +22,10 @@ export interface RawBill {
   vendor_text: string | null; created_by: string | null; created_at: string
   /** Put on Hold in IN4 (13 Oct 2026) — shown on the home rows. */
   in4_hold_at?: string | null
+  /** The hub number, WCE-9 (15 Oct 2026). Null on examples. */
+  serial: string | null
+  abstract_no_in4: string | null
+  in4_certificate_id: number | null
 }
 
 export interface ProjectRef { code: string; name: string; parent: string | null }
@@ -42,7 +46,7 @@ export interface Register {
 const istDay = (iso: string) =>
   new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(iso))
 
-const COLS = 'id, order_type, bill_type, bill_no, order_no, claimed_amount, net_amount, current_stage, stage_since, discipline, trust, project_id, wo_pending, amendment_flag, is_example, vendor_text, in4_subproject_id, created_by, created_at, in4_hold_at'
+const COLS = 'id, order_type, bill_type, bill_no, order_no, claimed_amount, net_amount, current_stage, stage_since, discipline, trust, project_id, wo_pending, amendment_flag, is_example, vendor_text, in4_subproject_id, created_by, created_at, in4_hold_at, serial, abstract_no_in4, in4_certificate_id'
 
 /** A bill with no contractor named still has to be findable in a list. The
  *  order number is what the person holding the paper is looking at. */
@@ -102,6 +106,15 @@ export async function loadRegister(sb: SupabaseClient, me: BillsMe): Promise<Reg
     }
   }
 
+  // The payment certificate's number (ENP/…) is on the bill in IN4, not here.
+  // Fetched so a person holding only that number still finds the bill.
+  const certNo = new Map<string, string>()
+  const certIds = [...new Set(raw.map(r => r.in4_certificate_id).filter((n): n is number => n != null))]
+  for (const ids of chunk(certIds, 200)) {
+    const { data } = await sb.from('in4_wo_certificates').select('certificate_id, display_no').in('certificate_id', ids)
+    for (const c of data ?? []) if (c.display_no) certNo.set(String(c.certificate_id), c.display_no as string)
+  }
+
   // The desk behind a bill is decided by bb_stage_members, the one place those
   // rules live. The answer only varies by (stage, project, discipline,
   // sub-project), so it is asked once per combination, not once per bill.
@@ -128,8 +141,11 @@ export async function loadRegister(sb: SupabaseClient, me: BillsMe): Promise<Reg
     const ev = last.get(r.id)
     return {
       id: r.id,
+      serial: r.serial ?? null,
       vendor: vendorOf(r),
       billNo: r.bill_no,
+      abstractNo: r.abstract_no_in4 ?? null,
+      certNo: r.in4_certificate_id != null ? certNo.get(String(r.in4_certificate_id)) ?? null : null,
       orderType: r.order_type,
       orderNo: r.order_no,
       project: r.project_id ? projects.get(r.project_id)?.code ?? null : null,

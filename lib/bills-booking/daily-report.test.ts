@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { buildDailyReport, istDay, type ReportBillInput } from './daily-report'
 
 const bill = (o: Partial<ReportBillInput>): ReportBillInput => ({
-  id: 'b', vendor: 'Desai Construction Pvt Ltd.', project: 'Welcome Centre Extension', billNo: 'SRASSK-MS-WC-03',
+  id: 'b', serial: 'WCE-1', vendor: 'Desai Construction Pvt Ltd.', project: 'Welcome Centre Extension', billNo: 'SRASSK-MS-WC-03',
   trust: 'SRASSK', amount: 245897, events: [], mark: null, ...o,
 })
 // IST 13 Oct 2026, mid-afternoon, as UTC.

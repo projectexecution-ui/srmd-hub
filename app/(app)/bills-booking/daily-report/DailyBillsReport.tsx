@@ -190,7 +190,7 @@ function Rows({ rows, kind, dateLabel, canEdit, today }: {
         {rows.map(r => (
           <Card key={r.id}
                 title={<Link href={`/bills-booking/${r.id}`} className="hover:underline">{r.vendor}</Link>}
-                sub={<>{r.project}{r.billNo ? ` · ${r.billNo}` : ''}</>}
+                sub={<>{r.serial ? <span className="font-mono">{r.serial} · </span> : null}{r.project}{r.billNo ? ` · ${r.billNo}` : ''}</>}
                 amount={formatINR(r.amount)}
                 flagged={kind === 'trust' && (r.days ?? 0) >= LATE}
                 facts={kind === 'trust' ? [
@@ -208,6 +208,7 @@ function Rows({ rows, kind, dateLabel, canEdit, today }: {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-gray-200 bg-gray-50 text-[11px] uppercase tracking-wide text-gray-500">
+              <th className="px-3 py-2 text-left font-semibold">Hub no</th>
               <th className="px-3 py-2 text-left font-semibold">Party</th>
               <th className="px-3 py-2 text-left font-semibold">Project</th>
               <th className="px-3 py-2 text-left font-semibold">Bill no</th>
@@ -220,6 +221,7 @@ function Rows({ rows, kind, dateLabel, canEdit, today }: {
           <tbody className="divide-y divide-gray-100">
             {rows.map(r => (
               <tr key={r.id} className="align-top">
+                <td className="px-3 py-2 font-mono text-xs text-gray-600">{r.serial ?? '—'}</td>
                 <td className="px-3 py-2">
                   <Link href={`/bills-booking/${r.id}`} className="font-medium text-gray-900 hover:underline">{r.vendor}</Link>
                   {r.note && <div className="text-[11px] text-amber-700">{r.note}</div>}
@@ -244,7 +246,7 @@ function Rows({ rows, kind, dateLabel, canEdit, today }: {
               </tr>
             ))}
             <tr className="bg-gray-50 font-semibold">
-              <td className="px-3 py-2" colSpan={3}>Total · {plural(rows.length)}</td>
+              <td className="px-3 py-2" colSpan={4}>Total · {plural(rows.length)}</td>
               <td className="px-3 py-2 text-right tabular-nums">{formatINR(total)}</td>
               <td colSpan={kind === 'trust' ? 3 : 1} />
             </tr>
@@ -358,6 +360,7 @@ function CleanTable({ title, trust, rows, kind, dateLabel }: {
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
           <thead><tr>
             <th style={{ ...th, width: 26 }}>#</th>
+            <th style={th}>Hub no</th>
             <th style={th}>Party</th>
             <th style={th}>Project</th>
             <th style={th}>Bill no</th>
@@ -370,6 +373,7 @@ function CleanTable({ title, trust, rows, kind, dateLabel }: {
             {rows.map((r, i) => (
               <tr key={r.id} style={{ background: bodyBg }}>
                 <td style={{ ...td, color: '#94a3b8' }}>{i + 1}</td>
+                <td style={{ ...td, color: '#475569', fontFamily: 'ui-monospace, Menlo, monospace', whiteSpace: 'nowrap' }}>{r.serial ?? ''}</td>
                 <td style={td}>{r.vendor}</td>
                 <td style={{ ...td, color: '#475569' }}>{r.project}</td>
                 <td style={{ ...td, color: '#475569' }}>{r.billNo ?? ''}</td>
@@ -382,7 +386,7 @@ function CleanTable({ title, trust, rows, kind, dateLabel }: {
               </tr>
             ))}
             <tr style={{ background: headBg, fontWeight: 800 }}>
-              <td style={td} colSpan={4}>Total · {plural(rows.length)}</td>
+              <td style={td} colSpan={5}>Total · {plural(rows.length)}</td>
               <td style={tdR}>{formatINR(total)}</td>
               <td style={td} colSpan={kind === 'trust' ? 3 : 1} />
             </tr>

@@ -6,7 +6,7 @@ import {
 
 const NOW = Date.parse('2026-10-12T12:00:00+05:30')
 const bill = (o: Partial<ViewBill>): ViewBill => ({
-  id: 'b', vendor: 'Desai Construction Pvt Ltd.', billNo: 'SRASSK-MS-WC-03', orderType: 'WO',
+  id: 'b', serial: 'WCE-1', vendor: 'Desai Construction Pvt Ltd.', billNo: 'SRASSK-MS-WC-03', orderType: 'WO',
   orderNo: 'WO/SRASSK/WCE/2026-27/90', amount: 217608, stage: 'disc_head',
   stageSince: '2026-10-11T05:20:00Z', enteredAt: '2026-10-11T05:20:00Z', subprojectId: 97, hubProjectId: null,
   holders: ['Ambrishkumar Mistry'], mine: false, isExample: false, ...o,

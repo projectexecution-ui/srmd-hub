@@ -201,7 +201,7 @@ export default async function BillsBookingPage({ searchParams }: {
     if (!s) { s = { key: subKey, label: subLabel, n: 0, value: 0, bills: [] }; m.subs.push(s) }
     bump(s, v)
     const leaf: Leaf = {
-      id: b.id, vendor: vendorOf(b), billNo: b.bill_no, orderType: b.order_type,
+      id: b.id, serial: b.serial ?? null, vendor: vendorOf(b), billNo: b.bill_no, orderType: b.order_type,
       billType: b.bill_type, discipline: b.discipline, stage: b.current_stage, amount: v,
       isExample: b.is_example,
     }

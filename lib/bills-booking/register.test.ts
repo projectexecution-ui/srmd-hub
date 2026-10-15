@@ -6,7 +6,8 @@ const NOW = new Date('2026-09-16T00:00:00Z').getTime()
 const daysAgo = (n: number) => new Date(NOW - n * 86_400_000).toISOString()
 
 const row = (o: Partial<RegisterRow> = {}): RegisterRow => ({
-  id: 'b1', vendor: 'Desai Construction Pvt Ltd', billNo: 'RU-WH-CV/08', orderType: 'WO',
+  id: 'b1', serial: 'WH-2', vendor: 'Desai Construction Pvt Ltd', billNo: 'RU-WH-CV/08', orderType: 'WO',
+  abstractNo: null, certNo: null,
   orderNo: 'WO/SRET/WH/2025-26/210', project: 'WH', amount: 5_069_122, stage: 'disc_head',
   stageSince: daysAgo(1), isExample: false, autoRaised: true, hasStampedBill: true,
   lastComment: 'Abstract approved in IN4 — moved on automatically', lastAction: 'forward', mine: true,
@@ -20,6 +21,22 @@ describe('the register as a desk reads it', () => {
     expect(applyFilters(rows, { q: 'wh/2025' }, NOW).map(r => r.id)).toEqual(['b1'])
     expect(applyFilters(rows, { q: 'RU-LT' }, NOW).map(r => r.id)).toEqual(['b2'])
     expect(applyFilters(rows, { project: 'RU' }, NOW).map(r => r.id)).toEqual(['b2'])
+  })
+
+  // Aksha, 15 Oct 2026: the hub number is what people will say on WhatsApp,
+  // and IN4's abstract and certificate numbers are what Accounts hold. Any of
+  // the four numbers on a bill must find it.
+  it('finds a bill by its hub number, abstract number or certificate number', () => {
+    const rows = [
+      row({ abstractNo: 'Abs/SRET/WH/2025-26/217', certNo: 'ENP/SRET/WH/2025-26/261' }),
+      row({ id: 'b2', serial: 'RU-14', abstractNo: 'Abs/SRET/RU/2026-27/401', certNo: null }),
+    ]
+    expect(applyFilters(rows, { q: 'WH-2' }, NOW).map(r => r.id)).toEqual(['b1'])
+    expect(applyFilters(rows, { q: 'ru-14' }, NOW).map(r => r.id)).toEqual(['b2'])
+    expect(applyFilters(rows, { q: 'RU/2026-27/401' }, NOW).map(r => r.id)).toEqual(['b2'])
+    expect(applyFilters(rows, { q: 'ENP/SRET/WH' }, NOW).map(r => r.id)).toEqual(['b1'])
+    // An example carries no number and is not found by one.
+    expect(applyFilters([row({ serial: null, isExample: true })], { q: 'WH-2' }, NOW)).toEqual([])
   })
 
   it('shows only my desk on the default view, oldest first', () => {
@@ -98,7 +115,8 @@ describe('the register as a desk reads it', () => {
   it('writes a CSV a spreadsheet can sort, quoting what needs it', () => {
     const csv = toCsv([row({ lastComment: 'Sent back, "item 4"' })], s => stageDef(s).label, NOW)
     const [head, line] = csv.split('\r\n')
-    expect(head.startsWith('Vendor,Order,Bill no')).toBe(true)
+    expect(head.startsWith('Hub no,Vendor,Order,Bill no')).toBe(true)
+    expect(line.startsWith('WH-2,Desai')).toBe(true)
     expect(line).toContain('CT Disc Head')
     expect(line).toContain('"Sent back, ""item 4"""')
     expect(line).toContain(',5069122,')

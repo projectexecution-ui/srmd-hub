@@ -12,8 +12,16 @@ import { ageTone, isTerminal, type AgeTone, type BbStage } from './stages'
 
 export interface RegisterRow {
   id: string
+  /** The hub number, given at entry and never changed: WCE-9, NGHA-7
+   *  (15 Oct 2026). The project code is the hub project the bill is booked on,
+   *  the count is one line across every project. Null on examples. */
+  serial: string | null
   vendor: string
   billNo: string | null
+  /** IN4's own numbers on the bill — the abstract and the payment
+   *  certificate — so anyone holding any number finds it. */
+  abstractNo: string | null
+  certNo: string | null
   orderType: string
   orderNo: string | null
   /** The building, as CT Hub can name it. */
@@ -124,7 +132,7 @@ export function matches(r: RegisterRow, f: RegisterFilters, now: number): boolea
   if (f.q) {
     const q = f.q.trim().toLowerCase()
     if (q) {
-      const hay = [r.vendor, r.billNo, r.orderNo, r.project].filter(Boolean).join(' ').toLowerCase()
+      const hay = [r.serial, r.vendor, r.billNo, r.orderNo, r.project, r.abstractNo, r.certNo].filter(Boolean).join(' ').toLowerCase()
       if (!hay.includes(q)) return false
     }
   }
@@ -167,9 +175,9 @@ const cell = (v: unknown): string => {
 /** What is on screen, as a file. Full rupees, ISO dates, the stage's label —
  *  what a spreadsheet can sort, not what a screen can colour. */
 export function toCsv(rows: RegisterRow[], stageLabel: (s: BbStage) => string, now: number = Date.now()): string {
-  const head = ['Vendor', 'Order', 'Bill no', 'Type', 'Project', 'Amount', 'Stage', 'Days at desk', 'Since', 'Arrived from IN4', 'Example', 'Last note']
+  const head = ['Hub no', 'Vendor', 'Order', 'Bill no', 'Type', 'Project', 'Amount', 'Stage', 'Days at desk', 'Since', 'Arrived from IN4', 'Example', 'Last note']
   const lines = rows.map(r => [
-    r.vendor, r.orderNo ?? '', r.billNo ?? '', r.orderType, r.project ?? '',
+    r.serial ?? '', r.vendor, r.orderNo ?? '', r.billNo ?? '', r.orderType, r.project ?? '',
     r.amount, stageLabel(r.stage),
     Math.floor((now - new Date(r.stageSince).getTime()) / 86_400_000),
     r.stageSince.slice(0, 10),

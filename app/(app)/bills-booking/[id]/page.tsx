@@ -1,4 +1,4 @@
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
 import { requireBillsAccess } from '@/lib/bills-booking/access'
@@ -64,6 +64,15 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
   const { id } = await params
   const supabase = await createClient()
   const navCollapsed = (await cookies()).get('srmd_nav_collapsed')?.value === '1'
+
+  // The hub number works in the address (15 Oct 2026): /bills-booking/WCE-9
+  // opens the bill, so a number said in a message is also a link.
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+    const { data: hit } = await supabase.from('bb_bills').select('id')
+      .eq('serial', decodeURIComponent(id).trim().toUpperCase()).maybeSingle()
+    if (!hit) notFound()
+    redirect(`/bills-booking/${hit.id as string}`)
+  }
 
   const [{ data: bill }, { data: events }, { data: docRows }] = await Promise.all([
     supabase.from('bb_bills')
@@ -394,7 +403,7 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
   return (
     <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-5">
       <PageHeader title={vendor} back="/bills-booking"
-        subtitle={`${project?.code ?? subprojectName ?? ''} · ${bill.order_type} ${bill.order_no ?? ''}${bill.discipline ? ' · ' + bill.discipline : ''}`}>
+        subtitle={`${(bill.serial as string | null) ?? project?.code ?? subprojectName ?? ''} · ${bill.order_type} ${bill.order_no ?? ''}${bill.discipline ? ' · ' + bill.discipline : ''}`}>
         <div className="flex flex-wrap items-start gap-2">
           {canAct && bill.order_type === 'WO' && !bill.is_example && <RefreshFromIn4 billId={bill.id as string} asOf={in4AsOf} />}
           <StagePill stage={stage} />

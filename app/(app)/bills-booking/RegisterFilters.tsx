@@ -82,7 +82,7 @@ export function RegisterFilters({ projects, counts, onDesk, closeHref }: {
       <form className="flex flex-wrap items-center gap-2" onSubmit={e => { e.preventDefault(); set('q', q.trim() || null) }}>
         <label className="relative min-w-[200px] flex-1">
           <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
-          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search vendor, order, bill number…"
+          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search WCE-9, vendor, order, bill or abstract no…"
                  aria-label="Search bills"
                  className="h-10 w-full rounded-lg border border-gray-300 pl-8 pr-3 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
         </label>
