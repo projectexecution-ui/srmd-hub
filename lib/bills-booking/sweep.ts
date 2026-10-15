@@ -80,6 +80,13 @@ export async function runReconcileSweep(): Promise<SweepResult> {
     if (!approvals.has(id)) approvals.set(id, { at: e.at as string, actorName: (e.actor_name as string | null) ?? null })
   }
 
+  // The hub number of the bill behind each certificate (15 Oct 2026): it
+  // leads the notice title — the email subject — and rides in data for the
+  // Telegram card.
+  const { data: billRows } = await sb
+    .from('bb_bills').select('in4_certificate_id, serial').in('in4_certificate_id', ids).not('serial', 'is', null)
+  const serialOf = new Map<number, string>((billRows ?? []).map(b => [b.in4_certificate_id as number, b.serial as string]))
+
   const checks = checkAll(sanctions, certs, approvals)
   const now = new Date().toISOString()
   let notified = 0
@@ -97,6 +104,7 @@ export async function runReconcileSweep(): Promise<SweepResult> {
         .from('profiles').select('id, role').eq('role', 'admin')
       for (const a of admins ?? []) to.add(a.id as string)
 
+      const serial = serialOf.get(c.certificateId) ?? null
       for (const uid of to) {
         // A failed notice must never stop the sweep writing verdicts — the
         // record of what IN4 says matters more than the email about it.
@@ -104,14 +112,14 @@ export async function runReconcileSweep(): Promise<SweepResult> {
           await sb.rpc('notify_user', {
             p_user_id: uid,
             p_type: c.verdict === 'matched' ? 'bills_sanction_matched' : 'bills_sanction_mismatch',
-            p_title: notice.title,
+            p_title: serial ? `${serial} · ${notice.title}` : notice.title,
             p_body: notice.body,
             p_url: '/bills-booking/sanctions',
             p_module_slug: 'bills-booking',
             p_doc_table: 'bb_sanctions',
             p_doc_id: null,
             p_data: {
-              certificate: c.displayNo, verdict: c.verdict,
+              certificate: c.displayNo, verdict: c.verdict, serial,
               sanctioned: c.sanctionedAmount, in4: c.in4Amount, difference: c.difference,
             },
           })

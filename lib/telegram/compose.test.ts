@@ -171,6 +171,26 @@ describe('the rest', () => {
     expect(atm.html).toContain('<b>✅ IN4 approval matches CT Hub</b>')
     expect(atm.html).toContain('<i>Approved in IN4 by Amit Gala</i>')
   })
+  // Aksha, 15 Oct 2026: "also add the hub number in the Telegram card and
+  // email subject". The producer leads the title with it (that is the email
+  // subject) and stores it in data.serial; the card shows it as the first
+  // bold thing on the figure line, and never leaves it inside the vendor name.
+  it('bills cards lead the figure line with the hub number', () => {
+    const body = 'Certificate ENP/SRJT/SRAH/2026-27/237 approved in IN4 by Amit Gala on 12 Oct 2026 14:05.\nIN4 payable ₹80,730 · CT Hub net ₹80,730 · same figure.\n★ MFP line present.'
+    const fromData = composeTelegram({ type: 'bb_in4_verdict', title: 'SRAH-11 · C V Interior — IN4 approval matches CT Hub', body, data: { stage: 'atm_in4', serial: 'SRAH-11' }, role: 'head' })
+    expect(fromData.html).toContain('<b>SRAH-11</b> · ENP/SRJT/SRAH/2026-27/237 · C V Interior')
+    expect(fromData.html).not.toContain('SRAH-11 · C V Interior')
+    // An older notice with the number only in the title still shows it.
+    const fromTitle = composeTelegram({ type: 'bb_in4_verdict', title: 'SRAH-11 · C V Interior — IN4 approval matches CT Hub', body, data: { stage: 'atm_in4' }, role: 'head' })
+    expect(fromTitle.html).toContain('<b>SRAH-11</b> · ENP/SRJT/SRAH/2026-27/237 · C V Interior')
+    const mismatch = composeTelegram({ type: 'bills_sanction_mismatch', title: 'WCE-9 · x', body: 'Sanctioned ₹70,15,501; IN4 says ₹1,24,168. Entered by A. Open it.', data: { certificate: 'ENP/225', sanctioned: 7015501, in4: 124168, difference: -6891333, serial: 'WCE-9' } })
+    expect(mismatch.html).toContain('<b>WCE-9</b> · ENP/225')
+    const matched = composeTelegram({ type: 'bills_sanction_matched', title: 'WCE-9 · x', body: 'Entered by A.', data: { certificate: 'ENP/225', sanctioned: 80730, serial: 'WCE-9' } })
+    expect(matched.html).toContain('<b>WCE-9</b> · ENP/225 · <b>₹80,730</b>')
+    // Every other bills notice keeps the producer's title, which leads with it.
+    const arrived = composeTelegram({ type: 'bb_bill_arrived', title: 'WCE-9 · Desai Construction — SRASSK-MS-WC-03 is on your desk', body: 'WO/SRASSK/WCE/2026-27/90 · ₹2,56,777', data: { stage: 'disc_head', serial: 'WCE-9' } })
+    expect(arrived.html).toContain('<b>WCE-9 · Desai Construction — SRASSK-MS-WC-03 is on your desk</b>')
+  })
   it('mention quotes the comment without the leading @name', () => {
     const m = composeTelegram({ type: 'comment_mention', title: 'Atm Akshay mentioned you — Internal Estimate', body: '@Chirag Shah bhai I have rectified the numbers - pls approve', data: { author: 'Atm Akshay', module: 'Internal Estimate', context: 'NGH A · SW & CP Fittings', comment: '@Chirag Shah bhai I have rectified the numbers - pls approve' } })
     expect(m.html).toContain('<b>💬 Atm Akshay mentioned you</b>')

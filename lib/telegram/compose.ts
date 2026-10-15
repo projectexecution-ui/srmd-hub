@@ -56,6 +56,16 @@ const b = (s: unknown) => `<b>${esc(s)}</b>`
 const i = (s: unknown) => `<i>${esc(s)}</i>`
 const q = (s: unknown) => `“${esc(String(s ?? '').trim())}”`
 
+/** A bill's hub number — WCE-9, NGHA-7 (15 Oct 2026). The producer stores it
+ *  in data.serial and leads the title with it; either is enough. */
+const HUB_NO = /^([A-Z][A-Z0-9]*-\d+) · /
+function hubNo(n: TelegramNotice, d: Record<string, unknown>): string | null {
+  const fromData = typeof d.serial === 'string' && d.serial.trim() ? d.serial.trim() : null
+  return fromData ?? n.title.match(HUB_NO)?.[1] ?? null
+}
+/** The title with its hub-number prefix removed, for composers that read it. */
+const untagged = (title: string) => title.replace(HUB_NO, '')
+
 /** ₹ with Indian grouping, no paise: ₹3,29,220. */
 export function inr(n: unknown): string {
   const v = Math.round(Number(n) || 0)
@@ -394,10 +404,11 @@ const whRequest: Composer = (n, d) => {
 
 const sanctionMatched: Composer = (n, d) => {
   const by = n.body.match(/Entered by (.+?)\./)?.[1] ?? null
+  const hub = hubNo(n, d)
   return frame(n, {
     needsYou: false,
     title: '✅ Sanction matched IN4',
-    lines: [`${esc(str(d, 'certificate') ?? '')} · ${b(inr(d.sanctioned))}`, i('Exactly what was sanctioned')],
+    lines: [[hub ? b(hub) : '', esc(str(d, 'certificate') ?? ''), b(inr(d.sanctioned))].filter(Boolean).join(' · '), i('Exactly what was sanctioned')],
     next: 'Nothing for you to do.',
     meta: by ? `Entered by ${by}` : null,
     open: 'View sanctions',
@@ -407,11 +418,12 @@ const sanctionMatched: Composer = (n, d) => {
 const sanctionMismatch: Composer = (n, d) => {
   const by = n.body.match(/Entered by (.+?)\./)?.[1] ?? null
   const diff = num(d, 'difference') ?? ((num(d, 'in4') ?? 0) - (num(d, 'sanctioned') ?? 0))
+  const hub = hubNo(n, d)
   return frame(n, {
     needsYou: true,
     title: '🔴 Sanction does not match IN4',
     lines: [
-      esc(str(d, 'certificate') ?? ''),
+      [hub ? b(hub) : '', esc(str(d, 'certificate') ?? '')].filter(Boolean).join(' · '),
       `Sanctioned ${b(inr(d.sanctioned))} · IN4 says ${b(inr(d.in4))}`,
       b(`${inr(Math.abs(diff))} ${diff < 0 ? 'lower' : 'higher'} in IN4`),
     ],
@@ -422,7 +434,8 @@ const sanctionMismatch: Composer = (n, d) => {
 }
 
 const billsVerdict: Composer = (n, d) => {
-  const vendor = n.title.split(' — ')[0]?.trim() ?? ''
+  const hub = hubNo(n, d)
+  const vendor = untagged(n.title).split(' — ')[0]?.trim() ?? ''
   const lines = n.body.split('\n').map(s => s.trim()).filter(Boolean)
   const cert = lines.find(l => /^Certificate /.test(l)) ?? ''
   const figures = lines.find(l => /payable/i.test(l)) ?? ''
@@ -437,7 +450,7 @@ const billsVerdict: Composer = (n, d) => {
       needsYou: true,
       title: '🔴 MFP line missing on the certificate',
       lines: [
-        [esc(certNo), esc(vendor)].filter(Boolean).join(' · '),
+        [hub ? b(hub) : '', esc(certNo), esc(vendor)].filter(Boolean).join(' · '),
         figures ? i(figures.replace(/\.$/, '')) : '',
         i(mfpMissing.includes('blank') ? 'Remark in IN4 is blank' : mfpMissing.replace(/^⚠\s*/, '').split(' — ')[0]),
       ],
@@ -451,7 +464,7 @@ const billsVerdict: Composer = (n, d) => {
     needsYou: differs,
     title: differs ? '🟠 IN4 approval differs from CT Hub' : '✅ IN4 approval matches CT Hub',
     lines: [
-      [esc(certNo), esc(vendor)].filter(Boolean).join(' · '),
+      [hub ? b(hub) : '', esc(certNo), esc(vendor)].filter(Boolean).join(' · '),
       figures ? esc(figures.replace(/\.$/, '')) : '',
       mfpPresent ? i('MFP line is on the certificate') : mfpMissing ? i('No MFP line on the certificate; CT Billing is told') : '',
     ],
