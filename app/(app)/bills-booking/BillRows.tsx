@@ -15,7 +15,7 @@ import { tagsFor, whyHere, whyTitle, type RegisterRow, type Tag } from '@/lib/bi
  *  the right, and the whole row is one ≥44px tap. */
 const TAG: Record<Tag, { label: string; cls: string; title: string }> = {
   arrived:         { label: 'arrived from IN4',     cls: 'border-emerald-200 bg-emerald-50 text-emerald-700', title: 'Raised by itself when IN4 approved the abstract — nobody typed it' },
-  stamped_missing: { label: 'stamped bill missing', cls: 'border-rose-200 bg-rose-50 text-rose-700',          title: 'The Disc Head cannot forward this until the stamped bill is attached' },
+  docs_missing:    { label: 'documents pending',    cls: 'border-rose-200 bg-rose-50 text-rose-700',          title: 'Checklist documents still to attach — the bill cannot be forwarded until each is attached or a reason is given' },
   duplicate:       { label: 'possible duplicate',   cls: 'border-amber-300 bg-amber-50 text-amber-800',       title: 'The same bill number is already booked on this order — check before forwarding' },
   sent_back:       { label: 'sent back',            cls: 'border-amber-200 bg-amber-50 text-amber-800',       title: 'Returned with a reason — see the line below' },
   example:         { label: 'example',              cls: 'border-gray-200 bg-white text-gray-500',            title: 'A worked example — real order, no real money' },

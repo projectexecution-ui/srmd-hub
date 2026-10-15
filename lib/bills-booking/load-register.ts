@@ -91,6 +91,17 @@ export async function loadRegister(sb: SupabaseClient, me: BillsMe): Promise<Reg
     }
   }
 
+  // What each live bill still has to attach — the checklist in the database
+  // (bb_doc_checklist) against its documents and reasons. One call per
+  // chunk, never one per bill.
+  const docsMissing = new Map<string, { missing: number; labels: string | null }>()
+  for (const ids of chunk(liveIds, 200)) {
+    const { data } = await sb.rpc('bb_docs_missing_for', { p_ids: ids })
+    for (const row of (data ?? []) as Array<{ bill_id: string; missing: number; labels: string | null }>) {
+      docsMissing.set(row.bill_id, { missing: Number(row.missing ?? 0), labels: row.labels ?? null })
+    }
+  }
+
   // The desk behind a bill is decided by bb_stage_members, the one place those
   // rules live. The answer only varies by (stage, project, discipline,
   // sub-project), so it is asked once per combination, not once per bill.
@@ -128,6 +139,8 @@ export async function loadRegister(sb: SupabaseClient, me: BillsMe): Promise<Reg
       isExample: r.is_example,
       autoRaised: r.created_by == null,
       hasStampedBill: stamped.has(r.id),
+      docsMissing: docsMissing.get(r.id)?.missing ?? 0,
+      docsMissingLabels: docsMissing.get(r.id)?.labels ?? null,
       lastComment: ev?.comment ?? null,
       lastAction: ev?.action ?? null,
       // On the desk, not merely allowed to see it: an admin sees every desk

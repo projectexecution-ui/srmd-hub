@@ -9,7 +9,7 @@ import { PIPELINE, stageDef, stageIndex, daysAtStage, type BbStage } from '@/lib
 import { StagePill } from '../StagePill'
 import { ActionBar } from './ActionBar'
 import { StatusTimeline } from './StatusTimeline'
-import { Documents, type DocRow, type RequiredDoc } from './Documents'
+import { Documents, type DocRow, type ChecklistRow } from './Documents'
 import { PhoneSummary, type PhoneLine } from './PhoneSummary'
 import { MeasurementPicker } from './MeasurementPicker'
 import { Calculation } from './Calculation'
@@ -149,7 +149,9 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
   // Events that changed the bill without moving it. The flow card covers every
   // event that DID move it, so listing those again is the duplication that
   // made this page unreadable.
-  const edits = evs.filter(e => e.to_stage === e.from_stage || e.action === 'abstract')
+  // A reason for a missing document is drawn in the flow, where it was given;
+  // listing it here as well would be the same line twice.
+  const edits = evs.filter(e => (e.to_stage === e.from_stage || e.action === 'abstract') && e.action !== 'doc_waived' && e.action !== 'doc_unwaived')
 
   // The way home: the last thing done was a send-back or a reject, by this
   // person, inside ten minutes. The database enforces the same three
@@ -271,19 +273,34 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
     uploadedBy: d.uploaded_by ? uploaderName.get(d.uploaded_by as string) ?? null : null,
     on: d.created_at ? formatDate(d.created_at as string) : null,
   }))
-  const hasStampedBill = docs.some(d => d.kind === 'bill' || d.kind === 'stamped_bill')
   const isRelease = bill.bill_type === 'Retention release' && rules.bb_rule_retention_release
-  const required: RequiredDoc[] = [
-    { kinds: ['bill', 'stamped_bill'], label: 'Stamped bill', note: 'Needed before the Disc Head can forward' },
-    // A retention release has no measurement behind it.
+
+  // The document checklist, by kind of bill — the one list, from the database
+  // (bb_doc_checklist), with where each line stands: attached, explained with
+  // a reason, or missing. Ambrish asked for it on 14 Oct 2026; Aksha, 15 Oct:
+  // the bill waits at the Site Head until it is complete, and a missing one
+  // needs a reason that the Disc Head, Project Head and Atm Head hear.
+  const { data: statusRows } = await supabase.rpc('bb_doc_status', { p_bill: id })
+  type StatusRow = { kind: string; label: string; final_only: boolean; state: 'attached' | 'waived' | 'missing'
+    doc_name: string | null; doc_by: string | null; doc_at: string | null; reason: string | null; waived_by: string | null; waived_at: string | null }
+  const checklist: ChecklistRow[] = [
+    // The measurement is read from IN4, never uploaded — shown so the list is
+    // the whole story, not asked for twice. A retention release has none.
     ...(isRelease ? []
       : bill.order_type === 'WO'
-        ? [{ kinds: ['abstract'], label: 'Abstract', note: 'Made in IN4 by the Site Head', satisfiedBy: calc?.sheet ? 'read from IN4' : null } as RequiredDoc]
-        : [{ kinds: ['support'], label: 'Goods receipt', note: 'Raised in IN4 at the gate', satisfiedBy: calc?.grn ? 'read from IN4' : null } as RequiredDoc]),
-    ...(bill.bill_type === 'Full & Final' && rules.bb_rule_final_no_due
-      ? [{ kinds: ['no_due'], label: 'No-Due certificate', note: 'Needed before the Disc Head can forward a Full & Final bill' } as RequiredDoc]
-      : []),
+        ? [{ kind: 'abstract', label: 'Abstract (measurement)', finalOnly: false, state: calc?.sheet ? 'in4' : 'missing', note: calc?.sheet ? 'Approved in IN4 — read back here' : 'Not yet approved in IN4' } as ChecklistRow]
+        : [{ kind: 'grn', label: 'Goods receipt', finalOnly: false, state: calc?.grn ? 'in4' : 'missing', note: calc?.grn ? 'Approved in IN4 — read back here' : 'Not yet approved in IN4' } as ChecklistRow]),
+    ...((statusRows ?? []) as StatusRow[]).map(r => ({
+      kind: r.kind, label: r.label, finalOnly: r.final_only, state: r.state,
+      docName: r.doc_name, docBy: r.doc_by, docOn: r.doc_at ? formatDate(r.doc_at) : null,
+      reason: r.reason, waivedBy: r.waived_by, waivedOn: r.waived_at ? formatDate(r.waived_at) : null,
+    })),
   ]
+  // What the Forward gate will refuse on — uploads only; the measurement has
+  // its own gate (the pick).
+  const missingDocs = checklist.filter(r => r.state === 'missing' && r.kind !== 'abstract' && r.kind !== 'grn').map(r => r.label)
+  // Only the Site Head, only while the bill is with the Site Head.
+  const canWaive = stage === 'site_head' && (meOnDesk || me.isAdmin)
 
   const money = formatINR
   const mineRa = calc?.mineCert
@@ -477,10 +494,13 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
         billedBefore={billedBefore} woValue={woValue} leftAfter={leftAfter}
         reconciles={calc?.sheet?.reconciles ?? calc?.grn?.reconciles ?? null}
         overrun={overrun}
-        docs={required.map(r => {
-          const d = docs.find(x => x.kind && r.kinds.includes(x.kind))
-          return { label: r.label, ok: !!d || !!r.satisfiedBy, note: d ? `${d.uploadedBy ?? ''}${d.on ? `, ${d.on}` : ''}`.replace(/^, /, '') || null : r.satisfiedBy ?? r.note }
-        })}
+        docs={checklist.map(r => ({
+          label: r.label,
+          ok: r.state === 'attached' || r.state === 'in4' || r.state === 'waived',
+          note: r.state === 'attached' ? `${r.docBy ?? ''}${r.docOn ? `, ${r.docOn}` : ''}`.replace(/^, /, '') || null
+            : r.state === 'waived' ? `not attached — ${r.reason ?? ''}`
+              : r.state === 'in4' ? (r.note ?? null) : 'not attached yet',
+        }))}
         flow={flowLine} lines={phoneLines} lineCount={lineCount} sheetHref="#sheet"
       />
 
@@ -530,7 +550,7 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
       )}
 
       {/* Documents — with what the flow asks for. */}
-      <Documents billId={bill.id as string} docs={docs} canAttach={canAttach} required={required} />
+      <Documents billId={bill.id as string} docs={docs} canAttach={canAttach} checklist={checklist} canWaive={canWaive} />
 
       {/* The sheets and the money. On a laptop, in full; on a phone, folded
           behind the summary above and opened from its "full sheet" link. */}
@@ -620,7 +640,7 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
           netAmount={net} certified={certified} claimed={claimed}
           preHoldStage={(bill.pre_hold_stage as BbStage | null) ?? null}
           measured={measured} orderType={bill.order_type as string | null}
-          hasStampedBill={hasStampedBill} hasMeasurement={hasMeasurement} noMeasurement={isRelease} skipSiteHead={rules.bb_rule_skip_site_head && ['Advance', 'Petty Cash', 'Misc', 'Retention release'].includes(String(bill.bill_type ?? ''))} navCollapsed={navCollapsed}
+          missingDocs={missingDocs} hasMeasurement={hasMeasurement} noMeasurement={isRelease} skipSiteHead={rules.bb_rule_skip_site_head && ['Advance', 'Petty Cash', 'Misc', 'Retention release'].includes(String(bill.bill_type ?? ''))} navCollapsed={navCollapsed}
           undoUntil={undoUntil} undoWhat={undoWhat}
           reconciles={calc?.sheet?.reconciles ?? calc?.grn?.reconciles ?? null} />
       )}

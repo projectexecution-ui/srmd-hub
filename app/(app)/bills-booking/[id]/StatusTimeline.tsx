@@ -30,7 +30,9 @@ export function StatusTimeline({ segs, holders, meOnDesk }: {
   if (segs.length === 0) return null
   const total = segs.reduce((a, s) => a + s.days, 0)
   const breaches = segs.filter(s => s.breached).length
-  const decision = (a: string | null) => a === 'send_back' || a === 'hold' || a === 'reject' || a === 'undo'
+  // A reason for a missing document is a decision too — it is what the Disc
+  // Head, Project Head and Atm Head were told (15 Oct 2026).
+  const decision = (a: string | null) => a === 'send_back' || a === 'hold' || a === 'reject' || a === 'undo' || a === 'doc_waived' || a === 'doc_unwaived'
 
   let shownAmount: number | null = null
 
@@ -56,7 +58,9 @@ export function StatusTimeline({ segs, holders, meOnDesk }: {
           const verb = s.leftAction === 'send_back' ? 'sent back'
             : s.leftAction === 'undo' ? 'pulled back'
               : s.leftAction === 'hold' ? 'held'
-                : s.leftAction === 'reject' ? 'rejected' : null
+                : s.leftAction === 'reject' ? 'rejected'
+                  : s.leftAction === 'doc_waived' ? 'document not available'
+                    : s.leftAction === 'doc_unwaived' ? 'reason withdrawn' : null
           return (
             <li key={i} className="relative">
               <span className={`absolute -left-[23px] top-[7px] h-2.5 w-2.5 rounded-full ring-2 ring-white ${dot}`} />

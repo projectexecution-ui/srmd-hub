@@ -57,6 +57,12 @@ export const NOTIFICATION_EVENTS: NotificationEventDef[] = [
     audience: 'The desk the bill was sent back to',
   },
   {
+    type: 'bb_docs_waived',
+    label: 'Bills — a document was not attached, with the Site Head\'s reason',
+    description: 'The Site Head forwarded a bill without one or more documents from its checklist and gave a reason for each. The CT Disc Head, the Project Head and the Atm Head are told what is missing and why, so they can take it ahead knowingly.',
+    audience: 'The CT Disc Head, the Project Head and the Atm Head of the bill\'s project',
+  },
+  {
     type: 'bb_bill_changed',
     label: 'Bills — a bill changed after you approved it',
     description: 'The abstract in IN4 or the bill amount changed after the CT Disc Head approved it, so the bill came back to the Disc Head with old → new, to approve the new figure. A switch in Bills settings.',

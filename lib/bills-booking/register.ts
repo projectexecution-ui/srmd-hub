@@ -26,6 +26,11 @@ export interface RegisterRow {
   autoRaised: boolean
   /** A document of kind 'bill' or 'stamped_bill' is attached. */
   hasStampedBill: boolean
+  /** Checklist documents neither attached nor explained — what holds the bill
+   *  at the Site Head (15 Oct 2026). From bb_docs_missing_for, one call for
+   *  the whole register. */
+  docsMissing: number
+  docsMissingLabels: string | null
   /** The last thing said about it — the send-back reason, the IN4 note. */
   lastComment: string | null
   lastAction: string | null
@@ -43,7 +48,7 @@ export interface RegisterFilters {
   view?: View | null
 }
 
-export type Tag = 'arrived' | 'stamped_missing' | 'duplicate' | 'example' | 'sent_back'
+export type Tag = 'arrived' | 'docs_missing' | 'duplicate' | 'example' | 'sent_back'
 
 /** Same order, same bill number, more than once — a warning, never a block:
  *  IN4 itself files one abstract against three bill numbers. */
@@ -61,9 +66,10 @@ export function tagsFor(r: RegisterRow, dupes: Set<string>): Tag[] {
   const t: Tag[] = []
   if (r.isExample) t.push('example')
   if (r.autoRaised) t.push('arrived')
-  // The stamped bill is asked for at the Disc Head, and the row says so before
-  // anyone opens it and finds the button will not go.
-  if (r.stage === 'disc_head' && !r.hasStampedBill) t.push('stamped_missing')
+  // Checklist documents neither attached nor explained. The Site Head cannot
+  // forward until each is attached or given a reason; the Disc Head cannot
+  // forward a bill that skipped the Site Head without its stamped bill.
+  if ((r.stage === 'site_head' || r.stage === 'disc_head') && r.docsMissing > 0) t.push('docs_missing')
   if (r.orderNo && r.billNo && dupes.has(`${r.orderNo.trim().toLowerCase()}|${r.billNo.trim().toLowerCase()}`)) t.push('duplicate')
   if (r.lastAction === 'send_back') t.push('sent_back')
   return t

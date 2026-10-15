@@ -9,7 +9,8 @@ const row = (o: Partial<RegisterRow> = {}): RegisterRow => ({
   id: 'b1', vendor: 'Desai Construction Pvt Ltd', billNo: 'RU-WH-CV/08', orderType: 'WO',
   orderNo: 'WO/SRET/WH/2025-26/210', project: 'WH', amount: 5_069_122, stage: 'disc_head',
   stageSince: daysAgo(1), isExample: false, autoRaised: true, hasStampedBill: true,
-  lastComment: 'Abstract approved in IN4 — moved on automatically', lastAction: 'forward', mine: true, ...o,
+  lastComment: 'Abstract approved in IN4 — moved on automatically', lastAction: 'forward', mine: true,
+  docsMissing: 0, docsMissingLabels: null, ...o,
 })
 
 describe('the register as a desk reads it', () => {
@@ -52,10 +53,15 @@ describe('the register as a desk reads it', () => {
     expect(tagsFor(row({ orderNo: 'WO/OTHER' }), d)).not.toContain('duplicate')
   })
 
-  it('says on the row that the stamped bill is missing, at the Disc Head only', () => {
+  // Aksha, 15 Oct 2026: the bill waits at the Site Head until the checklist
+  // is attached or explained; the Disc Head still needs the stamped bill on a
+  // bill that skipped the Site Head. The count comes from the database.
+  it('says on the row that checklist documents are pending, at the two gated desks only', () => {
     const none = new Set<string>()
-    expect(tagsFor(row({ hasStampedBill: false }), none)).toContain('stamped_missing')
-    expect(tagsFor(row({ hasStampedBill: false, stage: 'ct_head' }), none)).not.toContain('stamped_missing')
+    expect(tagsFor(row({ stage: 'site_head', docsMissing: 2, docsMissingLabels: 'Marking plan, Stamped bill' }), none)).toContain('docs_missing')
+    expect(tagsFor(row({ stage: 'disc_head', docsMissing: 1 }), none)).toContain('docs_missing')
+    expect(tagsFor(row({ stage: 'ct_head', docsMissing: 1 }), none)).not.toContain('docs_missing')
+    expect(tagsFor(row({ stage: 'site_head', docsMissing: 0 }), none)).not.toContain('docs_missing')
     expect(tagsFor(row(), none)).toEqual(['arrived'])
   })
 

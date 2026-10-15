@@ -31,7 +31,7 @@ import { formatINR } from '@/lib/utils'
  *  them, and both are recorded either way. Reject is the only step in the flow
  *  that ends a bill, and it was one click from a desk holding lakhs. */
 export function ActionBar({ billId, stage, netAmount, certified, claimed, preHoldStage, measured, orderType,
-  hasStampedBill, hasMeasurement = false, noMeasurement = false, skipSiteHead = false, navCollapsed, undoUntil, undoWhat, reconciles }: {
+  missingDocs = [], hasMeasurement = false, noMeasurement = false, skipSiteHead = false, navCollapsed, undoUntil, undoWhat, reconciles }: {
   billId: string; stage: BbStage
   netAmount: number | null; certified: number | null; claimed: number
   preHoldStage: BbStage | null
@@ -45,7 +45,11 @@ export function ActionBar({ billId, stage, netAmount, certified, claimed, preHol
    *  the Disc Head sends back to Billing (14 Oct 2026). */
   skipSiteHead?: boolean
   orderType: string | null
-  hasStampedBill: boolean
+  /** Checklist documents neither attached nor explained. Forward is locked
+   *  while any remain — at the Site Head (attach, or give a reason) and at the
+   *  Disc Head (a bill that skipped the Site Head still needs its stamped
+   *  bill). The list itself comes from the database (bb_doc_checklist). */
+  missingDocs?: string[]
   navCollapsed: boolean
   /** ISO time until which this person can pull back what they just did. */
   undoUntil: string | null
@@ -74,11 +78,17 @@ export function ActionBar({ billId, stage, netAmount, certified, claimed, preHol
   const thing = orderType === 'PO' ? 'goods receipt' : 'abstract'
   const showAmount = stage === 'ct_head'
   const resumeTo = preHoldStage ?? 'site_head'
-  const needsDoc = stage === 'disc_head' && !hasStampedBill
+  // The checklist. At the Site Head every line must be attached or explained
+  // with a reason; at the Disc Head a bill that skipped the Site Head still
+  // needs its stamped bill (Aksha, 15 Oct 2026).
+  const needsDoc = (stage === 'site_head' || stage === 'disc_head') && missingDocs.length > 0
   // A retention release has no measurement behind it (13 Oct 2026).
   const needsPick = stage === 'site_head' && !hasMeasurement && !noMeasurement
   const blocked = needsDoc || needsPick
-  const blockedWhy = needsDoc ? 'Attach the stamped bill first' : needsPick ? `Pick the approved ${thing} from IN4 first` : undefined
+  const docList = missingDocs.length > 2 ? `${missingDocs.slice(0, 2).join(', ')} and ${missingDocs.length - 2} more` : missingDocs.join(', ')
+  const blockedWhy = needsPick ? `Pick the approved ${thing} from IN4 first`
+    : needsDoc ? (stage === 'site_head' ? `Attach first, or give a reason: ${docList}` : `Missing from the checklist: ${docList}`)
+      : undefined
   // Aksha, 10 Oct 2026: at the CT Head, "reject" means send it back to the CT
   // Disc Head. The real reject (a wrong or duplicate bill) stays on the earlier desks.
   const canReject = stage !== 'ct_head'
@@ -223,9 +233,11 @@ export function ActionBar({ billId, stage, netAmount, certified, claimed, preHol
                     A retention release needs no abstract — send it on to the CT Disc Head
                   </span>
                   ) :
-                  <span className={`order-first mr-auto rounded-lg border px-3 py-2 text-[12px] ${hasMeasurement ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : measured ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-blue-200 bg-blue-50 text-blue-900'}`}>
-                    {hasMeasurement
-                      ? <>The {thing} is recorded from IN4 — send it on; the CT Disc Head is picked by the bill&apos;s category</>
+                  <span className={`order-first mr-auto rounded-lg border px-3 py-2 text-[12px] ${hasMeasurement && !needsDoc ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : measured || hasMeasurement ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-blue-200 bg-blue-50 text-blue-900'}`}>
+                    {hasMeasurement && needsDoc
+                      ? <>The {thing} is in. {missingDocs.length === 1 ? 'One document is' : `${missingDocs.length} documents are`} still to attach in the Documents card — or give a reason there for each one you cannot</>
+                      : hasMeasurement
+                      ? <>The {thing} is recorded and the documents are in — send it on; the CT Disc Head is picked by the bill&apos;s category</>
                       : measured
                         ? <>IN4 has an approved {thing} on this order — pick it in the facts above, then forward</>
                         : <>Make the {thing} in IN4 and get it approved; then pick it here and forward</>}
